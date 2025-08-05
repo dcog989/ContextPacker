@@ -1,4 +1,4 @@
-# ContextPacker
+# ![ContextPacker logo](https://github.com/dcog989/ContextPacker/blob/main/assets/icons/ContextPacker-x64.png) ContextPacker
 
 A desktop app to scrape websites, Git repositories, or package local files into a single file, optimized for consumption by LLMs.
 
