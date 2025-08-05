@@ -1,0 +1,8 @@
+beautifulsoup4
+lxml
+markdownify
+Pillow
+repomix
+requests
+selenium
+wxPython
