@@ -2,6 +2,8 @@
 
 A desktop app to scrape websites, Git repositories, or package local files into a single file, optimized for consumption by LLMs.
 
+![ContextPacker screenshot](https://github.com/user-attachments/assets/955e7a42-45c7-44e4-a37e-43003e49f06a)
+
 ## Features
 
 * **Web Crawling**: Scrape a website, convert pages to Markdown, and package them into one file.
