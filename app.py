@@ -16,7 +16,7 @@ from core.packager import resource_path
 from core.version import __version__
 from core.config_manager import get_config
 from core.task_handler import TaskHandler
-from core.utils import get_downloads_folder
+from core.utils import get_downloads_folder, set_title_bar_theme
 
 config = get_config()
 BINARY_FILE_PATTERNS = config.get("binary_file_patterns", [])
@@ -124,14 +124,7 @@ class App(wx.Frame):
         self.Refresh()
 
     def _set_title_bar_theme(self):
-        if wx.Platform != "__WXMSW__":
-            return
-        try:
-            hwnd = self.GetHandle()
-            value = ctypes.c_int(1 if self.is_dark else 0)
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(value), ctypes.sizeof(value))
-        except Exception as e:
-            print(f"Warning: Failed to set title bar theme: {e}")
+        set_title_bar_theme(self, self.is_dark)
 
     def _setup_timer(self):
         self.timer = wx.Timer(self)

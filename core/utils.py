@@ -3,6 +3,19 @@ from pathlib import Path
 import ctypes
 
 
+def set_title_bar_theme(window, is_dark):
+    """Sets the title bar theme for a window on Windows."""
+    if platform.system() != "Windows":
+        return
+    try:
+        hwnd = window.GetHandle()
+        if hwnd:
+            value = ctypes.c_int(1 if is_dark else 0)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(value), ctypes.sizeof(value))
+    except Exception as e:
+        print(f"Warning: Failed to set title bar theme: {e}")
+
+
 def get_downloads_folder():
     if platform.system() == "Windows":
         from ctypes import wintypes, oledll

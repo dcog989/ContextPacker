@@ -1,7 +1,8 @@
 import wx
 import webbrowser
-from pathlib import Path
 from .buttons import CustomButton, CustomSecondaryButton
+from core.packager import resource_path
+from core.utils import set_title_bar_theme
 
 
 class ThemedMessageDialog(wx.Dialog):
@@ -47,18 +48,8 @@ class ThemedMessageDialog(wx.Dialog):
         event.Skip()
 
     def _set_title_bar_theme(self):
-        if wx.Platform != "__WXMSW__":
-            return
-        try:
-            is_dark = self.theme.get("palette", {}).get("bg").GetRed() < 128
-            hwnd = self.GetHandle()
-            if hwnd:
-                import ctypes
-
-                value = ctypes.c_int(1 if is_dark else 0)
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(value), ctypes.sizeof(value))
-        except Exception as e:
-            print(f"Warning: Failed to set dialog title bar theme: {e}")
+        is_dark = self.theme.get("palette", {}).get("bg").GetRed() < 128
+        set_title_bar_theme(self, is_dark)
 
 
 class AboutDialog(wx.Dialog):
@@ -84,7 +75,7 @@ class AboutDialog(wx.Dialog):
         else:
             self.log_verbose(f"Warning: Custom font not found at '{self.font_path}'.")
 
-        logo_path = Path(__file__).parent.parent.parent / "assets" / "icons" / "ContextPacker-x128.png"
+        logo_path = resource_path("assets/icons/ContextPacker-x128.png")
         if logo_path.exists():
             bmp = wx.Bitmap(str(logo_path), wx.BITMAP_TYPE_PNG)
             logo_bitmap = wx.StaticBitmap(self, bitmap=wx.BitmapBundle(bmp))
@@ -154,15 +145,5 @@ class AboutDialog(wx.Dialog):
         event.Skip()
 
     def _set_title_bar_theme(self):
-        if wx.Platform != "__WXMSW__":
-            return
-        try:
-            is_dark = self.theme.get("palette", {}).get("bg").GetRed() < 128
-            hwnd = self.GetHandle()
-            if hwnd:
-                import ctypes
-
-                value = ctypes.c_int(1 if is_dark else 0)
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(value), ctypes.sizeof(value))
-        except Exception as e:
-            print(f"Warning: Failed to set dialog title bar theme: {e}")
+        is_dark = self.theme.get("palette", {}).get("bg").GetRed() < 128
+        set_title_bar_theme(self, is_dark)

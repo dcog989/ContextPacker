@@ -105,7 +105,16 @@ def start_packaging(app, cancel_event):
     else:
         source_dir = app.main_panel.local_panel.local_dir_ctrl.GetValue()
         default_excludes = [p.strip() for p in app.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
-        effective_excludes = list(set(default_excludes) | app.local_files_to_exclude)
+
+        additional_excludes = set()
+        if not app.main_panel.local_panel.include_subdirs_check.GetValue():
+            source_path = Path(source_dir)
+            if source_path.is_dir():
+                for item in source_path.iterdir():
+                    if item.is_dir():
+                        additional_excludes.add(f"{item.name}/")
+
+        effective_excludes = list(set(default_excludes) | app.local_files_to_exclude | additional_excludes)
 
     extension = app.main_panel.output_format_choice.GetStringSelection()
     style_map = {".md": "markdown", ".txt": "plain", ".xml": "xml"}

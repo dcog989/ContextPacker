@@ -1,10 +1,10 @@
 import wx
-from pathlib import Path
 from .widgets.buttons import CustomButton, IconCustomButton
 from .widgets.dialogs import ThemedMessageDialog
 from .widgets.inputs import CustomRadioButton, FocusTextCtrl
 from .panels import CrawlerInputPanel, LocalInputPanel, ListPanel
 from core.config_manager import get_config
+from core.packager import resource_path
 
 config = get_config()
 
@@ -56,7 +56,7 @@ class MainFrame(wx.Panel):
         package_button_height = self.package_button.GetBestSize().GetHeight()
         copy_button_size = wx.Size(package_button_height, package_button_height)
 
-        icon_path = Path(__file__).parent.parent / "assets" / "icons" / "copy.png"
+        icon_path = resource_path("assets/icons/copy.png")
         img = wx.Image(str(icon_path), wx.BITMAP_TYPE_PNG)
         img.Rescale(24, 24, wx.IMAGE_QUALITY_HIGH)
         copy_bitmap = wx.Bitmap(img)

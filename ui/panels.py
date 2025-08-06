@@ -1,11 +1,11 @@
 import wx
-from pathlib import Path
 from .widgets.buttons import CustomButton, CustomSecondaryButton
 from .widgets.inputs import FocusTextCtrl, CustomRadioButton, CustomCheckBox, ThemedLogCtrl, ThemedTextCtrl
 from .widgets.lists import ThemedListCtrl
 from .widgets.gauges import CustomGauge
 from core.config import CrawlerConfig
 from core.config_manager import get_config
+from core.packager import resource_path
 
 config = get_config()
 
@@ -57,7 +57,7 @@ class CrawlerInputPanel(wx.Panel):
         self.include_paths_ctrl.SetMinSize(wx.Size(-1, min_height))
         self.exclude_paths_ctrl.SetMinSize(wx.Size(-1, min_height))
 
-        logo_path = Path(__file__).parent.parent / "assets" / "icons" / "ContextPacker-x64.png"
+        logo_path = resource_path("assets/icons/ContextPacker-x64.png")
         if logo_path.exists():
             img = wx.Image(str(logo_path), wx.BITMAP_TYPE_PNG)
             img.Rescale(64, 64, wx.IMAGE_QUALITY_HIGH)
@@ -70,7 +70,7 @@ class CrawlerInputPanel(wx.Panel):
         self.about_text = wx.StaticText(self, label="ContextPacker")
         self.about_text.SetCursor(wx.Cursor(wx.CURSOR_HAND))
         about_font = wx.Font(20, wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
-        font_path = Path(__file__).parent.parent / "assets" / "fonts" / "SourceCodePro-Regular.ttf"
+        font_path = resource_path("assets/fonts/SourceCodePro-Regular.ttf")
         if font_path.exists():
             if wx.Font.AddPrivateFont(str(font_path)):
                 about_font.SetFaceName("Source Code Pro")
