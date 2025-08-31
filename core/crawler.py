@@ -226,9 +226,9 @@ def crawl_website(config, log_queue, cancel_event):
     if driver is None:
         error_msg = "ERROR: Could not find a compatible web browser or its driver.\nPlease run the application from source once (`py app.py`) to allow Selenium to download the necessary drivers."
         log_queue.put({"type": "status", "status": "error", "message": error_msg})
-        return
+    return
 
-    driver.set_page_load_timeout(5)
+    driver.set_page_load_timeout(15)
 
     def _normalize_url(url):
         url_no_fragment = url.split("#")[0]
@@ -358,15 +358,10 @@ def crawl_website(config, log_queue, cancel_event):
 
     finally:
         if driver:
-
-            def _cleanup_driver(d):
-                try:
-                    d.quit()
-                except Exception:
-                    pass
-
-            cleanup_thread = threading.Thread(target=_cleanup_driver, args=(driver,), daemon=True)
-            cleanup_thread.start()
+            try:
+                driver.quit()
+            except Exception as e:
+                log_queue.put({"type": "log", "message": f"  -> Note: Error while quitting browser driver: {e}"})
 
     if not cancel_event.is_set():
         log_queue.put({"type": "status", "status": "source_complete", "message": f"\nWeb scrape finished. Saved {pages_saved} pages."})

@@ -263,13 +263,9 @@ class ListPanel(wx.Panel):
         is_web_mode = list_ctrl == self.standard_log_list
 
         if is_web_mode:
-            data_source = self.scraped_files
-            sort_col, sort_dir = self.sort_col_web, self.sort_dir_web
-            keys = ["url", "filename"]
+            data_source, (sort_col, sort_dir), keys = self.scraped_files, (self.sort_col_web, self.sort_dir_web), ["url", "filename"]
         else:
-            data_source = self.local_files
-            sort_col, sort_dir = self.sort_col_local, self.sort_dir_local
-            keys = ["name", "type", "size"]
+            data_source, (sort_col, sort_dir), keys = self.local_files, (self.sort_col_local, self.sort_dir_local), ["name", "type", "size"]
 
         if col == sort_col:
             sort_dir *= -1
@@ -277,25 +273,21 @@ class ListPanel(wx.Panel):
             sort_col = col
             sort_dir = 1
 
-        if is_web_mode:
-            self.sort_col_web, self.sort_dir_web = sort_col, sort_dir
-        else:
-            self.sort_col_local, self.sort_dir_local = sort_col, sort_dir
-
-        is_ascending = sort_dir == 1
-        list_ctrl.ShowSortIndicator(sort_col, is_ascending)
-
         sort_key = keys[col]
-        reverse = not is_ascending
+        reverse = sort_dir == -1
 
         if not is_web_mode and sort_key == "name":
             data_source.sort(key=lambda item: (item.get("type") != "Folder", item.get("name", "").lower()), reverse=reverse)
         else:
             data_source.sort(key=lambda item: item.get(sort_key, 0) if isinstance(item.get(sort_key, 0), (int, float)) else str(item.get(sort_key, "")).lower(), reverse=reverse)
 
+        list_ctrl.ShowSortIndicator(col, not reverse)
+
         if is_web_mode:
+            self.sort_col_web, self.sort_dir_web = sort_col, sort_dir
             self.populate_web_file_list()
         else:
+            self.sort_col_local, self.sort_dir_local = sort_col, sort_dir
             self.populate_local_file_list(data_source)
 
     def on_col_end_drag(self, event):
