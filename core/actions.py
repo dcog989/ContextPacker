@@ -8,6 +8,7 @@ import logging
 import os
 import fnmatch
 import subprocess
+import queue
 
 from .crawler import crawl_website
 from .packager import run_repomix
@@ -30,6 +31,13 @@ def start_download(app, cancel_event):
     app.worker_thread = threading.Thread(target=crawl_website, args=(crawler_config, app.log_queue, cancel_event), daemon=True)
     print(f"DIAG: Worker thread created. Starting now at {datetime.now()}.")
     app.worker_thread.start()
+
+
+def _enqueue_output(stream, q):
+    """Reads lines from a stream and puts them into a queue."""
+    for line in iter(stream.readline, ""):
+        q.put(line)
+    stream.close()
 
 
 def start_git_clone(app, cancel_event):
@@ -70,17 +78,34 @@ def _clone_repo_worker(url, path, log_queue, cancel_event):
             log_queue.put({"type": "status", "status": "error", "message": "Failed to capture git clone output stream."})
             return
 
-        while True:
+        output_queue = queue.Queue()
+        reader_thread = threading.Thread(target=_enqueue_output, args=(process.stdout, output_queue), daemon=True)
+        reader_thread.start()
+
+        while process.poll() is None:
             if cancel_event.is_set():
                 process.terminate()
-                log_queue.put({"type": "status", "status": "cancelled", "message": "Git clone cancelled."})
-                return
-
-            output = process.stdout.readline()
-            if output == "" and process.poll() is not None:
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
                 break
-            if output:
-                log_queue.put({"type": "log", "message": output.strip()})
+
+            try:
+                line = output_queue.get(timeout=0.1)
+                if line:
+                    log_queue.put({"type": "log", "message": line.strip()})
+            except queue.Empty:
+                continue
+
+        while not output_queue.empty():
+            line = output_queue.get_nowait()
+            if line:
+                log_queue.put({"type": "log", "message": line.strip()})
+
+        if cancel_event.is_set():
+            log_queue.put({"type": "status", "status": "cancelled", "message": "Git clone cancelled."})
+            return
 
         if process.returncode == 0:
             log_queue.put({"type": "status", "status": "clone_complete", "path": path})
