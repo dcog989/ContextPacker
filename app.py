@@ -172,6 +172,7 @@ class App(wx.Frame):
 
             if isinstance(widget, (wx.TextCtrl, wx.Choice, wx.SpinCtrl, wx.ListCtrl)):
                 widget.SetBackgroundColour(self.palette["field"])
+                widget.SetForegroundColour(self.palette["fg"])
             if isinstance(widget, wx.StaticBox):
                 widget.SetForegroundColour(self.palette["fg"])
 
