@@ -215,13 +215,17 @@ class App(wx.Frame):
         self.stop_queue_listener()
         if self.local_scan_cancel_event:
             self.local_scan_cancel_event.set()
+
         if self.worker_thread and self.worker_thread.is_alive():
-            self.is_shutting_down = True
-            if self.cancel_event:
-                self.cancel_event.set()
-            self.log_verbose("Shutdown requested. Waiting for process to terminate...")
-            self.main_panel.crawler_panel.download_button.Disable()
-            self.main_panel.package_button.Disable()
+            if not self.is_shutting_down:
+                self.is_shutting_down = True
+                self.log_verbose("Shutdown requested. Waiting for task to terminate...")
+                if self.cancel_event:
+                    self.cancel_event.set()
+                self.main_panel.crawler_panel.download_button.Disable()
+                self.main_panel.package_button.Disable()
+            event.Veto()
+            return
         else:
             self.Destroy()
 
