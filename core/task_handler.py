@@ -1,6 +1,7 @@
 import wx
 from pathlib import Path
 import threading
+import multiprocessing
 
 import core.actions as actions
 from ui.widgets.dialogs import ThemedMessageDialog
@@ -47,19 +48,16 @@ class TaskHandler:
         dl_button.label = "Stop!"
         dl_button.Refresh()
 
-        self.app.cancel_event = threading.Event()
+        self.app.cancel_event = multiprocessing.Event()
+        self.app.start_queue_listener()
         actions.start_download(self.app, self.app.cancel_event)
 
-    def start_package_task(self):
+    def start_package_task(self, file_list_for_count):
         pkg_button = self.app.main_panel.package_button
         self.app._toggle_ui_controls(False, widget_to_keep_enabled=pkg_button)
 
         is_web_mode = self.app.main_panel.web_crawl_radio.GetValue()
-        file_list_for_count = []
-        if is_web_mode:
-            file_list_for_count = self.app.main_panel.list_panel.scraped_files
-        else:
-            file_list_for_count = self.app.main_panel.list_panel.local_files
+        if not is_web_mode:
             source_dir = self.app.main_panel.local_panel.local_dir_ctrl.GetValue()
             if not source_dir or not Path(source_dir).is_dir():
                 msg = f"The specified input directory is not valid:\n{source_dir}"
@@ -78,13 +76,27 @@ class TaskHandler:
         pkg_button.Refresh()
 
         self.app.cancel_event = threading.Event()
+        self.app.start_queue_listener()
         actions.start_packaging(self.app, self.app.cancel_event, file_list_for_count)
 
     def stop_current_task(self):
         if self.app.cancel_event:
             self.app.cancel_event.set()
-        self.app.main_panel.crawler_panel.download_button.Disable()
-        self.app.main_panel.package_button.Disable()
+
+        dl_button = self.app.main_panel.crawler_panel.download_button
+        pkg_button = self.app.main_panel.package_button
+
+        # Change label to give immediate feedback and disable to prevent multi-clicks
+        if dl_button.IsEnabled():
+            dl_button.label = "Stopping..."
+            dl_button.Disable()
+            dl_button.Refresh()
+
+        if pkg_button.IsEnabled():
+            pkg_button.label = "Stopping..."
+            pkg_button.Disable()
+            pkg_button.Refresh()
+
         self.app.log_verbose("Stopping process...")
 
     def handle_status(self, status, msg_obj):
@@ -113,6 +125,7 @@ class TaskHandler:
             wx.EndBusyCursor()
             self.app.is_task_running = False
 
+        self.app.stop_queue_listener()
         self.app._toggle_ui_controls(True)
 
         self.app.worker_thread = None

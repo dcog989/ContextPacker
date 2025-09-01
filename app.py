@@ -1,7 +1,6 @@
 import wx
 import winreg
 import os
-import queue
 from datetime import datetime
 from pathlib import Path
 import ctypes
@@ -32,7 +31,7 @@ class App(wx.Frame):
         self.temp_dir = None
         self.final_output_path = None
         self.filename_prefix = ""
-        self.log_queue = queue.Queue()
+        self.log_queue = multiprocessing.Queue()
         self.cancel_event = None
         self.worker_thread = None
         self.is_shutting_down = False
@@ -43,6 +42,7 @@ class App(wx.Frame):
         self.local_scan_worker = None
         self.local_scan_cancel_event = None
         self.exclude_update_timer = wx.Timer(self)
+        self.queue_listener_thread = None
 
         self._set_theme_palette()
         self.main_panel = MainFrame(self)
@@ -58,6 +58,49 @@ class App(wx.Frame):
         self.Bind(wx.EVT_TIMER, self.on_exclude_timer, self.exclude_update_timer)
 
         threading.Thread(target=self._detect_and_apply_theme, daemon=True).start()
+
+    def start_queue_listener(self):
+        if self.queue_listener_thread is None:
+            self.queue_listener_thread = threading.Thread(target=self._queue_listener_worker, daemon=True)
+            self.queue_listener_thread.start()
+
+    def stop_queue_listener(self):
+        if self.queue_listener_thread is not None:
+            self.log_queue.put(None)  # Sentinel to stop the thread
+            self.queue_listener_thread.join(timeout=1)
+            self.queue_listener_thread = None
+
+    def _queue_listener_worker(self):
+        while True:
+            try:
+                msg_obj = self.log_queue.get()
+                if msg_obj is None:  # Sentinel value
+                    break
+                wx.CallAfter(self._process_log_queue_message, msg_obj)
+            except (EOFError, BrokenPipeError):
+                break  # Exit if the queue is broken (e.g., child process crashed)
+            except Exception:
+                # Log other potential exceptions without crashing the listener
+                continue
+
+    def _process_log_queue_message(self, msg_obj):
+        msg_type = msg_obj.get("type")
+        message = msg_obj.get("message", "")
+
+        if msg_type == "log":
+            self.log_verbose(message)
+        elif msg_type == "file_saved":
+            # This is now handled in batches, but a single message handler is fine
+            self.main_panel.list_panel.add_scraped_files_batch([msg_obj])
+            verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
+            self.log_verbose(verbose_msg)
+        elif msg_type == "progress":
+            self.main_panel.list_panel.progress_gauge.SetValue(msg_obj["value"])
+            self.main_panel.list_panel.progress_gauge.SetRange(msg_obj["max_value"])
+        elif msg_type == "status":
+            self.task_handler.handle_status(msg_obj.get("status"), msg_obj)
+        else:
+            self.log_verbose(str(message))
 
     def _detect_and_apply_theme(self):
         """Worker function to detect dark mode and apply the theme."""
@@ -166,6 +209,7 @@ class App(wx.Frame):
 
     def on_close(self, event):
         self.timer.Stop()
+        self.stop_queue_listener()
         if self.local_scan_cancel_event:
             self.local_scan_cancel_event.set()
         if self.worker_thread and self.worker_thread.is_alive():
@@ -180,19 +224,40 @@ class App(wx.Frame):
 
     def _toggle_ui_controls(self, enable=True, widget_to_keep_enabled=None):
         """Enable or disable all input controls, optionally keeping one enabled."""
+        crawler_panel = self.main_panel.crawler_panel
+        crawler_controls = [
+            crawler_panel.start_url_ctrl,
+            crawler_panel.user_agent_combo,
+            crawler_panel.max_pages_ctrl,
+            crawler_panel.crawl_depth_ctrl,
+            crawler_panel.min_pause_ctrl,
+            crawler_panel.max_pause_ctrl,
+            crawler_panel.include_paths_ctrl,
+            crawler_panel.exclude_paths_ctrl,
+            crawler_panel.stay_on_subdomain_check,
+            crawler_panel.ignore_queries_check,
+            crawler_panel.download_button,
+        ]
+
         widgets_to_toggle = [
             self.main_panel.web_crawl_radio,
             self.main_panel.local_dir_radio,
-            self.main_panel.crawler_panel,
             self.main_panel.local_panel,
             self.main_panel.output_filename_ctrl,
             self.main_panel.output_format_choice,
+            self.main_panel.package_button,
         ]
+
+        widgets_to_toggle.extend(crawler_controls)
+
         for widget in widgets_to_toggle:
-            widget.Enable(enable)
+            if widget != widget_to_keep_enabled:
+                if widget:
+                    widget.Enable(enable)
 
         if not enable and widget_to_keep_enabled:
-            widget_to_keep_enabled.Enable(True)
+            if widget_to_keep_enabled:
+                widget_to_keep_enabled.Enable(True)
 
     def on_toggle_input_mode(self, event):
         self.toggle_input_mode()
@@ -236,7 +301,12 @@ class App(wx.Frame):
         if self.is_task_running:
             self.on_stop_process()
         else:
-            self.task_handler.start_package_task()
+            file_list_for_count = []
+            if self.main_panel.web_crawl_radio.GetValue():
+                file_list_for_count = self.main_panel.list_panel.scraped_files
+            else:
+                file_list_for_count = self.main_panel.list_panel.local_files
+            self.task_handler.start_package_task(file_list_for_count)
 
     def on_stop_process(self):
         self.task_handler.stop_current_task()
@@ -272,38 +342,6 @@ class App(wx.Frame):
                 self.main_panel.right_panel_container.Layout()
 
     def on_check_log_queue(self, event):
-        log_messages = []
-        files_to_add = []
-        # Process up to 50 messages per tick to prevent UI event flooding
-        for _ in range(50):
-            try:
-                msg_obj = self.log_queue.get_nowait()
-                msg_type = msg_obj.get("type")
-                message = msg_obj.get("message", "")
-
-                if msg_type == "log":
-                    log_messages.append(message)
-                elif msg_type == "file_saved":
-                    files_to_add.append(msg_obj)
-                    verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
-                    log_messages.append(verbose_msg)
-                elif msg_type == "progress":
-                    wx.CallAfter(self.main_panel.list_panel.progress_gauge.SetValue, msg_obj["value"])
-                    wx.CallAfter(self.main_panel.list_panel.progress_gauge.SetRange, msg_obj["max_value"])
-                elif msg_type == "status":
-                    wx.CallAfter(self.task_handler.handle_status, msg_obj.get("status"), msg_obj)
-                else:
-                    log_messages.append(str(message))
-            except queue.Empty:
-                break  # No more messages
-
-        if files_to_add:
-            wx.CallAfter(self.main_panel.list_panel.add_scraped_files_batch, files_to_add)
-
-        if log_messages:
-            full_log = "\n".join(log_messages)
-            wx.CallAfter(self.log_verbose, full_log)
-
         if not (self.worker_thread and self.worker_thread.is_alive()):
             self._update_timestamp_label()
 

@@ -9,13 +9,13 @@ import os
 import fnmatch
 import subprocess
 import queue
+import multiprocessing
 
-from .crawler import crawl_website
 from .packager import run_repomix
 
 
 def start_download(app, cancel_event):
-    """Initializes and starts the web crawling process in a new thread."""
+    """Initializes and starts the web crawling process in a new process."""
     print(f"DIAG: actions.start_download called at {datetime.now()}")
     app.main_panel.list_panel.clear_logs()
     app.main_panel.list_panel.progress_gauge.SetValue(0)
@@ -28,8 +28,8 @@ def start_download(app, cancel_event):
     crawler_config = app.main_panel.crawler_panel.get_crawler_config(app.temp_dir)
 
     app.log_verbose("Starting url conversion...")
-    app.worker_thread = threading.Thread(target=crawl_website, args=(crawler_config, app.log_queue, cancel_event), daemon=True)
-    print(f"DIAG: Worker thread created. Starting now at {datetime.now()}.")
+    app.worker_thread = multiprocessing.Process(target=_crawl_process_worker, args=(crawler_config, app.log_queue, cancel_event), daemon=True)
+    print(f"DIAG: Worker process created. Starting now at {datetime.now()}.")
     app.worker_thread.start()
 
 
@@ -54,6 +54,17 @@ def start_git_clone(app, cancel_event):
     app.log_verbose(f"Starting git clone for {url}...")
     app.worker_thread = threading.Thread(target=_clone_repo_worker, args=(url, app.temp_dir, app.log_queue, cancel_event), daemon=True)
     app.worker_thread.start()
+
+
+def _crawl_process_worker(crawler_config, log_queue, cancel_event):
+    """
+    This function runs in a separate process to perform the web crawl.
+    It imports necessary modules within the function to ensure it works
+    correctly with multiprocessing.
+    """
+    from .crawler import crawl_website
+
+    crawl_website(crawler_config, log_queue, cancel_event)
 
 
 def _clone_repo_worker(url, path, log_queue, cancel_event):
