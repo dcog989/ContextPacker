@@ -269,6 +269,7 @@ def crawl_website(config, log_queue, cancel_event):
                         "filename": filename,
                         "pages_saved": pages_saved,
                         "max_pages": config.max_pages,
+                        "queue_size": urls_to_visit.qsize(),
                     }
                 )
 

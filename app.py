@@ -92,6 +92,8 @@ class App(wx.Frame):
         elif msg_type == "file_saved":
             # This is now handled in batches, but a single message handler is fine
             self.main_panel.list_panel.add_scraped_files_batch([msg_obj])
+            queue_size = msg_obj.get("queue_size", 0)
+            self.main_panel.list_panel.update_discovered_count(queue_size)
             verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
             self.log_verbose(verbose_msg)
         elif msg_type == "progress":

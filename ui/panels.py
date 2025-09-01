@@ -199,6 +199,7 @@ class ListPanel(wx.Panel):
         self.is_dark = is_dark
         self.scraped_files = []
         self.local_files = []
+        self.discovered_url_count = 0
         self.user_has_resized = False
         self.sort_col_local = 0
         self.sort_dir_local = -1
@@ -210,6 +211,10 @@ class ListPanel(wx.Panel):
         self.toggle_output_view(is_web_mode=True)
         self.local_file_list.ShowSortIndicator(self.sort_col_local, self.sort_dir_local == 1)
         self.standard_log_list.ShowSortIndicator(self.sort_col_web, self.sort_dir_web == 1)
+
+    def update_discovered_count(self, count):
+        self.discovered_url_count = count
+        self.update_file_count()
 
     def _create_widgets(self):
         self.log_mode_panel = wx.Panel(self)
@@ -413,16 +418,17 @@ class ListPanel(wx.Panel):
         self.verbose_log_ctrl.Clear()
         self.standard_log_list.DeleteAllItems()
         self.scraped_files.clear()
+        self.discovered_url_count = 0
         self._update_delete_button_state()
         self.update_file_count()
 
     def update_file_count(self):
-        count = 0
         label = ""
         if self.standard_log_list.IsShown():
-            count = self.standard_log_list.GetItemCount()
-            if count > 0:
-                label = f"{count} file(s)"
+            saved_count = self.standard_log_list.GetItemCount()
+            total_known = saved_count + self.discovered_url_count
+            if total_known > 0:
+                label = f"{saved_count} saved / {total_known} discovered"
         elif self.local_file_list.IsShown():
             count = self.local_file_list.GetItemCount()
             if count > 0:
