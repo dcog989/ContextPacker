@@ -230,11 +230,7 @@ def crawl_website(config, log_queue, cancel_event):
                 driver.get(current_url)
 
                 pause_duration = random.uniform(config.min_pause, config.max_pause)
-                end_time = time.time() + pause_duration
-                while time.time() < end_time:
-                    if cancel_event.is_set():
-                        break
-                    time.sleep(0.1)
+                time.sleep(pause_duration)
 
                 if cancel_event.is_set():
                     break

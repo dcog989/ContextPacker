@@ -1,6 +1,7 @@
 .repomixignore
 repomix.config.json
 .vscode/
+.gemini/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

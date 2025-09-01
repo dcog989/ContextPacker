@@ -249,30 +249,36 @@ class App(wx.Frame):
                 self.main_panel.right_panel_container.Layout()
 
     def on_check_log_queue(self, event):
-        try:
-            while True:
+        log_messages = []
+        # Process up to 50 messages per tick to prevent UI event flooding
+        for _ in range(50):
+            try:
                 msg_obj = self.log_queue.get_nowait()
                 msg_type = msg_obj.get("type")
                 message = msg_obj.get("message", "")
 
                 if msg_type == "log":
-                    wx.CallAfter(self.log_verbose, message)
+                    log_messages.append(message)
                 elif msg_type == "file_saved":
                     wx.CallAfter(self.main_panel.list_panel.add_scraped_file, msg_obj["url"], msg_obj["path"], msg_obj["filename"])
                     verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
-                    wx.CallAfter(self.log_verbose, verbose_msg)
+                    log_messages.append(verbose_msg)
                 elif msg_type == "progress":
                     wx.CallAfter(self.main_panel.list_panel.progress_gauge.SetValue, msg_obj["value"])
                     wx.CallAfter(self.main_panel.list_panel.progress_gauge.SetRange, msg_obj["max_value"])
                 elif msg_type == "status":
                     wx.CallAfter(self.task_handler.handle_status, msg_obj.get("status"), msg_obj)
                 else:
-                    wx.CallAfter(self.log_verbose, str(message))
-        except queue.Empty:
-            pass
-        finally:
-            if not (self.worker_thread and self.worker_thread.is_alive()):
-                self._update_timestamp_label()
+                    log_messages.append(str(message))
+            except queue.Empty:
+                break  # No more messages
+
+        if log_messages:
+            full_log = "\n".join(log_messages)
+            wx.CallAfter(self.log_verbose, full_log)
+
+        if not (self.worker_thread and self.worker_thread.is_alive()):
+            self._update_timestamp_label()
 
     def _update_button_states(self):
         is_web_mode = self.main_panel.web_crawl_radio.GetValue()

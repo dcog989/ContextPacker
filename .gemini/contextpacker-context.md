@@ -51,6 +51,7 @@ core/version.py
 LICENSE
 pyi_rth_selenium.py
 README.md
+TODO.md
 ui/main_frame.py
 ui/panels.py
 ui/widgets/buttons.py
@@ -324,384 +325,6 @@ class CrawlerConfig:
     exclude_paths: list[str] = field(default_factory=list)
 ````
 
-## File: core/crawler.py
-````python
-from selenium import webdriver
-from selenium.common.exceptions import WebDriverException, TimeoutException
-from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.edge.service import Service as EdgeService
-from selenium.webdriver.firefox.service import Service as FirefoxService
-from bs4 import BeautifulSoup, Tag
-from urllib.parse import urlparse, urljoin
-from pathlib import Path
-import queue
-import time
-import random
-import re
-import os
-from markdownify import markdownify as md
-import platform
-import subprocess
-import threading
-
-
-def _get_browser_binary_path_windows(browser_name, log_queue):
-    """
-    Finds a browser's executable on Windows by checking registry keys
-    and common file system locations.
-    """
-    import winreg
-
-    search_config = {
-        "chrome": {
-            "reg_keys": [
-                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe"),
-                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe"),
-            ],
-            "fs_paths": [r"Google\Chrome\Application\chrome.exe", r"Chromium\Application\chrome.exe"],
-        },
-        "msedge": {
-            "reg_keys": [
-                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe"),
-                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe"),
-            ],
-            "fs_paths": [r"Microsoft\Edge\Application\msedge.exe"],
-        },
-        "firefox": {
-            "reg_keys": [
-                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe"),
-                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe"),
-            ],
-            "fs_paths": [r"Mozilla Firefox\firefox.exe", r"Firefox Developer Edition\firefox.exe"],
-        },
-    }
-
-    config = search_config.get(browser_name)
-    if not config:
-        return None
-
-    for hive, subkey in config["reg_keys"]:
-        try:
-            with winreg.OpenKey(hive, subkey) as key:
-                path, _ = winreg.QueryValueEx(key, "")
-                if Path(path).exists():
-                    return path
-        except FileNotFoundError:
-            continue
-        except Exception:
-            continue
-
-    base_paths = []
-    for var in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"]:
-        path = os.environ.get(var)
-        if path:
-            base_paths.append(Path(path))
-    if not os.environ.get("LOCALAPPDATA"):
-        base_paths.append(Path.home() / "AppData" / "Local")
-
-    for fs_path in config["fs_paths"]:
-        for base in base_paths:
-            full_path = base / fs_path
-            if full_path.exists():
-                return str(full_path)
-    return None
-
-
-def _get_browser_binary_path(browser_name, log_queue):
-    """
-    Finds the path to a browser's executable, checking common locations
-    for the current operating system.
-    """
-    system = platform.system()
-    if system == "Windows":
-        return _get_browser_binary_path_windows(browser_name, log_queue)
-
-    paths_to_check = []
-    if system == "Darwin":
-        path_map = {
-            "chrome": ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
-            "msedge": ["/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
-            "firefox": ["/Applications/Firefox.app/Contents/MacOS/firefox"],
-        }
-        paths_to_check = path_map.get(browser_name, [])
-    elif system == "Linux":
-        path_map = {
-            "chrome": ["/usr/bin/google-chrome", "/opt/google/chrome/chrome"],
-            "msedge": ["/usr/bin/microsoft-edge"],
-            "firefox": ["/usr/bin/firefox"],
-        }
-        paths_to_check = path_map.get(browser_name, [])
-
-    if paths_to_check:
-        for path in paths_to_check:
-            if Path(path).exists():
-                return path
-    return None
-
-
-def _get_driver_path(browser_name, log_queue):
-    """
-    Manually find the latest driver in the selenium cache, traversing
-    platform-specific subdirectories.
-    """
-    driver_map = {"chrome": "chromedriver", "msedge": "msedgedriver", "firefox": "geckodriver"}
-    driver_filename = driver_map.get(browser_name)
-    if not driver_filename:
-        return None
-
-    driver_filename += ".exe" if platform.system() == "Windows" else ""
-
-    try:
-        base_cache_path = Path.home() / ".cache" / "selenium"
-        driver_cache_path = base_cache_path / driver_map[browser_name]
-        if not driver_cache_path.is_dir():
-            return None
-
-        latest_version = "0"
-        latest_driver_path = None
-
-        for platform_dir in driver_cache_path.iterdir():
-            if platform_dir.is_dir():
-                for version_dir in platform_dir.iterdir():
-                    if version_dir.is_dir():
-                        if version_dir.name > latest_version:
-                            potential_driver = version_dir / driver_filename
-                            if potential_driver.exists():
-                                latest_version = version_dir.name
-                                latest_driver_path = potential_driver
-        if latest_driver_path:
-            return str(latest_driver_path)
-        else:
-            return None
-    except Exception:
-        return None
-
-
-def sanitize_filename(url):
-    parsed_url = urlparse(url)
-    path_segment = parsed_url.path
-    if not path_segment or path_segment.endswith("/"):
-        path_segment += "index"
-    if path_segment.startswith("/"):
-        path_segment = path_segment[1:]
-
-    filename = path_segment.replace("/", "-")
-    if not filename:
-        filename = "index"
-
-    return re.sub(r'[<>:"/\\|?*]', "_", filename)
-
-
-def crawl_website(config, log_queue, cancel_event):
-    """
-    Crawls a website based on the provided configuration.
-    """
-    log_queue.put({"type": "log", "message": "Searching for a compatible web browser..."})
-
-    chrome_options = webdriver.ChromeOptions()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--log-level=3")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-logging", "enable-automation"])
-    chrome_options.page_load_strategy = "eager"
-    chrome_binary_path = _get_browser_binary_path("chrome", log_queue)
-    if chrome_binary_path:
-        chrome_options.binary_location = chrome_binary_path
-
-    edge_options = webdriver.EdgeOptions()
-    edge_options.add_argument("--headless")
-    edge_options.add_argument("--log-level=3")
-    edge_options.add_experimental_option("excludeSwitches", ["enable-logging", "enable-automation"])
-    edge_options.page_load_strategy = "eager"
-    edge_binary_path = _get_browser_binary_path("msedge", log_queue)
-    if edge_binary_path:
-        edge_options.binary_location = edge_binary_path
-
-    firefox_options = webdriver.FirefoxOptions()
-    firefox_options.add_argument("--headless")
-    firefox_options.add_argument("--log-level=3")
-    firefox_options.page_load_strategy = "eager"
-    firefox_binary_path = _get_browser_binary_path("firefox", log_queue)
-    if firefox_binary_path:
-        firefox_options.binary_location = firefox_binary_path
-
-    creation_flags = 0
-    if platform.system() == "Windows":
-        creation_flags = subprocess.CREATE_NO_WINDOW
-
-    browsers_to_try = [
-        ("msedge", webdriver.Edge, edge_options, EdgeService),
-        ("chrome", webdriver.Chrome, chrome_options, ChromeService),
-        ("firefox", webdriver.Firefox, firefox_options, FirefoxService),
-    ]
-
-    driver = None
-    for name_key, driver_class, options, service_class in browsers_to_try:
-        try:
-            log_queue.put({"type": "log", "message": f"  -> Attempting to initialize {name_key}..."})
-            driver_path = _get_driver_path(name_key, log_queue)
-
-            if driver_path and Path(driver_path).exists():
-                service = service_class(executable_path=driver_path, creationflags=creation_flags)
-                driver = driver_class(service=service, options=options)
-                log_queue.put({"type": "log", "message": f"✔ Success: Using {name_key} for web crawling."})
-                break
-            else:
-                log_queue.put({"type": "log", "message": f"    Driver not found in cache for {name_key}, skipping."})
-
-        except WebDriverException as e:
-            log_queue.put({"type": "log", "message": f"  -> {name_key} not found or failed to start. Details: {e.msg}"})
-
-    if driver is None:
-        error_msg = "ERROR: Could not find a compatible web browser or its driver.\nPlease run the application from source once (`py app.py`) to allow Selenium to download the necessary drivers."
-        log_queue.put({"type": "status", "status": "error", "message": error_msg})
-        return
-
-    driver.set_page_load_timeout(5)
-
-    def _normalize_url(url):
-        url_no_fragment = url.split("#")[0]
-        if url_no_fragment.endswith(".html"):
-            url_no_fragment = url_no_fragment[:-5]
-        if url_no_fragment.endswith("/"):
-            url_no_fragment = url_no_fragment[:-1]
-        return url_no_fragment
-
-    def _url_matches_any_pattern(url, patterns):
-        parsed_url_path = urlparse(url).path
-        for pattern in patterns:
-            if pattern.startswith(("http://", "https://")):
-                if url.startswith(pattern):
-                    return True
-            elif pattern in parsed_url_path:
-                return True
-        return False
-
-    log_queue.put({"type": "log", "message": "Starting web crawl..."})
-
-    start_domain = urlparse(config.start_url).netloc
-
-    urls_to_visit = queue.Queue()
-    normalized_start_url = _normalize_url(config.start_url)
-    urls_to_visit.put((config.start_url, 0))
-    processed_urls = {normalized_start_url}
-
-    pages_saved = 0
-
-    try:
-        while not urls_to_visit.empty() and pages_saved < config.max_pages:
-            if cancel_event.is_set():
-                break
-
-            current_url, depth = urls_to_visit.get()
-            log_queue.put({"type": "progress", "value": pages_saved, "max_value": config.max_pages})
-
-            try:
-                log_queue.put({"type": "log", "message": f"GET (Depth {depth}): {current_url}"})
-                driver.get(current_url)
-
-                pause_duration = random.uniform(config.min_pause, config.max_pause)
-                end_time = time.time() + pause_duration
-                while time.time() < end_time:
-                    if cancel_event.is_set():
-                        break
-                    time.sleep(0.1)
-
-                if cancel_event.is_set():
-                    break
-
-                final_url_from_driver = driver.current_url
-                if config.ignore_queries:
-                    final_url_from_driver = final_url_from_driver.split("?")[0]
-
-                normalized_final_url = _normalize_url(final_url_from_driver)
-
-                if "404" in driver.title or "Not Found" in driver.title:
-                    log_queue.put({"type": "log", "message": f"  -> Skipping (404 Not Found): {final_url_from_driver}"})
-                    continue
-
-                processed_urls.add(normalized_final_url)
-                html_content = driver.page_source
-                soup = BeautifulSoup(html_content, "lxml")
-
-                for tag in soup(["script", "style"]):
-                    tag.decompose()
-                cleaned_html = str(soup)
-
-                filename = sanitize_filename(normalized_final_url) + ".md"
-                md_content = md(cleaned_html)
-
-                output_path = Path(config.output_dir) / filename
-                with open(output_path, "w", encoding="utf-8") as f:
-                    f.write(md_content)
-
-                pages_saved += 1
-                log_queue.put(
-                    {
-                        "type": "file_saved",
-                        "url": final_url_from_driver,
-                        "path": str(output_path),
-                        "filename": filename,
-                        "pages_saved": pages_saved,
-                        "max_pages": config.max_pages,
-                    }
-                )
-
-                if depth < config.crawl_depth:
-                    links = soup.find_all("a", href=True)
-                    for link in links:
-                        if not isinstance(link, Tag):
-                            continue
-
-                        href_attr = link.get("href")
-                        if not isinstance(href_attr, str):
-                            continue
-
-                        if not href_attr or href_attr.startswith(("mailto:", "javascript:", "#")):
-                            continue
-
-                        abs_link = urljoin(final_url_from_driver, href_attr)
-                        normalized_abs_link = _normalize_url(abs_link)
-
-                        parsed_link_domain = urlparse(abs_link).netloc
-                        if config.stay_on_subdomain and parsed_link_domain != start_domain:
-                            continue
-
-                        if config.exclude_paths and _url_matches_any_pattern(abs_link, config.exclude_paths):
-                            continue
-
-                        if config.include_paths and not _url_matches_any_pattern(abs_link, config.include_paths):
-                            continue
-
-                        if normalized_abs_link not in processed_urls:
-                            processed_urls.add(normalized_abs_link)
-                            urls_to_visit.put((abs_link, depth + 1))
-
-            except TimeoutException:
-                log_queue.put({"type": "log", "message": f"  -> TIMEOUT after 5s on: {current_url}"})
-                continue
-            except WebDriverException as e:
-                log_queue.put({"type": "log", "message": f"  -> SELENIUM ERROR: {e.msg}"})
-            except Exception as e:
-                log_queue.put({"type": "log", "message": f"  -> PROCESSING ERROR: {e}"})
-
-    finally:
-        if driver:
-
-            def _cleanup_driver(d):
-                try:
-                    d.quit()
-                except Exception:
-                    pass
-
-            cleanup_thread = threading.Thread(target=_cleanup_driver, args=(driver,), daemon=True)
-            cleanup_thread.start()
-
-    if not cancel_event.is_set():
-        log_queue.put({"type": "status", "status": "source_complete", "message": f"\nWeb scrape finished. Saved {pages_saved} pages."})
-    else:
-        log_queue.put({"type": "status", "status": "cancelled", "message": "Process cancelled by user."})
-````
-
 ## File: core/packager.py
 ````python
 from repomix import RepoProcessor, RepomixConfig
@@ -764,143 +387,6 @@ def run_repomix(source_dir, output_filepath, log_queue, cancel_event, repomix_st
         log_queue.put({"type": "status", "status": "error", "message": f"ERROR: An unexpected packaging error occurred: {e}"})
 ````
 
-## File: core/task_handler.py
-````python
-import wx
-from pathlib import Path
-import threading
-
-import core.actions as actions
-from ui.widgets.dialogs import ThemedMessageDialog
-
-
-class TaskHandler:
-    def __init__(self, app_instance):
-        self.app = app_instance
-
-    def start_download_task(self):
-        dl_button = self.app.main_panel.crawler_panel.download_button
-        self.app._toggle_ui_controls(False, widget_to_keep_enabled=dl_button)
-
-        start_url = self.app.main_panel.crawler_panel.start_url_ctrl.GetValue()
-        git_pattern = r"(\.git$)|(github\.com)|(gitlab\.com)|(bitbucket\.org)"
-        if __import__("re").search(git_pattern, start_url):
-            self.app.main_panel.copy_button.SetSuccessState(False)
-            wx.BeginBusyCursor()
-            self.app.is_task_running = True
-            self.app.main_panel.package_button.Disable()
-            self.app.main_panel.copy_button.Disable()
-            dl_button.label = "Cloning..."
-            dl_button.Refresh()
-            self.app.cancel_event = threading.Event()
-            actions.start_git_clone(self.app, self.app.cancel_event)
-            return
-
-        try:
-            self.app.main_panel.crawler_panel.get_crawler_config("dummy_dir_for_validation")
-        except (ValueError, AttributeError):
-            msg = "Invalid input. Please ensure 'Max Pages', 'Min Pause', and 'Max Pause' are whole numbers."
-            dlg = ThemedMessageDialog(self.app, msg, "Input Error", wx.OK | wx.ICON_ERROR, self.app.theme)
-            dlg.ShowModal()
-            dlg.Destroy()
-            self.app._toggle_ui_controls(True)
-            return
-
-        self.app.main_panel.copy_button.SetSuccessState(False)
-        wx.BeginBusyCursor()
-        self.app.is_task_running = True
-        self.app.main_panel.package_button.Disable()
-        self.app.main_panel.copy_button.Disable()
-        dl_button.label = "Stop!"
-        dl_button.Refresh()
-
-        self.app.cancel_event = threading.Event()
-        actions.start_download(self.app, self.app.cancel_event)
-
-    def start_package_task(self):
-        pkg_button = self.app.main_panel.package_button
-        self.app._toggle_ui_controls(False, widget_to_keep_enabled=pkg_button)
-
-        is_web_mode = self.app.main_panel.web_crawl_radio.GetValue()
-        if not is_web_mode:
-            source_dir = self.app.main_panel.local_panel.local_dir_ctrl.GetValue()
-            if not source_dir or not Path(source_dir).is_dir():
-                msg = f"The specified input directory is not valid:\n{source_dir}"
-                dlg = ThemedMessageDialog(self.app, msg, "Input Error", wx.OK | wx.ICON_ERROR, self.app.theme)
-                dlg.ShowModal()
-                dlg.Destroy()
-                self.app._toggle_ui_controls(True)
-                return
-
-        self.app.main_panel.copy_button.SetSuccessState(False)
-        wx.BeginBusyCursor()
-        self.app.is_task_running = True
-        self.app.main_panel.crawler_panel.download_button.Disable()
-        self.app.main_panel.copy_button.Disable()
-        pkg_button.label = "Stop!"
-        pkg_button.Refresh()
-
-        self.app.cancel_event = threading.Event()
-        actions.start_packaging(self.app, self.app.cancel_event)
-
-    def stop_current_task(self):
-        if self.app.cancel_event:
-            self.app.cancel_event.set()
-        self.app.main_panel.crawler_panel.download_button.Disable()
-        self.app.main_panel.package_button.Disable()
-        self.app.log_verbose("Stopping process...")
-
-    def handle_status(self, status, msg_obj):
-        message = msg_obj.get("message", "")
-        if status == "error":
-            dlg = ThemedMessageDialog(self.app, message, "An Error Occurred", wx.OK | wx.ICON_ERROR, self.app.theme)
-            dlg.ShowModal()
-            dlg.Destroy()
-        elif status == "clone_complete":
-            self.app.log_verbose("✔ Git clone successful.")
-            self.app.main_panel.local_panel.local_dir_ctrl.SetValue(msg_obj.get("path", ""))
-            self.app.main_panel.web_crawl_radio.SetValue(False)
-            self.app.main_panel.local_dir_radio.SetValue(True)
-            self.app.toggle_input_mode()
-        elif message:
-            self.app.log_verbose(message)
-
-        if status in ["source_complete", "package_complete", "cancelled", "error", "clone_complete"]:
-            if status == "package_complete":
-                self.app._open_output_folder()
-            self.cleanup_after_task()
-            self.app._update_button_states()
-
-    def cleanup_after_task(self):
-        if self.app.is_task_running:
-            wx.EndBusyCursor()
-            self.app.is_task_running = False
-
-        self.app._toggle_ui_controls(True)
-
-        self.app.worker_thread = None
-        self.app.cancel_event = None
-
-        if self.app.is_shutting_down:
-            wx.CallAfter(self.app.Destroy)
-            return
-
-        dl_button = self.app.main_panel.crawler_panel.download_button
-        dl_button.label = "Download & Convert"
-        dl_button.Enable()
-        dl_button.Refresh()
-
-        pkg_button = self.app.main_panel.package_button
-        pkg_button.label = "Package"
-        pkg_button.Enable()
-        pkg_button.Refresh()
-
-        self.app.main_panel.list_panel.progress_gauge.SetValue(0)
-        self.app._update_button_states()
-
-        self.app.timer.Start(100)
-````
-
 ## File: LICENSE
 ````
 MIT License
@@ -946,174 +432,26 @@ else:
     os.environ["SE_MANAGER_PATH"] = wdm_path
 ````
 
-## File: ui/widgets/buttons.py
-````python
-import wx
+## File: TODO.md
+````markdown
+# TO DO
+
+- the UI locks up while scraping web content - the user should be able to resize it
+
+- https://pypi.org/project/playwright/ instead of Selenium?
+
+- PySide6 instead of wxPython?
+
+= pathlib instead of Repomix??!!!
+
+---
+
+## PENDING
 
 
-class CustomButton(wx.Panel):
-    def __init__(self, parent, label, theme):
-        super().__init__(parent)
-        self.is_custom_themed = True
-        self.label = label
-        self.hover = False
-        self.theme = theme if theme else {}
-        self.color = None
-        self.hover_color = None
-        self.UpdateTheme(self.theme)
-        self.disabled_color = wx.Colour(128, 128, 128)
-        self.Bind(wx.EVT_PAINT, self.on_paint)
-        self.Bind(wx.EVT_LEFT_DOWN, self.on_mouse_down)
-        self.Bind(wx.EVT_ENTER_WINDOW, self.on_hover)
-        self.Bind(wx.EVT_LEAVE_WINDOW, self.on_hover)
-        self.SetMinSize(self.DoGetBestSize())
+---
 
-    def UpdateTheme(self, theme):
-        self.theme = theme
-        self.color = self.theme.get("accent_hover_color")
-        self.hover_color = self.theme.get("accent_color")
-        self.Refresh()
-
-    def on_paint(self, event):
-        dc = wx.PaintDC(self)
-        gc = wx.GraphicsContext.Create(dc)
-        width, height = self.GetSize()
-
-        bg_color = self.disabled_color
-        if self.IsEnabled():
-            if self.hover:
-                bg_color = self.hover_color if self.hover_color else self.color
-            else:
-                bg_color = self.color
-
-        if not bg_color:
-            bg_color = self.disabled_color
-
-        gc.SetBrush(wx.Brush(bg_color))
-        gc.SetPen(wx.TRANSPARENT_PEN)
-        gc.DrawRoundedRectangle(0, 0, width, height, 5)
-        gc.SetFont(self.GetFont(), wx.WHITE)
-        label_width, label_height, _, _ = gc.GetFullTextExtent(self.label)
-        gc.DrawText(self.label, (width - label_width) / 2, (height - label_height) / 2)
-
-    def on_mouse_down(self, event):
-        if self.IsEnabled():
-            wx.PostEvent(self, wx.CommandEvent(wx.EVT_BUTTON.typeId, self.GetId()))
-
-    def on_hover(self, event):
-        self.hover = event.Entering()
-        if self.hover and self.IsEnabled():
-            self.SetCursor(wx.Cursor(wx.CURSOR_HAND))
-        else:
-            self.SetCursor(wx.Cursor(wx.CURSOR_DEFAULT))
-        self.Refresh()
-
-    def DoGetBestSize(self):
-        dc = wx.ClientDC(self)
-        dc.SetFont(self.GetFont())
-        width, height = dc.GetTextExtent(self.label)
-        return wx.Size(width + 40, height + 20)
-
-    def Enable(self, enable=True):
-        result = super().Enable(enable)
-        self.Refresh()
-        return result
-
-    def Disable(self):
-        return self.Enable(False)
-
-
-class CustomSecondaryButton(CustomButton):
-    def __init__(self, parent, label, theme):
-        self.alert_active = False
-        super().__init__(parent, label, theme)
-
-    def UpdateTheme(self, theme):
-        self.theme = theme
-        palette = self.theme.get("palette", {})
-        self.color = palette.get("secondary_bg")
-        self.hover_color = self.theme.get("hover_color")
-        self.Refresh()
-
-    def SetAlertState(self, active=False):
-        self.alert_active = active
-        self.Refresh()
-
-    def on_paint(self, event):
-        dc = wx.PaintDC(self)
-        gc = wx.GraphicsContext.Create(dc)
-        width, height = self.GetSize()
-
-        bg_color = self.disabled_color
-        text_color = self.theme.get("palette", {}).get("fg")
-
-        if self.IsEnabled():
-            if self.alert_active:
-                bg_color = self.theme.get("danger_color")
-                text_color = wx.WHITE
-            elif self.hover:
-                bg_color = self.hover_color
-            else:
-                bg_color = self.color
-
-        if not bg_color:
-            bg_color = self.disabled_color
-        if not text_color:
-            text_color = wx.SystemSettings.GetColour(wx.SYS_COLOUR_BTNTEXT)
-
-        gc.SetBrush(wx.Brush(bg_color))
-        gc.SetPen(wx.TRANSPARENT_PEN)
-        gc.DrawRoundedRectangle(0, 0, width, height, 5)
-
-        gc.SetFont(self.GetFont(), text_color)
-        label_width, label_height, _, _ = gc.GetFullTextExtent(self.label)
-        gc.DrawText(self.label, (width - label_width) / 2, (height - label_height) / 2)
-
-
-class IconCustomButton(CustomSecondaryButton):
-    def __init__(self, parent, bitmap, theme, size):
-        self.bitmap = bitmap
-        self.success_active = False
-        super().__init__(parent, label="", theme=theme)
-        self.SetMinSize(size)
-        self.SetSize(size)
-
-    def UpdateTheme(self, theme):
-        super().UpdateTheme(theme)
-        self.success_color = self.theme.get("accent_color")
-        self.Refresh()
-
-    def SetSuccessState(self, active=False):
-        self.success_active = active
-        self.Refresh()
-
-    def on_paint(self, event):
-        dc = wx.PaintDC(self)
-        gc = wx.GraphicsContext.Create(dc)
-        width, height = self.GetSize()
-
-        bg_color = self.disabled_color
-        if self.IsEnabled():
-            if self.success_active:
-                bg_color = self.success_color
-            elif self.hover:
-                bg_color = self.hover_color
-            else:
-                bg_color = self.color
-
-        if not bg_color:
-            bg_color = self.disabled_color
-
-        gc.SetBrush(wx.Brush(bg_color))
-        gc.SetPen(wx.TRANSPARENT_PEN)
-        gc.DrawRoundedRectangle(0, 0, width, height, 5)
-
-        if self.bitmap and self.bitmap.IsOk():
-            bmp_w, bmp_h = self.bitmap.GetSize()
-            dc.DrawBitmap(self.bitmap, int((width - bmp_w) / 2), int((height - bmp_h) / 2), useMask=False)
-
-    def DoGetBestSize(self):
-        return self.GetSize()
+## FUTURE WORK
 ````
 
 ## File: ui/widgets/gauges.py
@@ -1645,612 +983,142 @@ marimo/_lsp/
 __marimo__/
 ````
 
-## File: app.py
+## File: core/task_handler.py
 ````python
 import wx
-import winreg
-import os
-import queue
-from datetime import datetime
 from pathlib import Path
-import ctypes
-import subprocess
-import platform
-import multiprocessing
-
-from ui.main_frame import MainFrame
-from ui.widgets.dialogs import AboutDialog
-import core.actions as actions
-from core.packager import resource_path
-from core.version import __version__
-from core.config_manager import get_config
-from core.task_handler import TaskHandler
-from core.utils import get_downloads_folder, set_title_bar_theme
-
-config = get_config()
-BINARY_FILE_PATTERNS = config.get("binary_file_patterns", [])
-
-
-class App(wx.Frame):
-    def __init__(self):
-        super().__init__(None, title="ContextPacker", size=wx.Size(1600, 950))
-
-        self.version = __version__
-        self.task_handler = TaskHandler(self)
-        self.temp_dir = None
-        self.final_output_path = None
-        self.filename_prefix = ""
-        self.log_queue = queue.Queue()
-        self.cancel_event = None
-        self.worker_thread = None
-        self.is_shutting_down = False
-        self.is_task_running = False
-        self.is_dark = self._is_dark_mode()
-        self.local_files_to_exclude = set()
-        self.exclude_list_last_line = 0
-
-        self._set_theme_palette()
-        self.main_panel = MainFrame(self)
-        self._apply_theme_to_widgets()
-        self._setup_timer()
-        self._set_icon()
-
-        self.toggle_input_mode()
-        self.Center()
-        self.Show()
-        self._set_title_bar_theme()
-        self.Bind(wx.EVT_CLOSE, self.on_close)
-
-    def _is_dark_mode(self):
-        system = platform.system()
-        if system == "Windows":
-            try:
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
-                value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-                winreg.CloseKey(key)
-                return value == 0
-            except Exception:
-                return False
-        elif system == "Darwin":
-            try:
-                cmd = "defaults read -g AppleInterfaceStyle"
-                p = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
-                return "Dark" in p.stdout
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                return False
-        else:
-            bg_color = wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW)
-            return bg_color.GetLuminance() < 0.5
-
-    def _set_theme_palette(self):
-        self.accent_color = wx.Colour("#3CB371")
-        self.accent_hover_color = wx.Colour("#2E8B57")
-        danger_color = wx.Colour("#B22222")
-
-        dark_colors = {"bg": wx.Colour(46, 46, 46), "fg": wx.Colour(224, 224, 224), "field": wx.Colour(60, 60, 60), "hover": wx.Colour(80, 80, 80), "secondary_bg": wx.Colour(80, 80, 80), "focus_field": wx.Colour(70, 70, 70)}
-        light_colors = {"bg": wx.SystemSettings.GetColour(wx.SYS_COLOUR_FRAMEBK), "fg": wx.SystemSettings.GetColour(wx.SYS_COLOUR_BTNTEXT), "field": wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW), "hover": wx.Colour(212, 212, 212), "secondary_bg": wx.Colour(225, 225, 225), "focus_field": wx.Colour(230, 245, 230)}
-
-        self.palette = dark_colors if self.is_dark else light_colors
-        self.hover_color = self.palette["hover"]
-        self.SetBackgroundColour(self.palette["bg"])
-
-        self.theme = {
-            "palette": self.palette,
-            "accent_color": self.accent_color,
-            "accent_hover_color": self.accent_hover_color,
-            "hover_color": self.hover_color,
-            "danger_color": danger_color,
-        }
-
-    def _apply_theme_to_widgets(self):
-        def set_colors_recursive(widget):
-            if hasattr(widget, "is_custom_themed") and widget.is_custom_themed:
-                widget.UpdateTheme(self.theme)
-                return
-
-            widget.SetBackgroundColour(self.palette["bg"])
-            widget.SetForegroundColour(self.palette["fg"])
-
-            if isinstance(widget, (wx.TextCtrl, wx.Choice, wx.SpinCtrl, wx.ListCtrl)):
-                widget.SetBackgroundColour(self.palette["field"])
-            if isinstance(widget, wx.StaticBox):
-                widget.SetForegroundColour(self.palette["fg"])
-
-            for child in widget.GetChildren():
-                set_colors_recursive(child)
-
-        set_colors_recursive(self.main_panel)
-        self.main_panel.list_panel.verbose_log_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
-        self.main_panel.list_panel.verbose_log_ctrl.text_ctrl.SetForegroundColour(self.palette["fg"])
-        self.main_panel.list_panel.standard_log_list.SetBackgroundColour(self.palette["field"])
-        self.main_panel.list_panel.standard_log_list.SetForegroundColour(self.palette["fg"])
-        self.main_panel.list_panel.local_file_list.SetBackgroundColour(self.palette["field"])
-        self.main_panel.list_panel.local_file_list.SetForegroundColour(self.palette["fg"])
-        self.main_panel.crawler_panel.include_paths_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
-        self.main_panel.crawler_panel.exclude_paths_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
-        self.main_panel.local_panel.local_exclude_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
-        self.main_panel.crawler_panel.about_text.SetForegroundColour(self.theme["accent_color"])
-        self.Refresh()
-
-    def _set_title_bar_theme(self):
-        set_title_bar_theme(self, self.is_dark)
-
-    def _setup_timer(self):
-        self.timer = wx.Timer(self)
-        self.Bind(wx.EVT_TIMER, self.on_check_log_queue, self.timer)
-        self.timer.Start(100)
-
-    def _set_icon(self):
-        try:
-            icon_path = resource_path("assets/icons/ContextPacker.ico")
-            if icon_path.exists():
-                self.SetIcon(wx.Icon(str(icon_path), wx.BITMAP_TYPE_ICO))
-        except Exception as e:
-            print(f"Warning: Failed to set icon: {e}")
-
-    def on_close(self, event):
-        self.timer.Stop()
-        if self.worker_thread and self.worker_thread.is_alive():
-            self.is_shutting_down = True
-            if self.cancel_event:
-                self.cancel_event.set()
-            self.log_verbose("Shutdown requested. Waiting for process to terminate...")
-            self.main_panel.crawler_panel.download_button.Disable()
-            self.main_panel.package_button.Disable()
-        else:
-            self.Destroy()
-
-    def _toggle_ui_controls(self, enable=True, widget_to_keep_enabled=None):
-        """Enable or disable all input controls, optionally keeping one enabled."""
-        widgets_to_toggle = [
-            self.main_panel.web_crawl_radio,
-            self.main_panel.local_dir_radio,
-            self.main_panel.crawler_panel,
-            self.main_panel.local_panel,
-            self.main_panel.output_filename_ctrl,
-            self.main_panel.output_format_choice,
-        ]
-        for widget in widgets_to_toggle:
-            if widget is not widget_to_keep_enabled:
-                widget.Enable(enable)
-
-    def on_toggle_input_mode(self, event):
-        self.toggle_input_mode()
-
-    def toggle_input_mode(self):
-        is_url_mode = self.main_panel.web_crawl_radio.GetValue()
-        self.main_panel.crawler_panel.Show(is_url_mode)
-        self.main_panel.local_panel.Show(not is_url_mode)
-        self.main_panel.list_panel.toggle_output_view(is_web_mode=is_url_mode)
-        self.main_panel.left_panel.Layout()
-        if not is_url_mode:
-            self.populate_local_file_list()
-        self._update_button_states()
-
-    def on_browse(self, event):
-        with wx.DirDialog(self, "Choose a directory:", style=wx.DD_DEFAULT_STYLE) as dlg:
-            if dlg.ShowModal() == wx.ID_OK:
-                path = dlg.GetPath()
-                self.main_panel.local_panel.local_dir_ctrl.SetValue(path)
-                self.populate_local_file_list()
-        self._update_button_states()
-        wx.CallAfter(self.main_panel.local_panel.local_dir_ctrl.SetFocus)
-
-    def on_local_filters_changed(self, event):
-        self.populate_local_file_list()
-        event.Skip()
-
-    def on_exclude_text_update(self, event):
-        def check_caret_and_refresh():
-            text_ctrl = self.main_panel.local_panel.local_exclude_ctrl.text_ctrl
-            pos = text_ctrl.GetInsertionPoint()
-            _, _, current_line = text_ctrl.PositionToXY(pos)
-            if current_line != self.exclude_list_last_line:
-                self.exclude_list_last_line = current_line
-                self.populate_local_file_list()
-                wx.CallAfter(text_ctrl.SetFocus)
-
-        wx.CallAfter(check_caret_and_refresh)
-        event.Skip()
-
-    def on_download_button_click(self, event):
-        if self.is_task_running:
-            self.on_stop_process()
-        else:
-            self.task_handler.start_download_task()
-
-    def on_package_button_click(self, event):
-        if self.is_task_running:
-            self.on_stop_process()
-        else:
-            self.task_handler.start_package_task()
-
-    def on_stop_process(self):
-        self.task_handler.stop_current_task()
-
-    def on_copy_to_clipboard(self, event):
-        if not self.final_output_path or not Path(self.final_output_path).exists():
-            self.log_verbose("ERROR: No output file found to copy.")
-            return
-
-        try:
-            with open(self.final_output_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            if wx.TheClipboard.Open():
-                wx.TheClipboard.SetData(wx.TextDataObject(content))
-                wx.TheClipboard.Close()
-                self.log_verbose(f"Copied {len(content):,} characters to clipboard.")
-                self.main_panel.copy_button.SetSuccessState(True)
-            else:
-                self.log_verbose("ERROR: Could not open clipboard.")
-        except Exception as e:
-            self.log_verbose(f"ERROR: Failed to copy to clipboard: {e}")
-
-    def _update_timestamp_label(self):
-        if self.main_panel and self.main_panel.output_timestamp_label:
-            timestamp_str = datetime.now().strftime("-%y%m%d-%H%M%S")
-            if self.main_panel.output_timestamp_label.GetLabel() != timestamp_str:
-                self.main_panel.output_timestamp_label.SetLabel(timestamp_str)
-                self.main_panel.right_panel_container.Layout()
-
-    def on_check_log_queue(self, event):
-        try:
-            while True:
-                msg_obj = self.log_queue.get_nowait()
-                msg_type = msg_obj.get("type")
-                message = msg_obj.get("message", "")
-
-                if msg_type == "log":
-                    wx.CallAfter(self.log_verbose, message)
-                elif msg_type == "file_saved":
-                    wx.CallAfter(self.main_panel.list_panel.add_scraped_file, msg_obj["url"], msg_obj["path"], msg_obj["filename"])
-                    verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
-                    wx.CallAfter(self.log_verbose, verbose_msg)
-                elif msg_type == "progress":
-                    wx.CallAfter(self.main_panel.list_panel.progress_gauge.SetValue, msg_obj["value"])
-                    wx.CallAfter(self.main_panel.list_panel.progress_gauge.SetRange, msg_obj["max_value"])
-                elif msg_type == "status":
-                    wx.CallAfter(self.task_handler.handle_status, msg_obj.get("status"), msg_obj)
-                else:
-                    wx.CallAfter(self.log_verbose, str(message))
-        except queue.Empty:
-            pass
-        finally:
-            if not (self.worker_thread and self.worker_thread.is_alive()):
-                self._update_timestamp_label()
-
-    def _update_button_states(self):
-        is_web_mode = self.main_panel.web_crawl_radio.GetValue()
-        package_ready = False
-        copy_ready = bool(self.final_output_path and Path(self.final_output_path).exists())
-
-        if is_web_mode:
-            if self.temp_dir and any(f.is_file() for f in Path(self.temp_dir).iterdir()):
-                package_ready = True
-        else:
-            if self.main_panel.local_panel.local_dir_ctrl.GetValue():
-                package_ready = True
-
-        self.main_panel.package_button.Enable(package_ready)
-        self.main_panel.copy_button.Enable(copy_ready)
-        self.main_panel.copy_button.SetSuccessState(copy_ready)
-
-    def log_verbose(self, message):
-        self.main_panel.list_panel.log_verbose(message)
-
-    def _open_output_folder(self):
-        if not self.final_output_path:
-            return
-        self.log_verbose("Opening output folder...")
-        system = platform.system()
-        try:
-            if system == "Windows":
-                subprocess.run(["explorer", "/select,", self.final_output_path], creationflags=0x08000000)
-            elif system == "Darwin":
-                subprocess.run(["open", "-R", self.final_output_path], check=True)
-            else:
-                subprocess.run(["xdg-open", str(Path(self.final_output_path).parent)], check=True)
-        except Exception as e:
-            self.log_verbose(f"ERROR: Could not open output folder: {e}")
-
-    def delete_scraped_file(self, filepath):
-        try:
-            os.remove(filepath)
-            self.log_verbose(f"Deleted file: {filepath}")
-            self._update_button_states()
-        except Exception as e:
-            self.log_verbose(f"ERROR: Could not delete file {filepath}: {e}")
-
-    def remove_local_file_from_package(self, rel_path):
-        self.local_files_to_exclude.add(rel_path)
-        self.log_verbose(f"Will exclude from package: {rel_path}")
-
-    def populate_local_file_list(self, include_subdirs=None):
-        if include_subdirs is None:
-            include_subdirs = self.main_panel.local_panel.include_subdirs_check.GetValue()
-
-        self.local_files_to_exclude.clear()
-        input_dir = self.main_panel.local_panel.local_dir_ctrl.GetValue()
-        if not input_dir or not Path(input_dir).is_dir():
-            self.main_panel.list_panel.populate_local_file_list([])
-            return
-
-        custom_excludes = [p.strip() for p in self.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
-        binary_excludes = BINARY_FILE_PATTERNS if self.main_panel.local_panel.hide_binaries_check.GetValue() else []
-
-        try:
-            files_to_show = actions.get_local_files(input_dir, include_subdirs, custom_excludes, binary_excludes)
-            wx.CallAfter(self.main_panel.list_panel.populate_local_file_list, files_to_show)
-        except Exception as e:
-            self.log_verbose(f"ERROR scanning directory: {e}")
-
-    def _get_downloads_folder(self):
-        return get_downloads_folder()
-
-    def on_show_about_dialog(self, event):
-        font_path = resource_path("assets/fonts/SourceCodePro-Regular.ttf")
-        with AboutDialog(self, self.theme, self.version, font_path, self.log_verbose) as dlg:
-            dlg.ShowModal()
-
-
-if __name__ == "__main__":
-    multiprocessing.freeze_support()
-    try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(1)
-    except Exception as e:
-        print(f"DIAG: DPI awareness setting failed. Error: {e}")
-
-    app = wx.App(False)
-    frame = App()
-    app.MainLoop()
-````
-
-## File: core/actions.py
-````python
 import threading
-import tempfile
-import shutil
-from pathlib import Path
-from datetime import datetime
-import wx
-import logging
-import os
-import fnmatch
-import subprocess
 
-from .crawler import crawl_website
-from .packager import run_repomix
+import core.actions as actions
+from ui.widgets.dialogs import ThemedMessageDialog
 
 
-def start_download(app, cancel_event):
-    """Initializes and starts the web crawling process in a new thread."""
-    app.main_panel.list_panel.clear_logs()
-    app.main_panel.list_panel.progress_gauge.SetValue(0)
+class TaskHandler:
+    def __init__(self, app_instance):
+        self.app = app_instance
 
-    if app.temp_dir and Path(app.temp_dir).is_dir():
-        shutil.rmtree(app.temp_dir)
+    def start_download_task(self):
+        print(f"DIAG: TaskHandler.start_download_task called at {__import__('datetime').datetime.now()}")
+        dl_button = self.app.main_panel.crawler_panel.download_button
+        self.app._toggle_ui_controls(False, widget_to_keep_enabled=dl_button)
 
-    app.temp_dir = tempfile.mkdtemp(prefix="ContextPacker-")
-    app.log_verbose(f"Created temporary directory: {app.temp_dir}")
-    crawler_config = app.main_panel.crawler_panel.get_crawler_config(app.temp_dir)
-
-    app.log_verbose("Starting url conversion...")
-    app.worker_thread = threading.Thread(target=crawl_website, args=(crawler_config, app.log_queue, cancel_event), daemon=True)
-    app.worker_thread.start()
-
-
-def start_git_clone(app, cancel_event):
-    """Initializes and starts a git clone process in a new thread."""
-    app.main_panel.list_panel.clear_logs()
-
-    if app.temp_dir and Path(app.temp_dir).is_dir():
-        shutil.rmtree(app.temp_dir)
-
-    app.temp_dir = tempfile.mkdtemp(prefix="ContextPacker-")
-    app.log_verbose(f"Created temporary directory for git clone: {app.temp_dir}")
-    url = app.main_panel.crawler_panel.start_url_ctrl.GetValue()
-
-    app.log_verbose(f"Starting git clone for {url}...")
-    app.worker_thread = threading.Thread(target=_clone_repo_worker, args=(url, app.temp_dir, app.log_queue, cancel_event), daemon=True)
-    app.worker_thread.start()
-
-
-def _clone_repo_worker(url, path, log_queue, cancel_event):
-    """Worker function to perform a git clone and stream output."""
-    if not shutil.which("git"):
-        error_msg = "ERROR: Git is not installed or not found in your system's PATH. Please install Git to use this feature."
-        log_queue.put({"type": "status", "status": "error", "message": error_msg})
-        return
-
-    try:
-        process = subprocess.Popen(
-            ["git", "clone", "--depth", "1", url, path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-        )
-
-        if not process.stdout:
-            process.wait()
-            log_queue.put({"type": "status", "status": "error", "message": "Failed to capture git clone output stream."})
+        start_url = self.app.main_panel.crawler_panel.start_url_ctrl.GetValue()
+        git_pattern = r"(\.git$)|(github\.com)|(gitlab\.com)|(bitbucket\.org)"
+        if __import__("re").search(git_pattern, start_url):
+            self.app.main_panel.copy_button.SetSuccessState(False)
+            wx.BeginBusyCursor()
+            self.app.is_task_running = True
+            self.app.main_panel.package_button.Disable()
+            self.app.main_panel.copy_button.Disable()
+            dl_button.label = "Cloning..."
+            dl_button.Refresh()
+            self.app.cancel_event = threading.Event()
+            actions.start_git_clone(self.app, self.app.cancel_event)
             return
 
-        while True:
-            if cancel_event.is_set():
-                process.terminate()
-                log_queue.put({"type": "status", "status": "cancelled", "message": "Git clone cancelled."})
+        try:
+            self.app.main_panel.crawler_panel.get_crawler_config("dummy_dir_for_validation")
+        except (ValueError, AttributeError):
+            msg = "Invalid input. Please ensure 'Max Pages', 'Min Pause', and 'Max Pause' are whole numbers."
+            dlg = ThemedMessageDialog(self.app, msg, "Input Error", wx.OK | wx.ICON_ERROR, self.app.theme)
+            dlg.ShowModal()
+            dlg.Destroy()
+            self.app._toggle_ui_controls(True)
+            return
+
+        self.app.main_panel.copy_button.SetSuccessState(False)
+        wx.BeginBusyCursor()
+        self.app.is_task_running = True
+        self.app.main_panel.package_button.Disable()
+        self.app.main_panel.copy_button.Disable()
+        dl_button.label = "Stop!"
+        dl_button.Refresh()
+
+        self.app.cancel_event = threading.Event()
+        actions.start_download(self.app, self.app.cancel_event)
+
+    def start_package_task(self):
+        pkg_button = self.app.main_panel.package_button
+        self.app._toggle_ui_controls(False, widget_to_keep_enabled=pkg_button)
+
+        is_web_mode = self.app.main_panel.web_crawl_radio.GetValue()
+        if not is_web_mode:
+            source_dir = self.app.main_panel.local_panel.local_dir_ctrl.GetValue()
+            if not source_dir or not Path(source_dir).is_dir():
+                msg = f"The specified input directory is not valid:\n{source_dir}"
+                dlg = ThemedMessageDialog(self.app, msg, "Input Error", wx.OK | wx.ICON_ERROR, self.app.theme)
+                dlg.ShowModal()
+                dlg.Destroy()
+                self.app._toggle_ui_controls(True)
                 return
 
-            output = process.stdout.readline()
-            if output == "" and process.poll() is not None:
-                break
-            if output:
-                log_queue.put({"type": "log", "message": output.strip()})
+        self.app.main_panel.copy_button.SetSuccessState(False)
+        wx.BeginBusyCursor()
+        self.app.is_task_running = True
+        self.app.main_panel.crawler_panel.download_button.Disable()
+        self.app.main_panel.copy_button.Disable()
+        pkg_button.label = "Stop!"
+        pkg_button.Refresh()
 
-        if process.returncode == 0:
-            log_queue.put({"type": "status", "status": "clone_complete", "path": path})
-        else:
-            log_queue.put({"type": "status", "status": "error", "message": "Git clone failed. Check the log for details."})
+        self.app.cancel_event = threading.Event()
+        actions.start_packaging(self.app, self.app.cancel_event)
 
-    except Exception as e:
-        log_queue.put({"type": "status", "status": "error", "message": f"An error occurred while cloning the repository: {e}"})
+    def stop_current_task(self):
+        if self.app.cancel_event:
+            self.app.cancel_event.set()
+        self.app.main_panel.crawler_panel.download_button.Disable()
+        self.app.main_panel.package_button.Disable()
+        self.app.log_verbose("Stopping process...")
 
+    def handle_status(self, status, msg_obj):
+        message = msg_obj.get("message", "")
+        if status == "error":
+            dlg = ThemedMessageDialog(self.app, message, "An Error Occurred", wx.OK | wx.ICON_ERROR, self.app.theme)
+            dlg.ShowModal()
+            dlg.Destroy()
+        elif status == "clone_complete":
+            self.app.log_verbose("✔ Git clone successful.")
+            self.app.main_panel.local_panel.local_dir_ctrl.SetValue(msg_obj.get("path", ""))
+            self.app.main_panel.web_crawl_radio.SetValue(False)
+            self.app.main_panel.local_dir_radio.SetValue(True)
+            self.app.toggle_input_mode()
+        elif message:
+            self.app.log_verbose(message)
 
-def start_packaging(app, cancel_event):
-    """Initializes and starts the packaging process in a new thread."""
-    is_web_mode = app.main_panel.web_crawl_radio.GetValue()
-    app.filename_prefix = app.main_panel.output_filename_ctrl.GetValue().strip() or "ContextPacker-package"
-    source_dir = ""
-    effective_excludes = []
+        if status in ["source_complete", "package_complete", "cancelled", "error", "clone_complete"]:
+            if status == "package_complete":
+                self.app._open_output_folder()
+            self.cleanup_after_task()
+            self.app._update_button_states()
 
-    if is_web_mode:
-        if not app.temp_dir or not any(Path(app.temp_dir).iterdir()):
-            app.log_verbose("ERROR: No downloaded content to package. Please run 'Download & Convert' first.")
+    def cleanup_after_task(self):
+        if self.app.is_task_running:
+            wx.EndBusyCursor()
+            self.app.is_task_running = False
+
+        self.app._toggle_ui_controls(True)
+
+        self.app.worker_thread = None
+        self.app.cancel_event = None
+
+        if self.app.is_shutting_down:
+            wx.CallAfter(self.app.Destroy)
             return
-        source_dir = app.temp_dir
-        effective_excludes = []
-    else:
-        source_dir = app.main_panel.local_panel.local_dir_ctrl.GetValue()
-        default_excludes = [p.strip() for p in app.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
 
-        additional_excludes = set()
-        if not app.main_panel.local_panel.include_subdirs_check.GetValue():
-            source_path = Path(source_dir)
-            if source_path.is_dir():
-                for item in source_path.iterdir():
-                    if item.is_dir():
-                        additional_excludes.add(f"{item.name}/")
+        dl_button = self.app.main_panel.crawler_panel.download_button
+        dl_button.label = "Download & Convert"
+        dl_button.Enable()
+        dl_button.Refresh()
 
-        effective_excludes = list(set(default_excludes) | app.local_files_to_exclude | additional_excludes)
+        pkg_button = self.app.main_panel.package_button
+        pkg_button.label = "Package"
+        pkg_button.Enable()
+        pkg_button.Refresh()
 
-    extension = app.main_panel.output_format_choice.GetStringSelection()
-    style_map = {".md": "markdown", ".txt": "plain", ".xml": "xml"}
-    repomix_style = style_map.get(extension, "markdown")
+        self.app.main_panel.list_panel.progress_gauge.SetValue(0)
+        self.app._update_button_states()
 
-    app.main_panel.list_panel.progress_gauge.SetValue(0)
-
-    _run_packaging_thread(app, source_dir, app.filename_prefix, effective_excludes, extension, repomix_style, cancel_event)
-
-
-def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, extension, repomix_style, cancel_event):
-    """Configures and runs the repomix packager in a worker thread."""
-    timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
-    downloads_path = app._get_downloads_folder()
-    output_basename = f"{filename_prefix}-{timestamp}{extension}"
-    app.final_output_path = str(Path(downloads_path) / output_basename)
-
-    app.log_verbose("\nStarting packaging process...")
-
-    class RepomixProgressHandler(logging.Handler):
-        def __init__(self, log_queue_ref, total_files_ref):
-            super().__init__()
-            self.log_queue = log_queue_ref
-            self.processed_count = 0
-            self.total_files = total_files_ref
-
-        def emit(self, record):
-            msg = self.format(record)
-            if "Processing file:" in msg:
-                self.processed_count += 1
-                progress_value = int((self.processed_count / self.total_files) * 100) if self.total_files > 0 else 0
-                wx.CallAfter(self.log_queue.put, {"type": "progress", "value": progress_value, "max_value": 100})
-
-            wx.CallAfter(self.log_queue.put, {"type": "log", "message": msg})
-
-    total_files_for_progress = 0
-    if Path(source_dir).is_dir():
-        current_exclude_paths = exclude_paths or []
-        for root, _, files in os.walk(source_dir):
-            for file in files:
-                file_path = Path(root) / file
-                rel_path_str = file_path.relative_to(source_dir).as_posix()
-                is_excluded = False
-                for pattern in current_exclude_paths:
-                    if fnmatch.fnmatch(rel_path_str, pattern):
-                        is_excluded = True
-                        break
-                if not is_excluded:
-                    total_files_for_progress += 1
-
-    progress_handler = RepomixProgressHandler(app.log_queue, total_files_for_progress)
-    progress_handler.setLevel(logging.INFO)
-
-    repomix_logger = logging.getLogger("repomix")
-    original_level = repomix_logger.level
-    repomix_logger.setLevel(logging.INFO)
-    repomix_logger.addHandler(progress_handler)
-
-    try:
-        app.worker_thread = threading.Thread(target=run_repomix, args=(source_dir, app.final_output_path, app.log_queue, cancel_event, repomix_style, exclude_paths), daemon=True)
-        app.worker_thread.start()
-    finally:
-        repomix_logger.removeHandler(progress_handler)
-        repomix_logger.setLevel(original_level)
-
-
-def populate_local_files(app):
-    """Convenience function to trigger a refresh of the local file list."""
-    app.populate_local_file_list()
-
-
-def get_local_files(root_dir, include_subdirs, custom_excludes, binary_excludes):
-    """
-    Scans a directory and returns a filtered list of files and folders,
-    pruning ignored directories for efficiency.
-    """
-    base_path = Path(root_dir)
-    if not base_path.is_dir():
-        return []
-
-    files_to_show = []
-    all_ignore_patterns = list(custom_excludes)
-
-    gitignore_path = base_path / ".gitignore"
-    if gitignore_path.is_file():
-        try:
-            with open(gitignore_path, "r", encoding="utf-8") as f:
-                gitignore_patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
-                all_ignore_patterns.extend(gitignore_patterns)
-        except Exception:
-            pass
-
-    all_ignore_patterns.extend(binary_excludes)
-
-    for root, dirnames, filenames in os.walk(str(base_path), topdown=True):
-        root_path = Path(root)
-        rel_root_path = root_path.relative_to(base_path)
-
-        ignored_dirs = set()
-        for d in dirnames:
-            dir_path_posix = (rel_root_path / d).as_posix()
-            if any(fnmatch.fnmatch(dir_path_posix, pattern) or fnmatch.fnmatch(f"{dir_path_posix}/", pattern) for pattern in all_ignore_patterns):
-                ignored_dirs.add(d)
-        dirnames[:] = [d for d in dirnames if d not in ignored_dirs]
-
-        for d in dirnames:
-            rel_path_str = (rel_root_path / d).as_posix()
-            files_to_show.append({"name": rel_path_str + "/", "type": "Folder", "size": 0, "size_str": "", "rel_path": rel_path_str + "/"})
-
-        for f in filenames:
-            rel_path = rel_root_path / f
-            if not any(fnmatch.fnmatch(rel_path.as_posix(), pattern) for pattern in all_ignore_patterns):
-                try:
-                    full_path = root_path / f
-                    size = full_path.stat().st_size
-                    size_str = f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
-                    rel_path_str = rel_path.as_posix()
-                    files_to_show.append({"name": rel_path_str, "type": "File", "size": size, "size_str": size_str, "rel_path": rel_path_str})
-                except (OSError, ValueError):
-                    continue
-
-        if not include_subdirs:
-            break
-
-    files_to_show.sort(key=lambda p: (p["type"] != "Folder", p["name"].lower()), reverse=True)
-    return files_to_show
+        self.app.timer.Start(100)
 ````
 
 ## File: core/utils.py
@@ -2471,6 +1339,1281 @@ class MainFrame(wx.Panel):
         self.list_panel.delete_button.SetAlertState(False)
         self.controller._update_button_states()
         self.list_panel.update_file_count()
+````
+
+## File: ui/widgets/buttons.py
+````python
+import wx
+
+
+class CustomButton(wx.Panel):
+    def __init__(self, parent, label, theme):
+        super().__init__(parent)
+        self.is_custom_themed = True
+        self.label = label
+        self.hover = False
+        self.theme = theme if theme else {}
+        self.color = None
+        self.hover_color = None
+        self.UpdateTheme(self.theme)
+        self.disabled_color = wx.Colour(128, 128, 128)
+        self.Bind(wx.EVT_PAINT, self.on_paint)
+        self.Bind(wx.EVT_LEFT_DOWN, self.on_mouse_down)
+        self.Bind(wx.EVT_ENTER_WINDOW, self.on_hover)
+        self.Bind(wx.EVT_LEAVE_WINDOW, self.on_hover)
+        self.SetMinSize(self.DoGetBestSize())
+
+    def UpdateTheme(self, theme):
+        self.theme = theme
+        self.color = self.theme.get("accent_hover_color")
+        self.hover_color = self.theme.get("accent_color")
+        self.Refresh()
+
+    def on_paint(self, event):
+        dc = wx.PaintDC(self)
+        gc = wx.GraphicsContext.Create(dc)
+        width, height = self.GetSize()
+
+        bg_color = self.disabled_color
+        if self.IsEnabled():
+            if self.hover:
+                bg_color = self.hover_color if self.hover_color else self.color
+            else:
+                bg_color = self.color
+
+        if not bg_color:
+            bg_color = self.disabled_color
+
+        gc.SetBrush(wx.Brush(bg_color))
+        gc.SetPen(wx.TRANSPARENT_PEN)
+        gc.DrawRoundedRectangle(0, 0, width, height, 5)
+        gc.SetFont(self.GetFont(), wx.WHITE)
+        label_width, label_height, _, _ = gc.GetFullTextExtent(self.label)
+        gc.DrawText(self.label, (width - label_width) / 2, (height - label_height) / 2)
+
+    def on_mouse_down(self, event):
+        print(f"DIAG: CustomButton on_mouse_down at {__import__('datetime').datetime.now()}")
+        if self.IsEnabled():
+            wx.PostEvent(self, wx.CommandEvent(wx.EVT_BUTTON.typeId, self.GetId()))
+
+    def on_hover(self, event):
+        self.hover = event.Entering()
+        if self.hover and self.IsEnabled():
+            self.SetCursor(wx.Cursor(wx.CURSOR_HAND))
+        else:
+            self.SetCursor(wx.Cursor(wx.CURSOR_DEFAULT))
+        self.Refresh()
+
+    def DoGetBestSize(self):
+        dc = wx.ClientDC(self)
+        dc.SetFont(self.GetFont())
+        width, height = dc.GetTextExtent(self.label)
+        return wx.Size(width + 40, height + 20)
+
+    def Enable(self, enable=True):
+        result = super().Enable(enable)
+        self.Refresh()
+        return result
+
+    def Disable(self):
+        return self.Enable(False)
+
+
+class CustomSecondaryButton(CustomButton):
+    def __init__(self, parent, label, theme):
+        self.alert_active = False
+        super().__init__(parent, label, theme)
+
+    def UpdateTheme(self, theme):
+        self.theme = theme
+        palette = self.theme.get("palette", {})
+        self.color = palette.get("secondary_bg")
+        self.hover_color = self.theme.get("hover_color")
+        self.Refresh()
+
+    def SetAlertState(self, active=False):
+        self.alert_active = active
+        self.Refresh()
+
+    def on_paint(self, event):
+        dc = wx.PaintDC(self)
+        gc = wx.GraphicsContext.Create(dc)
+        width, height = self.GetSize()
+
+        bg_color = self.disabled_color
+        text_color = self.theme.get("palette", {}).get("fg")
+
+        if self.IsEnabled():
+            if self.alert_active:
+                bg_color = self.theme.get("danger_color")
+                text_color = wx.WHITE
+            elif self.hover:
+                bg_color = self.hover_color
+            else:
+                bg_color = self.color
+
+        if not bg_color:
+            bg_color = self.disabled_color
+        if not text_color:
+            text_color = wx.SystemSettings.GetColour(wx.SYS_COLOUR_BTNTEXT)
+
+        gc.SetBrush(wx.Brush(bg_color))
+        gc.SetPen(wx.TRANSPARENT_PEN)
+        gc.DrawRoundedRectangle(0, 0, width, height, 5)
+
+        gc.SetFont(self.GetFont(), text_color)
+        label_width, label_height, _, _ = gc.GetFullTextExtent(self.label)
+        gc.DrawText(self.label, (width - label_width) / 2, (height - label_height) / 2)
+
+
+class IconCustomButton(CustomSecondaryButton):
+    def __init__(self, parent, bitmap, theme, size):
+        self.bitmap = bitmap
+        self.success_active = False
+        super().__init__(parent, label="", theme=theme)
+        self.SetMinSize(size)
+        self.SetSize(size)
+
+    def UpdateTheme(self, theme):
+        super().UpdateTheme(theme)
+        self.success_color = self.theme.get("accent_color")
+        self.Refresh()
+
+    def SetSuccessState(self, active=False):
+        self.success_active = active
+        self.Refresh()
+
+    def on_paint(self, event):
+        dc = wx.PaintDC(self)
+        gc = wx.GraphicsContext.Create(dc)
+        width, height = self.GetSize()
+
+        bg_color = self.disabled_color
+        if self.IsEnabled():
+            if self.success_active:
+                bg_color = self.success_color
+            elif self.hover:
+                bg_color = self.hover_color
+            else:
+                bg_color = self.color
+
+        if not bg_color:
+            bg_color = self.disabled_color
+
+        gc.SetBrush(wx.Brush(bg_color))
+        gc.SetPen(wx.TRANSPARENT_PEN)
+        gc.DrawRoundedRectangle(0, 0, width, height, 5)
+
+        if self.bitmap and self.bitmap.IsOk():
+            bmp_w, bmp_h = self.bitmap.GetSize()
+            dc.DrawBitmap(self.bitmap, int((width - bmp_w) / 2), int((height - bmp_h) / 2), useMask=False)
+
+    def DoGetBestSize(self):
+        return self.GetSize()
+````
+
+## File: ui/widgets/dialogs.py
+````python
+import wx
+import webbrowser
+from .buttons import CustomButton, CustomSecondaryButton
+from core.packager import resource_path
+from core.utils import set_title_bar_theme
+
+
+class ThemedMessageDialog(wx.Dialog):
+    def __init__(self, parent, message, title, style, theme):
+        super().__init__(parent, title=title)
+        self.theme = theme
+        self.SetBackgroundColour(self.theme["palette"]["bg"])
+        self.Bind(wx.EVT_SHOW, self.on_show)
+
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        message_text = wx.StaticText(self, label=message)
+        message_text.SetForegroundColour(self.theme["palette"]["fg"])
+        message_text.Wrap(350)
+        main_sizer.Add(message_text, flag=wx.ALL | wx.EXPAND, border=20)
+
+        button_sizer = self.CreateButtonSizer(style)
+        main_sizer.Add(button_sizer, flag=wx.ALIGN_RIGHT | wx.RIGHT | wx.BOTTOM, border=20)
+
+        self.SetSizerAndFit(main_sizer)
+        self.CenterOnParent()
+
+    def CreateButtonSizer(self, flags):
+        button_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        if flags & wx.YES_NO:
+            yes_button = CustomButton(self, "Yes", self.theme)
+            no_button = CustomSecondaryButton(self, "No", self.theme)
+            yes_button.Bind(wx.EVT_BUTTON, lambda e: self.EndModal(wx.ID_YES))
+            no_button.Bind(wx.EVT_BUTTON, lambda e: self.EndModal(wx.ID_NO))
+            button_sizer.Add(no_button, 0, wx.RIGHT, 10)
+            button_sizer.Add(yes_button, 0)
+        elif flags & wx.OK:
+            ok_button = CustomButton(self, "OK", self.theme)
+            ok_button.Bind(wx.EVT_BUTTON, lambda e: self.EndModal(wx.ID_OK))
+            button_sizer.Add(ok_button, 0)
+
+        return button_sizer
+
+    def on_show(self, event):
+        if event.IsShown():
+            wx.CallAfter(self._set_title_bar_theme)
+        event.Skip()
+
+    def _set_title_bar_theme(self):
+        is_dark = self.theme.get("palette", {}).get("bg").GetRed() < 128
+        set_title_bar_theme(self, is_dark)
+
+
+class AboutDialog(wx.Dialog):
+    def __init__(self, parent, theme, version, font_path, log_verbose_func):
+        super().__init__(parent, title="About ContextPacker")
+        self.theme = theme
+        self.version = version
+        self.font_path = font_path
+        self.log_verbose = log_verbose_func
+
+        self.SetBackgroundColour(self.theme["palette"]["bg"])
+        self.Bind(wx.EVT_SHOW, self.on_show)
+
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+        main_sizer.AddSpacer(20)
+
+        font_loaded = False
+        if self.font_path.exists():
+            if wx.Font.AddPrivateFont(str(self.font_path)):
+                font_loaded = True
+            else:
+                self.log_verbose("Warning: Failed to load custom font 'Source Code Pro'.")
+        else:
+            self.log_verbose(f"Warning: Custom font not found at '{self.font_path}'.")
+
+        logo_path = resource_path("assets/icons/ContextPacker-x128.png")
+        if logo_path.exists():
+            bmp = wx.Bitmap(str(logo_path), wx.BITMAP_TYPE_PNG)
+            logo_bitmap = wx.StaticBitmap(self, bitmap=wx.BitmapBundle(bmp))
+            main_sizer.Add(logo_bitmap, 0, wx.ALIGN_CENTER | wx.BOTTOM, 10)
+
+        title_font = wx.Font(22, wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
+        if font_loaded:
+            title_font.SetFaceName("Source Code Pro")
+
+        title_text = wx.StaticText(self, label="ContextPacker")
+        title_text.SetFont(title_font)
+        title_text.SetForegroundColour(self.theme["accent_color"])
+        main_sizer.Add(title_text, 0, wx.ALIGN_CENTER | wx.BOTTOM, 10)
+
+        description = "Scrape websites or select local files, then package into a single file, optimized for LLMs."
+        desc_font = self.GetFont()
+        desc_font.SetPointSize(12)
+        desc_text = wx.StaticText(self, label=description, style=wx.ALIGN_CENTER)
+        desc_text.SetFont(desc_font)
+        desc_text.SetForegroundColour(self.theme["palette"]["fg"])
+        main_sizer.Add(desc_text, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 15)
+
+        main_sizer.AddSpacer(15)
+
+        milkshake_font = wx.Font(12, wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_ITALIC, wx.FONTWEIGHT_NORMAL)
+        if font_loaded:
+            milkshake_font.SetFaceName("Source Code Pro")
+
+        milkshake_text = wx.StaticText(self, label='"I drink your milkshake! I drink it up!"')
+        milkshake_text.SetFont(milkshake_font)
+        milkshake_text.SetForegroundColour(self.theme["palette"]["fg"])
+        main_sizer.Add(milkshake_text, 0, wx.ALIGN_CENTER | wx.BOTTOM, 20)
+
+        version_font = self.GetFont()
+        version_font.SetPointSize(12)
+        version_text = wx.StaticText(self, label=f"Version {self.version}")
+        version_text.SetFont(version_font)
+        version_text.SetForegroundColour(self.theme["palette"]["fg"])
+        main_sizer.Add(version_text, 0, wx.ALIGN_CENTER | wx.BOTTOM, 10)
+
+        url = "https://github.com/dcog989/ContextPacker"
+        hyperlink = wx.StaticText(self, label=url)
+        link_font = self.GetFont()
+        link_font.SetPointSize(12)
+        link_font.SetUnderlined(True)
+        hyperlink.SetFont(link_font)
+        is_dark = self.theme.get("palette", {}).get("bg").GetRed() < 128
+        link_color = wx.Colour(102, 178, 255) if is_dark else wx.Colour(0, 102, 204)
+        hyperlink.SetForegroundColour(link_color)
+        hyperlink.SetCursor(wx.Cursor(wx.CURSOR_HAND))
+        hyperlink.Bind(wx.EVT_LEFT_DOWN, lambda event: webbrowser.open(url))
+        main_sizer.Add(hyperlink, 0, wx.ALIGN_CENTER | wx.BOTTOM, 20)
+
+        ok_button = CustomButton(self, "OK", self.theme)
+        ok_button.Bind(wx.EVT_BUTTON, lambda e: self.EndModal(wx.ID_OK))
+        main_sizer.Add(ok_button, 0, wx.ALIGN_CENTER | wx.BOTTOM, 20)
+
+        outer_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        outer_sizer.Add(main_sizer, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 40)
+
+        self.SetSizerAndFit(outer_sizer)
+        self.CenterOnParent()
+
+    def on_show(self, event):
+        if event.IsShown():
+            wx.CallAfter(self._set_title_bar_theme)
+        event.Skip()
+
+    def _set_title_bar_theme(self):
+        is_dark = self.theme.get("palette", {}).get("bg").GetRed() < 128
+        set_title_bar_theme(self, is_dark)
+````
+
+## File: app.py
+````python
+import wx
+import winreg
+import os
+import queue
+from datetime import datetime
+from pathlib import Path
+import ctypes
+import subprocess
+import platform
+import multiprocessing
+
+from ui.main_frame import MainFrame
+from ui.widgets.dialogs import AboutDialog
+import core.actions as actions
+from core.packager import resource_path
+from core.version import __version__
+from core.config_manager import get_config
+from core.task_handler import TaskHandler
+from core.utils import get_downloads_folder, set_title_bar_theme
+
+config = get_config()
+BINARY_FILE_PATTERNS = config.get("binary_file_patterns", [])
+
+
+class App(wx.Frame):
+    def __init__(self):
+        super().__init__(None, title="ContextPacker", size=wx.Size(1600, 950))
+
+        self.version = __version__
+        self.task_handler = TaskHandler(self)
+        self.temp_dir = None
+        self.final_output_path = None
+        self.filename_prefix = ""
+        self.log_queue = queue.Queue()
+        self.cancel_event = None
+        self.worker_thread = None
+        self.is_shutting_down = False
+        self.is_task_running = False
+        self.is_dark = self._is_dark_mode()
+        self.local_files_to_exclude = set()
+        self.exclude_list_last_line = 0
+
+        self._set_theme_palette()
+        self.main_panel = MainFrame(self)
+        self._apply_theme_to_widgets()
+        self._setup_timer()
+        self._set_icon()
+
+        self.toggle_input_mode()
+        self.Center()
+        self.Show()
+        self._set_title_bar_theme()
+        self.Bind(wx.EVT_CLOSE, self.on_close)
+
+    def _is_dark_mode(self):
+        system = platform.system()
+        if system == "Windows":
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+                value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+                winreg.CloseKey(key)
+                return value == 0
+            except Exception:
+                return False
+        elif system == "Darwin":
+            try:
+                cmd = "defaults read -g AppleInterfaceStyle"
+                p = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+                return "Dark" in p.stdout
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                return False
+        else:
+            bg_color = wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW)
+            return bg_color.GetLuminance() < 0.5
+
+    def _set_theme_palette(self):
+        self.accent_color = wx.Colour("#3CB371")
+        self.accent_hover_color = wx.Colour("#2E8B57")
+        danger_color = wx.Colour("#B22222")
+
+        dark_colors = {"bg": wx.Colour(46, 46, 46), "fg": wx.Colour(224, 224, 224), "field": wx.Colour(60, 60, 60), "hover": wx.Colour(80, 80, 80), "secondary_bg": wx.Colour(80, 80, 80), "focus_field": wx.Colour(70, 70, 70)}
+        light_colors = {"bg": wx.SystemSettings.GetColour(wx.SYS_COLOUR_FRAMEBK), "fg": wx.SystemSettings.GetColour(wx.SYS_COLOUR_BTNTEXT), "field": wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW), "hover": wx.Colour(212, 212, 212), "secondary_bg": wx.Colour(225, 225, 225), "focus_field": wx.Colour(230, 245, 230)}
+
+        self.palette = dark_colors if self.is_dark else light_colors
+        self.hover_color = self.palette["hover"]
+        self.SetBackgroundColour(self.palette["bg"])
+
+        self.theme = {
+            "palette": self.palette,
+            "accent_color": self.accent_color,
+            "accent_hover_color": self.accent_hover_color,
+            "hover_color": self.hover_color,
+            "danger_color": danger_color,
+        }
+
+    def _apply_theme_to_widgets(self):
+        def set_colors_recursive(widget):
+            if hasattr(widget, "is_custom_themed") and widget.is_custom_themed:
+                widget.UpdateTheme(self.theme)
+                return
+
+            widget.SetBackgroundColour(self.palette["bg"])
+            widget.SetForegroundColour(self.palette["fg"])
+
+            if isinstance(widget, (wx.TextCtrl, wx.Choice, wx.SpinCtrl, wx.ListCtrl)):
+                widget.SetBackgroundColour(self.palette["field"])
+            if isinstance(widget, wx.StaticBox):
+                widget.SetForegroundColour(self.palette["fg"])
+
+            for child in widget.GetChildren():
+                set_colors_recursive(child)
+
+        set_colors_recursive(self.main_panel)
+        self.main_panel.list_panel.verbose_log_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
+        self.main_panel.list_panel.verbose_log_ctrl.text_ctrl.SetForegroundColour(self.palette["fg"])
+        self.main_panel.list_panel.standard_log_list.SetBackgroundColour(self.palette["field"])
+        self.main_panel.list_panel.standard_log_list.SetForegroundColour(self.palette["fg"])
+        self.main_panel.list_panel.local_file_list.SetBackgroundColour(self.palette["field"])
+        self.main_panel.list_panel.local_file_list.SetForegroundColour(self.palette["fg"])
+        self.main_panel.crawler_panel.include_paths_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
+        self.main_panel.crawler_panel.exclude_paths_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
+        self.main_panel.local_panel.local_exclude_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
+        self.main_panel.crawler_panel.about_text.SetForegroundColour(self.theme["accent_color"])
+        self.Refresh()
+
+    def _set_title_bar_theme(self):
+        set_title_bar_theme(self, self.is_dark)
+
+    def _setup_timer(self):
+        self.timer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self.on_check_log_queue, self.timer)
+        self.timer.Start(100)
+
+    def _set_icon(self):
+        try:
+            icon_path = resource_path("assets/icons/ContextPacker.ico")
+            if icon_path.exists():
+                self.SetIcon(wx.Icon(str(icon_path), wx.BITMAP_TYPE_ICO))
+        except Exception as e:
+            print(f"Warning: Failed to set icon: {e}")
+
+    def on_close(self, event):
+        self.timer.Stop()
+        if self.worker_thread and self.worker_thread.is_alive():
+            self.is_shutting_down = True
+            if self.cancel_event:
+                self.cancel_event.set()
+            self.log_verbose("Shutdown requested. Waiting for process to terminate...")
+            self.main_panel.crawler_panel.download_button.Disable()
+            self.main_panel.package_button.Disable()
+        else:
+            self.Destroy()
+
+    def _toggle_ui_controls(self, enable=True, widget_to_keep_enabled=None):
+        """Enable or disable all input controls, optionally keeping one enabled."""
+        widgets_to_toggle = [
+            self.main_panel.web_crawl_radio,
+            self.main_panel.local_dir_radio,
+            self.main_panel.crawler_panel,
+            self.main_panel.local_panel,
+            self.main_panel.output_filename_ctrl,
+            self.main_panel.output_format_choice,
+        ]
+        for widget in widgets_to_toggle:
+            widget.Enable(enable)
+
+        if not enable and widget_to_keep_enabled:
+            widget_to_keep_enabled.Enable(True)
+
+    def on_toggle_input_mode(self, event):
+        self.toggle_input_mode()
+
+    def toggle_input_mode(self):
+        is_url_mode = self.main_panel.web_crawl_radio.GetValue()
+        self.main_panel.crawler_panel.Show(is_url_mode)
+        self.main_panel.local_panel.Show(not is_url_mode)
+        self.main_panel.list_panel.toggle_output_view(is_web_mode=is_url_mode)
+        self.main_panel.left_panel.Layout()
+        if not is_url_mode:
+            self.populate_local_file_list()
+        self._update_button_states()
+
+    def on_browse(self, event):
+        with wx.DirDialog(self, "Choose a directory:", style=wx.DD_DEFAULT_STYLE) as dlg:
+            if dlg.ShowModal() == wx.ID_OK:
+                path = dlg.GetPath()
+                self.main_panel.local_panel.local_dir_ctrl.SetValue(path)
+                self.populate_local_file_list()
+        self._update_button_states()
+        wx.CallAfter(self.main_panel.local_panel.local_dir_ctrl.SetFocus)
+
+    def on_local_filters_changed(self, event):
+        self.populate_local_file_list()
+        event.Skip()
+
+    def on_exclude_text_update(self, event):
+        def check_caret_and_refresh():
+            text_ctrl = self.main_panel.local_panel.local_exclude_ctrl.text_ctrl
+            pos = text_ctrl.GetInsertionPoint()
+            _, _, current_line = text_ctrl.PositionToXY(pos)
+            if current_line != self.exclude_list_last_line:
+                self.exclude_list_last_line = current_line
+                self.populate_local_file_list()
+                wx.CallAfter(text_ctrl.SetFocus)
+
+        wx.CallAfter(check_caret_and_refresh)
+        event.Skip()
+
+    def on_download_button_click(self, event):
+        print(f"DIAG: on_download_button_click called at {datetime.now()}")
+        if self.is_task_running:
+            self.on_stop_process()
+        else:
+            self.task_handler.start_download_task()
+
+    def on_package_button_click(self, event):
+        if self.is_task_running:
+            self.on_stop_process()
+        else:
+            self.task_handler.start_package_task()
+
+    def on_stop_process(self):
+        self.task_handler.stop_current_task()
+
+    def on_copy_to_clipboard(self, event):
+        if not self.final_output_path or not Path(self.final_output_path).exists():
+            self.log_verbose("ERROR: No output file found to copy.")
+            return
+
+        try:
+            with open(self.final_output_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            if wx.TheClipboard.Open():
+                wx.TheClipboard.SetData(wx.TextDataObject(content))
+                wx.TheClipboard.Close()
+                self.log_verbose(f"Copied {len(content):,} characters to clipboard.")
+                self.main_panel.copy_button.SetSuccessState(True)
+            else:
+                self.log_verbose("ERROR: Could not open clipboard.")
+        except Exception as e:
+            self.log_verbose(f"ERROR: Failed to copy to clipboard: {e}")
+
+    def _update_timestamp_label(self):
+        if self.main_panel and self.main_panel.output_timestamp_label:
+            timestamp_str = datetime.now().strftime("-%y%m%d-%H%M%S")
+            if self.main_panel.output_timestamp_label.GetLabel() != timestamp_str:
+                self.main_panel.output_timestamp_label.SetLabel(timestamp_str)
+                self.main_panel.right_panel_container.Layout()
+
+    def on_check_log_queue(self, event):
+        log_messages = []
+        # Process up to 50 messages per tick to prevent UI event flooding
+        for _ in range(50):
+            try:
+                msg_obj = self.log_queue.get_nowait()
+                msg_type = msg_obj.get("type")
+                message = msg_obj.get("message", "")
+
+                if msg_type == "log":
+                    log_messages.append(message)
+                elif msg_type == "file_saved":
+                    wx.CallAfter(self.main_panel.list_panel.add_scraped_file, msg_obj["url"], msg_obj["path"], msg_obj["filename"])
+                    verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
+                    log_messages.append(verbose_msg)
+                elif msg_type == "progress":
+                    wx.CallAfter(self.main_panel.list_panel.progress_gauge.SetValue, msg_obj["value"])
+                    wx.CallAfter(self.main_panel.list_panel.progress_gauge.SetRange, msg_obj["max_value"])
+                elif msg_type == "status":
+                    wx.CallAfter(self.task_handler.handle_status, msg_obj.get("status"), msg_obj)
+                else:
+                    log_messages.append(str(message))
+            except queue.Empty:
+                break  # No more messages
+
+        if log_messages:
+            full_log = "\n".join(log_messages)
+            wx.CallAfter(self.log_verbose, full_log)
+
+        if not (self.worker_thread and self.worker_thread.is_alive()):
+            self._update_timestamp_label()
+
+    def _update_button_states(self):
+        is_web_mode = self.main_panel.web_crawl_radio.GetValue()
+        package_ready = False
+        copy_ready = bool(self.final_output_path and Path(self.final_output_path).exists())
+
+        if is_web_mode:
+            if self.temp_dir and any(f.is_file() for f in Path(self.temp_dir).iterdir()):
+                package_ready = True
+        else:
+            if self.main_panel.local_panel.local_dir_ctrl.GetValue():
+                package_ready = True
+
+        self.main_panel.package_button.Enable(package_ready)
+        self.main_panel.copy_button.Enable(copy_ready)
+        self.main_panel.copy_button.SetSuccessState(copy_ready)
+
+    def log_verbose(self, message):
+        self.main_panel.list_panel.log_verbose(message)
+
+    def _open_output_folder(self):
+        if not self.final_output_path:
+            return
+        self.log_verbose("Opening output folder...")
+        system = platform.system()
+        try:
+            if system == "Windows":
+                subprocess.run(["explorer", "/select,", self.final_output_path], creationflags=0x08000000)
+            elif system == "Darwin":
+                subprocess.run(["open", "-R", self.final_output_path], check=True)
+            else:
+                subprocess.run(["xdg-open", str(Path(self.final_output_path).parent)], check=True)
+        except Exception as e:
+            self.log_verbose(f"ERROR: Could not open output folder: {e}")
+
+    def delete_scraped_file(self, filepath):
+        try:
+            os.remove(filepath)
+            self.log_verbose(f"Deleted file: {filepath}")
+            self._update_button_states()
+        except Exception as e:
+            self.log_verbose(f"ERROR: Could not delete file {filepath}: {e}")
+
+    def remove_local_file_from_package(self, rel_path):
+        self.local_files_to_exclude.add(rel_path)
+        self.log_verbose(f"Will exclude from package: {rel_path}")
+
+    def populate_local_file_list(self, include_subdirs=None):
+        if include_subdirs is None:
+            include_subdirs = self.main_panel.local_panel.include_subdirs_check.GetValue()
+
+        self.local_files_to_exclude.clear()
+        input_dir = self.main_panel.local_panel.local_dir_ctrl.GetValue()
+        if not input_dir or not Path(input_dir).is_dir():
+            self.main_panel.list_panel.populate_local_file_list([])
+            return
+
+        custom_excludes = [p.strip() for p in self.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
+        binary_excludes = BINARY_FILE_PATTERNS if self.main_panel.local_panel.hide_binaries_check.GetValue() else []
+
+        try:
+            files_to_show = actions.get_local_files(input_dir, include_subdirs, custom_excludes, binary_excludes)
+            wx.CallAfter(self.main_panel.list_panel.populate_local_file_list, files_to_show)
+        except Exception as e:
+            self.log_verbose(f"ERROR scanning directory: {e}")
+
+    def _get_downloads_folder(self):
+        return get_downloads_folder()
+
+    def on_show_about_dialog(self, event):
+        font_path = resource_path("assets/fonts/SourceCodePro-Regular.ttf")
+        with AboutDialog(self, self.theme, self.version, font_path, self.log_verbose) as dlg:
+            dlg.ShowModal()
+
+
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception as e:
+        print(f"DIAG: DPI awareness setting failed. Error: {e}")
+
+    app = wx.App(False)
+    frame = App()
+    app.MainLoop()
+````
+
+## File: core/actions.py
+````python
+import threading
+import tempfile
+import shutil
+from pathlib import Path
+from datetime import datetime
+import wx
+import logging
+import os
+import fnmatch
+import subprocess
+
+from .crawler import crawl_website
+from .packager import run_repomix
+
+
+def start_download(app, cancel_event):
+    """Initializes and starts the web crawling process in a new thread."""
+    print(f"DIAG: actions.start_download called at {datetime.now()}")
+    app.main_panel.list_panel.clear_logs()
+    app.main_panel.list_panel.progress_gauge.SetValue(0)
+
+    if app.temp_dir and Path(app.temp_dir).is_dir():
+        shutil.rmtree(app.temp_dir)
+
+    app.temp_dir = tempfile.mkdtemp(prefix="ContextPacker-")
+    app.log_verbose(f"Created temporary directory: {app.temp_dir}")
+    crawler_config = app.main_panel.crawler_panel.get_crawler_config(app.temp_dir)
+
+    app.log_verbose("Starting url conversion...")
+    app.worker_thread = threading.Thread(target=crawl_website, args=(crawler_config, app.log_queue, cancel_event), daemon=True)
+    print(f"DIAG: Worker thread created. Starting now at {datetime.now()}.")
+    app.worker_thread.start()
+
+
+def start_git_clone(app, cancel_event):
+    """Initializes and starts a git clone process in a new thread."""
+    app.main_panel.list_panel.clear_logs()
+
+    if app.temp_dir and Path(app.temp_dir).is_dir():
+        shutil.rmtree(app.temp_dir)
+
+    app.temp_dir = tempfile.mkdtemp(prefix="ContextPacker-")
+    app.log_verbose(f"Created temporary directory for git clone: {app.temp_dir}")
+    url = app.main_panel.crawler_panel.start_url_ctrl.GetValue()
+
+    app.log_verbose(f"Starting git clone for {url}...")
+    app.worker_thread = threading.Thread(target=_clone_repo_worker, args=(url, app.temp_dir, app.log_queue, cancel_event), daemon=True)
+    app.worker_thread.start()
+
+
+def _clone_repo_worker(url, path, log_queue, cancel_event):
+    """Worker function to perform a git clone and stream output."""
+    if not shutil.which("git"):
+        error_msg = "ERROR: Git is not installed or not found in your system's PATH. Please install Git to use this feature."
+        log_queue.put({"type": "status", "status": "error", "message": error_msg})
+        return
+
+    try:
+        process = subprocess.Popen(
+            ["git", "clone", "--depth", "1", url, path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+
+        if not process.stdout:
+            process.wait()
+            log_queue.put({"type": "status", "status": "error", "message": "Failed to capture git clone output stream."})
+            return
+
+        while True:
+            if cancel_event.is_set():
+                process.terminate()
+                log_queue.put({"type": "status", "status": "cancelled", "message": "Git clone cancelled."})
+                return
+
+            output = process.stdout.readline()
+            if output == "" and process.poll() is not None:
+                break
+            if output:
+                log_queue.put({"type": "log", "message": output.strip()})
+
+        if process.returncode == 0:
+            log_queue.put({"type": "status", "status": "clone_complete", "path": path})
+        else:
+            log_queue.put({"type": "status", "status": "error", "message": "Git clone failed. Check the log for details."})
+
+    except Exception as e:
+        log_queue.put({"type": "status", "status": "error", "message": f"An error occurred while cloning the repository: {e}"})
+
+
+def start_packaging(app, cancel_event):
+    """Initializes and starts the packaging process in a new thread."""
+    is_web_mode = app.main_panel.web_crawl_radio.GetValue()
+    app.filename_prefix = app.main_panel.output_filename_ctrl.GetValue().strip() or "ContextPacker-package"
+    source_dir = ""
+    effective_excludes = []
+
+    if is_web_mode:
+        if not app.temp_dir or not any(Path(app.temp_dir).iterdir()):
+            app.log_verbose("ERROR: No downloaded content to package. Please run 'Download & Convert' first.")
+            return
+        source_dir = app.temp_dir
+        effective_excludes = []
+    else:
+        source_dir = app.main_panel.local_panel.local_dir_ctrl.GetValue()
+        default_excludes = [p.strip() for p in app.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
+
+        additional_excludes = set()
+        if not app.main_panel.local_panel.include_subdirs_check.GetValue():
+            source_path = Path(source_dir)
+            if source_path.is_dir():
+                for item in source_path.iterdir():
+                    if item.is_dir():
+                        additional_excludes.add(f"{item.name}/")
+
+        effective_excludes = list(set(default_excludes) | app.local_files_to_exclude | additional_excludes)
+
+    extension = app.main_panel.output_format_choice.GetStringSelection()
+    style_map = {".md": "markdown", ".txt": "plain", ".xml": "xml"}
+    repomix_style = style_map.get(extension, "markdown")
+
+    app.main_panel.list_panel.progress_gauge.SetValue(0)
+
+    _run_packaging_thread(app, source_dir, app.filename_prefix, effective_excludes, extension, repomix_style, cancel_event)
+
+
+def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, extension, repomix_style, cancel_event):
+    """Configures and runs the repomix packager in a worker thread."""
+    timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
+    downloads_path = app._get_downloads_folder()
+    output_basename = f"{filename_prefix}-{timestamp}{extension}"
+    app.final_output_path = str(Path(downloads_path) / output_basename)
+
+    app.log_verbose("\nStarting packaging process...")
+
+    class RepomixProgressHandler(logging.Handler):
+        def __init__(self, log_queue_ref, total_files_ref):
+            super().__init__()
+            self.log_queue = log_queue_ref
+            self.processed_count = 0
+            self.total_files = total_files_ref
+
+        def emit(self, record):
+            msg = self.format(record)
+            if "Processing file:" in msg:
+                self.processed_count += 1
+                progress_value = int((self.processed_count / self.total_files) * 100) if self.total_files > 0 else 0
+                wx.CallAfter(self.log_queue.put, {"type": "progress", "value": progress_value, "max_value": 100})
+
+            wx.CallAfter(self.log_queue.put, {"type": "log", "message": msg})
+
+    total_files_for_progress = 0
+    if Path(source_dir).is_dir():
+        current_exclude_paths = exclude_paths or []
+        for root, _, files in os.walk(source_dir):
+            for file in files:
+                file_path = Path(root) / file
+                rel_path_str = file_path.relative_to(source_dir).as_posix()
+                is_excluded = False
+                for pattern in current_exclude_paths:
+                    if fnmatch.fnmatch(rel_path_str, pattern):
+                        is_excluded = True
+                        break
+                if not is_excluded:
+                    total_files_for_progress += 1
+
+    progress_handler = RepomixProgressHandler(app.log_queue, total_files_for_progress)
+    progress_handler.setLevel(logging.INFO)
+
+    repomix_logger = logging.getLogger("repomix")
+    original_level = repomix_logger.level
+    repomix_logger.setLevel(logging.INFO)
+    repomix_logger.addHandler(progress_handler)
+
+    try:
+        app.worker_thread = threading.Thread(target=run_repomix, args=(source_dir, app.final_output_path, app.log_queue, cancel_event, repomix_style, exclude_paths), daemon=True)
+        app.worker_thread.start()
+    finally:
+        repomix_logger.removeHandler(progress_handler)
+        repomix_logger.setLevel(original_level)
+
+
+def populate_local_files(app):
+    """Convenience function to trigger a refresh of the local file list."""
+    app.populate_local_file_list()
+
+
+def get_local_files(root_dir, include_subdirs, custom_excludes, binary_excludes):
+    """
+    Scans a directory and returns a filtered list of files and folders,
+    pruning ignored directories for efficiency.
+    """
+    base_path = Path(root_dir)
+    if not base_path.is_dir():
+        return []
+
+    files_to_show = []
+    all_ignore_patterns = list(custom_excludes)
+
+    gitignore_path = base_path / ".gitignore"
+    if gitignore_path.is_file():
+        try:
+            with open(gitignore_path, "r", encoding="utf-8") as f:
+                gitignore_patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+                all_ignore_patterns.extend(gitignore_patterns)
+        except Exception:
+            pass
+
+    all_ignore_patterns.extend(binary_excludes)
+
+    for root, dirnames, filenames in os.walk(str(base_path), topdown=True):
+        root_path = Path(root)
+        rel_root_path = root_path.relative_to(base_path)
+
+        ignored_dirs = set()
+        for d in dirnames:
+            dir_path_posix = (rel_root_path / d).as_posix()
+            if any(fnmatch.fnmatch(dir_path_posix, pattern) or fnmatch.fnmatch(f"{dir_path_posix}/", pattern) for pattern in all_ignore_patterns):
+                ignored_dirs.add(d)
+        dirnames[:] = [d for d in dirnames if d not in ignored_dirs]
+
+        for d in dirnames:
+            rel_path_str = (rel_root_path / d).as_posix()
+            files_to_show.append({"name": rel_path_str + "/", "type": "Folder", "size": 0, "size_str": "", "rel_path": rel_path_str + "/"})
+
+        for f in filenames:
+            rel_path = rel_root_path / f
+            if not any(fnmatch.fnmatch(rel_path.as_posix(), pattern) for pattern in all_ignore_patterns):
+                try:
+                    full_path = root_path / f
+                    size = full_path.stat().st_size
+                    size_str = f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
+                    rel_path_str = rel_path.as_posix()
+                    files_to_show.append({"name": rel_path_str, "type": "File", "size": size, "size_str": size_str, "rel_path": rel_path_str})
+                except (OSError, ValueError):
+                    continue
+
+        if not include_subdirs:
+            break
+
+    files_to_show.sort(key=lambda p: (p["type"] != "Folder", p["name"].lower()), reverse=True)
+    return files_to_show
+````
+
+## File: core/crawler.py
+````python
+from selenium import webdriver
+from selenium.common.exceptions import WebDriverException, TimeoutException
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.edge.service import Service as EdgeService
+from selenium.webdriver.firefox.service import Service as FirefoxService
+from bs4 import BeautifulSoup, Tag
+from urllib.parse import urlparse, urljoin
+from pathlib import Path
+import queue
+import time
+import random
+import re
+import os
+from markdownify import markdownify as md
+import platform
+import subprocess
+import threading
+
+
+def _get_browser_binary_path_windows(browser_name, log_queue):
+    """
+    Finds a browser's executable on Windows by checking registry keys
+    and common file system locations.
+    """
+    import winreg
+
+    search_config = {
+        "chrome": {
+            "reg_keys": [
+                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe"),
+                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe"),
+            ],
+            "fs_paths": [r"Google\Chrome\Application\chrome.exe", r"Chromium\Application\chrome.exe"],
+        },
+        "msedge": {
+            "reg_keys": [
+                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe"),
+                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe"),
+            ],
+            "fs_paths": [r"Microsoft\Edge\Application\msedge.exe"],
+        },
+        "firefox": {
+            "reg_keys": [
+                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe"),
+                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe"),
+            ],
+            "fs_paths": [r"Mozilla Firefox\firefox.exe", r"Firefox Developer Edition\firefox.exe"],
+        },
+    }
+
+    config = search_config.get(browser_name)
+    if not config:
+        return None
+
+    for hive, subkey in config["reg_keys"]:
+        try:
+            with winreg.OpenKey(hive, subkey) as key:
+                path, _ = winreg.QueryValueEx(key, "")
+                if Path(path).exists():
+                    return path
+        except FileNotFoundError:
+            continue
+        except Exception:
+            continue
+
+    base_paths = []
+    for var in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"]:
+        path = os.environ.get(var)
+        if path:
+            base_paths.append(Path(path))
+    if not os.environ.get("LOCALAPPDATA"):
+        base_paths.append(Path.home() / "AppData" / "Local")
+
+    for fs_path in config["fs_paths"]:
+        for base in base_paths:
+            full_path = base / fs_path
+            if full_path.exists():
+                return str(full_path)
+    return None
+
+
+def _get_browser_binary_path(browser_name, log_queue):
+    """
+    Finds the path to a browser's executable, checking common locations
+    for the current operating system.
+    """
+    system = platform.system()
+    if system == "Windows":
+        return _get_browser_binary_path_windows(browser_name, log_queue)
+
+    paths_to_check = []
+    if system == "Darwin":
+        path_map = {
+            "chrome": ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
+            "msedge": ["/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
+            "firefox": ["/Applications/Firefox.app/Contents/MacOS/firefox"],
+        }
+        paths_to_check = path_map.get(browser_name, [])
+    elif system == "Linux":
+        path_map = {
+            "chrome": ["/usr/bin/google-chrome", "/opt/google/chrome/chrome"],
+            "msedge": ["/usr/bin/microsoft-edge"],
+            "firefox": ["/usr/bin/firefox"],
+        }
+        paths_to_check = path_map.get(browser_name, [])
+
+    if paths_to_check:
+        for path in paths_to_check:
+            if Path(path).exists():
+                return path
+    return None
+
+
+def sanitize_filename(url):
+    parsed_url = urlparse(url)
+    path_segment = parsed_url.path
+    if not path_segment or path_segment.endswith("/"):
+        path_segment += "index"
+    if path_segment.startswith("/"):
+        path_segment = path_segment[1:]
+
+    filename = path_segment.replace("/", "-")
+    if not filename:
+        filename = "index"
+
+    return re.sub(r'[<>:"/\\|?*]', "_", filename)
+
+
+def crawl_website(config, log_queue, cancel_event):
+    """
+    Crawls a website based on the provided configuration.
+    """
+    print(f"DIAG: crawl_website thread started at {__import__('datetime').datetime.now()}")
+    log_queue.put({"type": "log", "message": "Searching for a compatible web browser..."})
+
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--log-level=3")
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-logging", "enable-automation"])
+    chrome_options.page_load_strategy = "eager"
+    chrome_binary_path = _get_browser_binary_path("chrome", log_queue)
+    if chrome_binary_path:
+        chrome_options.binary_location = chrome_binary_path
+
+    edge_options = webdriver.EdgeOptions()
+    edge_options.add_argument("--headless")
+    edge_options.add_argument("--log-level=3")
+    edge_options.add_experimental_option("excludeSwitches", ["enable-logging", "enable-automation"])
+    edge_options.page_load_strategy = "eager"
+    edge_binary_path = _get_browser_binary_path("msedge", log_queue)
+    if edge_binary_path:
+        edge_options.binary_location = edge_binary_path
+
+    firefox_options = webdriver.FirefoxOptions()
+    firefox_options.add_argument("--headless")
+    firefox_options.add_argument("--log-level=3")
+    firefox_options.page_load_strategy = "eager"
+    firefox_binary_path = _get_browser_binary_path("firefox", log_queue)
+    if firefox_binary_path:
+        firefox_options.binary_location = firefox_binary_path
+
+    creation_flags = 0
+    if platform.system() == "Windows":
+        creation_flags = subprocess.CREATE_NO_WINDOW
+
+    browsers_to_try = [
+        ("msedge", webdriver.Edge, edge_options, EdgeService),
+        ("chrome", webdriver.Chrome, chrome_options, ChromeService),
+        ("firefox", webdriver.Firefox, firefox_options, FirefoxService),
+    ]
+
+    driver = None
+    for name_key, driver_class, options, service_class in browsers_to_try:
+        try:
+            log_queue.put({"type": "log", "message": f"  -> Attempting to initialize {name_key}..."})
+            service = service_class(creationflags=creation_flags)
+            driver = driver_class(service=service, options=options)
+            log_queue.put({"type": "log", "message": f"✔ Success: Using {name_key} for web crawling."})
+            break
+
+        except WebDriverException as e:
+            log_queue.put({"type": "log", "message": f"  -> {name_key} not found or failed to start. Details: {e.msg}"})
+
+    if driver is None:
+        error_msg = "ERROR: Could not find a compatible web browser or its driver.\nPlease ensure a supported browser (Edge, Chrome, or Firefox) is installed."
+        log_queue.put({"type": "status", "status": "error", "message": error_msg})
+        return
+
+    driver.set_page_load_timeout(15)
+
+    def _normalize_url(url):
+        url_no_fragment = url.split("#")[0]
+        if url_no_fragment.endswith(".html"):
+            url_no_fragment = url_no_fragment[:-5]
+        if url_no_fragment.endswith("/"):
+            url_no_fragment = url_no_fragment[:-1]
+        return url_no_fragment
+
+    def _url_matches_any_pattern(url, patterns):
+        parsed_url_path = urlparse(url).path
+        for pattern in patterns:
+            if pattern.startswith(("http://", "https://")):
+                if url.startswith(pattern):
+                    return True
+            elif pattern in parsed_url_path:
+                return True
+        return False
+
+    log_queue.put({"type": "log", "message": "Starting web crawl..."})
+
+    start_domain = urlparse(config.start_url).netloc
+
+    urls_to_visit = queue.Queue()
+    normalized_start_url = _normalize_url(config.start_url)
+    urls_to_visit.put((config.start_url, 0))
+    processed_urls = {normalized_start_url}
+
+    pages_saved = 0
+
+    try:
+        while not urls_to_visit.empty() and pages_saved < config.max_pages:
+            if cancel_event.is_set():
+                break
+
+            current_url, depth = urls_to_visit.get()
+            log_queue.put({"type": "progress", "value": pages_saved, "max_value": config.max_pages})
+
+            try:
+                log_queue.put({"type": "log", "message": f"GET (Depth {depth}): {current_url}"})
+                driver.get(current_url)
+
+                pause_duration = random.uniform(config.min_pause, config.max_pause)
+                time.sleep(pause_duration)
+
+                if cancel_event.is_set():
+                    break
+
+                final_url_from_driver = driver.current_url
+                if config.ignore_queries:
+                    final_url_from_driver = final_url_from_driver.split("?")[0]
+
+                normalized_final_url = _normalize_url(final_url_from_driver)
+
+                if "404" in driver.title or "Not Found" in driver.title:
+                    log_queue.put({"type": "log", "message": f"  -> Skipping (404 Not Found): {final_url_from_driver}"})
+                    continue
+
+                processed_urls.add(normalized_final_url)
+                html_content = driver.page_source
+                soup = BeautifulSoup(html_content, "lxml")
+
+                for tag in soup(["script", "style"]):
+                    tag.decompose()
+                cleaned_html = str(soup)
+
+                filename = sanitize_filename(normalized_final_url) + ".md"
+                md_content = md(cleaned_html)
+
+                output_path = Path(config.output_dir) / filename
+                with open(output_path, "w", encoding="utf-8") as f:
+                    f.write(md_content)
+
+                pages_saved += 1
+                log_queue.put(
+                    {
+                        "type": "file_saved",
+                        "url": final_url_from_driver,
+                        "path": str(output_path),
+                        "filename": filename,
+                        "pages_saved": pages_saved,
+                        "max_pages": config.max_pages,
+                    }
+                )
+
+                if depth < config.crawl_depth:
+                    links = soup.find_all("a", href=True)
+                    for link in links:
+                        if not isinstance(link, Tag):
+                            continue
+
+                        href_attr = link.get("href")
+                        if not isinstance(href_attr, str):
+                            continue
+
+                        if not href_attr or href_attr.startswith(("mailto:", "javascript:", "#")):
+                            continue
+
+                        abs_link = urljoin(final_url_from_driver, href_attr)
+                        normalized_abs_link = _normalize_url(abs_link)
+
+                        parsed_link_domain = urlparse(abs_link).netloc
+                        if config.stay_on_subdomain and parsed_link_domain != start_domain:
+                            continue
+
+                        if config.exclude_paths and _url_matches_any_pattern(abs_link, config.exclude_paths):
+                            continue
+
+                        if config.include_paths and not _url_matches_any_pattern(abs_link, config.include_paths):
+                            continue
+
+                        if normalized_abs_link not in processed_urls:
+                            processed_urls.add(normalized_abs_link)
+                            urls_to_visit.put((abs_link, depth + 1))
+
+            except TimeoutException:
+                log_queue.put({"type": "log", "message": f"  -> TIMEOUT after 5s on: {current_url}"})
+                continue
+            except WebDriverException as e:
+                log_queue.put({"type": "log", "message": f"  -> SELENIUM ERROR: {e.msg}"})
+            except Exception as e:
+                log_queue.put({"type": "log", "message": f"  -> PROCESSING ERROR: {e}"})
+
+    finally:
+        if driver:
+
+            def _cleanup_driver(d):
+                try:
+                    d.quit()
+                except Exception:
+                    pass
+
+            cleanup_thread = threading.Thread(target=_cleanup_driver, args=(driver,), daemon=True)
+            cleanup_thread.start()
+
+    if not cancel_event.is_set():
+        log_queue.put({"type": "status", "status": "source_complete", "message": f"\nWeb scrape finished. Saved {pages_saved} pages."})
+    else:
+        log_queue.put({"type": "status", "status": "cancelled", "message": "Process cancelled by user."})
 ````
 
 ## File: ui/panels.py
@@ -2740,13 +2883,9 @@ class ListPanel(wx.Panel):
         is_web_mode = list_ctrl == self.standard_log_list
 
         if is_web_mode:
-            data_source = self.scraped_files
-            sort_col, sort_dir = self.sort_col_web, self.sort_dir_web
-            keys = ["url", "filename"]
+            data_source, (sort_col, sort_dir), keys = self.scraped_files, (self.sort_col_web, self.sort_dir_web), ["url", "filename"]
         else:
-            data_source = self.local_files
-            sort_col, sort_dir = self.sort_col_local, self.sort_dir_local
-            keys = ["name", "type", "size"]
+            data_source, (sort_col, sort_dir), keys = self.local_files, (self.sort_col_local, self.sort_dir_local), ["name", "type", "size"]
 
         if col == sort_col:
             sort_dir *= -1
@@ -2754,25 +2893,21 @@ class ListPanel(wx.Panel):
             sort_col = col
             sort_dir = 1
 
-        if is_web_mode:
-            self.sort_col_web, self.sort_dir_web = sort_col, sort_dir
-        else:
-            self.sort_col_local, self.sort_dir_local = sort_col, sort_dir
-
-        is_ascending = sort_dir == 1
-        list_ctrl.ShowSortIndicator(sort_col, is_ascending)
-
         sort_key = keys[col]
-        reverse = not is_ascending
+        reverse = sort_dir == -1
 
         if not is_web_mode and sort_key == "name":
             data_source.sort(key=lambda item: (item.get("type") != "Folder", item.get("name", "").lower()), reverse=reverse)
         else:
             data_source.sort(key=lambda item: item.get(sort_key, 0) if isinstance(item.get(sort_key, 0), (int, float)) else str(item.get(sort_key, "")).lower(), reverse=reverse)
 
+        list_ctrl.ShowSortIndicator(col, not reverse)
+
         if is_web_mode:
+            self.sort_col_web, self.sort_dir_web = sort_col, sort_dir
             self.populate_web_file_list()
         else:
+            self.sort_col_local, self.sort_dir_local = sort_col, sort_dir
             self.populate_local_file_list(data_source)
 
     def on_col_end_drag(self, event):
@@ -2903,159 +3038,6 @@ class ListPanel(wx.Panel):
                 label = f"{count} item(s)"
 
         self.file_count_label.SetLabel(label)
-````
-
-## File: ui/widgets/dialogs.py
-````python
-import wx
-import webbrowser
-from .buttons import CustomButton, CustomSecondaryButton
-from core.packager import resource_path
-from core.utils import set_title_bar_theme
-
-
-class ThemedMessageDialog(wx.Dialog):
-    def __init__(self, parent, message, title, style, theme):
-        super().__init__(parent, title=title)
-        self.theme = theme
-        self.SetBackgroundColour(self.theme["palette"]["bg"])
-        self.Bind(wx.EVT_SHOW, self.on_show)
-
-        main_sizer = wx.BoxSizer(wx.VERTICAL)
-
-        message_text = wx.StaticText(self, label=message)
-        message_text.SetForegroundColour(self.theme["palette"]["fg"])
-        message_text.Wrap(350)
-        main_sizer.Add(message_text, flag=wx.ALL | wx.EXPAND, border=20)
-
-        button_sizer = self.CreateButtonSizer(style)
-        main_sizer.Add(button_sizer, flag=wx.ALIGN_RIGHT | wx.RIGHT | wx.BOTTOM, border=20)
-
-        self.SetSizerAndFit(main_sizer)
-        self.CenterOnParent()
-
-    def CreateButtonSizer(self, flags):
-        button_sizer = wx.BoxSizer(wx.HORIZONTAL)
-
-        if flags & wx.YES_NO:
-            yes_button = CustomButton(self, "Yes", self.theme)
-            no_button = CustomSecondaryButton(self, "No", self.theme)
-            yes_button.Bind(wx.EVT_BUTTON, lambda e: self.EndModal(wx.ID_YES))
-            no_button.Bind(wx.EVT_BUTTON, lambda e: self.EndModal(wx.ID_NO))
-            button_sizer.Add(no_button, 0, wx.RIGHT, 10)
-            button_sizer.Add(yes_button, 0)
-        elif flags & wx.OK:
-            ok_button = CustomButton(self, "OK", self.theme)
-            ok_button.Bind(wx.EVT_BUTTON, lambda e: self.EndModal(wx.ID_OK))
-            button_sizer.Add(ok_button, 0)
-
-        return button_sizer
-
-    def on_show(self, event):
-        if event.IsShown():
-            wx.CallAfter(self._set_title_bar_theme)
-        event.Skip()
-
-    def _set_title_bar_theme(self):
-        is_dark = self.theme.get("palette", {}).get("bg").GetRed() < 128
-        set_title_bar_theme(self, is_dark)
-
-
-class AboutDialog(wx.Dialog):
-    def __init__(self, parent, theme, version, font_path, log_verbose_func):
-        super().__init__(parent, title="About ContextPacker")
-        self.theme = theme
-        self.version = version
-        self.font_path = font_path
-        self.log_verbose = log_verbose_func
-
-        self.SetBackgroundColour(self.theme["palette"]["bg"])
-        self.Bind(wx.EVT_SHOW, self.on_show)
-
-        main_sizer = wx.BoxSizer(wx.VERTICAL)
-        main_sizer.AddSpacer(20)
-
-        font_loaded = False
-        if self.font_path.exists():
-            if wx.Font.AddPrivateFont(str(self.font_path)):
-                font_loaded = True
-            else:
-                self.log_verbose("Warning: Failed to load custom font 'Source Code Pro'.")
-        else:
-            self.log_verbose(f"Warning: Custom font not found at '{self.font_path}'.")
-
-        logo_path = resource_path("assets/icons/ContextPacker-x128.png")
-        if logo_path.exists():
-            bmp = wx.Bitmap(str(logo_path), wx.BITMAP_TYPE_PNG)
-            logo_bitmap = wx.StaticBitmap(self, bitmap=wx.BitmapBundle(bmp))
-            main_sizer.Add(logo_bitmap, 0, wx.ALIGN_CENTER | wx.BOTTOM, 10)
-
-        title_font = wx.Font(22, wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
-        if font_loaded:
-            title_font.SetFaceName("Source Code Pro")
-
-        title_text = wx.StaticText(self, label="ContextPacker")
-        title_text.SetFont(title_font)
-        title_text.SetForegroundColour(self.theme["accent_color"])
-        main_sizer.Add(title_text, 0, wx.ALIGN_CENTER | wx.BOTTOM, 10)
-
-        description = "Scrape websites or select local files, then package into a single file, optimized for LLMs."
-        desc_font = self.GetFont()
-        desc_font.SetPointSize(12)
-        desc_text = wx.StaticText(self, label=description, style=wx.ALIGN_CENTER)
-        desc_text.SetFont(desc_font)
-        desc_text.SetForegroundColour(self.theme["palette"]["fg"])
-        main_sizer.Add(desc_text, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 15)
-
-        main_sizer.AddSpacer(15)
-
-        milkshake_font = wx.Font(12, wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_ITALIC, wx.FONTWEIGHT_NORMAL)
-        if font_loaded:
-            milkshake_font.SetFaceName("Source Code Pro")
-
-        milkshake_text = wx.StaticText(self, label='"I drink your milkshake! I drink it up!"')
-        milkshake_text.SetFont(milkshake_font)
-        milkshake_text.SetForegroundColour(self.theme["palette"]["fg"])
-        main_sizer.Add(milkshake_text, 0, wx.ALIGN_CENTER | wx.BOTTOM, 20)
-
-        version_font = self.GetFont()
-        version_font.SetPointSize(12)
-        version_text = wx.StaticText(self, label=f"Version {self.version}")
-        version_text.SetFont(version_font)
-        version_text.SetForegroundColour(self.theme["palette"]["fg"])
-        main_sizer.Add(version_text, 0, wx.ALIGN_CENTER | wx.BOTTOM, 10)
-
-        url = "https://github.com/dcog989/ContextPacker"
-        hyperlink = wx.StaticText(self, label=url)
-        link_font = self.GetFont()
-        link_font.SetPointSize(12)
-        link_font.SetUnderlined(True)
-        hyperlink.SetFont(link_font)
-        is_dark = self.theme.get("palette", {}).get("bg").GetRed() < 128
-        link_color = wx.Colour(102, 178, 255) if is_dark else wx.Colour(0, 102, 204)
-        hyperlink.SetForegroundColour(link_color)
-        hyperlink.SetCursor(wx.Cursor(wx.CURSOR_HAND))
-        hyperlink.Bind(wx.EVT_LEFT_DOWN, lambda event: webbrowser.open(url))
-        main_sizer.Add(hyperlink, 0, wx.ALIGN_CENTER | wx.BOTTOM, 20)
-
-        ok_button = CustomButton(self, "OK", self.theme)
-        ok_button.Bind(wx.EVT_BUTTON, lambda e: self.EndModal(wx.ID_OK))
-        main_sizer.Add(ok_button, 0, wx.ALIGN_CENTER | wx.BOTTOM, 20)
-
-        outer_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        outer_sizer.Add(main_sizer, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 40)
-
-        self.SetSizerAndFit(outer_sizer)
-        self.CenterOnParent()
-
-    def on_show(self, event):
-        if event.IsShown():
-            wx.CallAfter(self._set_title_bar_theme)
-        event.Skip()
-
-    def _set_title_bar_theme(self):
-        is_dark = self.theme.get("palette", {}).get("bg").GetRed() < 128
-        set_title_bar_theme(self, is_dark)
 ````
 
 ## File: README.md
