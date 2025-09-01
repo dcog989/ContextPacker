@@ -42,6 +42,7 @@ class App(wx.Frame):
         self.exclude_list_last_line = 0
         self.local_scan_worker = None
         self.local_scan_cancel_event = None
+        self.exclude_update_timer = wx.Timer(self)
 
         self._set_theme_palette()
         self.main_panel = MainFrame(self)
@@ -54,6 +55,7 @@ class App(wx.Frame):
         self.Show()
         self._set_title_bar_theme()
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_TIMER, self.on_exclude_timer, self.exclude_update_timer)
 
     def _is_dark_mode(self):
         system = platform.system()
@@ -195,20 +197,12 @@ class App(wx.Frame):
         wx.CallAfter(self.main_panel.local_panel.local_dir_ctrl.SetFocus)
 
     def on_local_filters_changed(self, event):
+        self.exclude_update_timer.Stop()
         self.start_local_file_scan()
         event.Skip()
 
     def on_exclude_text_update(self, event):
-        def check_caret_and_refresh():
-            text_ctrl = self.main_panel.local_panel.local_exclude_ctrl.text_ctrl
-            pos = text_ctrl.GetInsertionPoint()
-            _, _, current_line = text_ctrl.PositionToXY(pos)
-            if current_line != self.exclude_list_last_line:
-                self.exclude_list_last_line = current_line
-                self.start_local_file_scan()
-                wx.CallAfter(text_ctrl.SetFocus)
-
-        wx.CallAfter(check_caret_and_refresh)
+        self.exclude_update_timer.StartOnce(500)
         event.Skip()
 
     def on_download_button_click(self, event):
@@ -245,6 +239,10 @@ class App(wx.Frame):
                 self.log_verbose("ERROR: Could not open clipboard.")
         except Exception as e:
             self.log_verbose(f"ERROR: Failed to copy to clipboard: {e}")
+
+    def on_exclude_timer(self, event):
+        """Called when the debounce timer for the exclude list fires."""
+        self.start_local_file_scan()
 
     def _update_timestamp_label(self):
         if self.main_panel and self.main_panel.output_timestamp_label:
@@ -344,7 +342,10 @@ class App(wx.Frame):
             return
 
         wx.BeginBusyCursor()
-        self.main_panel.local_panel.Enable(False)
+        self.main_panel.local_panel.browse_button.Enable(False)
+        self.main_panel.local_panel.include_subdirs_check.Enable(False)
+        self.main_panel.local_panel.hide_binaries_check.Enable(False)
+
         self.local_files_to_exclude.clear()
         custom_excludes = [p.strip() for p in self.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
         binary_excludes = BINARY_FILE_PATTERNS if self.main_panel.local_panel.hide_binaries_check.GetValue() else []
@@ -373,7 +374,9 @@ class App(wx.Frame):
         if files is not None:
             self.main_panel.list_panel.populate_local_file_list(files)
         if self.main_panel.local_panel:
-            self.main_panel.local_panel.Enable(True)
+            self.main_panel.local_panel.browse_button.Enable(True)
+            self.main_panel.local_panel.include_subdirs_check.Enable(True)
+            self.main_panel.local_panel.hide_binaries_check.Enable(True)
         wx.EndBusyCursor()
         self.local_scan_worker = None
 
