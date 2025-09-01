@@ -84,7 +84,7 @@ class MainFrame(wx.Panel):
         radio_sizer.Add(self.local_dir_radio, 0)
         input_sizer.Add(radio_sizer, 0, wx.ALL, 10)
         input_sizer.Add(self.crawler_panel, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
-        input_sizer.Add(self.local_panel, 0, wx.EXPAND | wx.ALL, 10)
+        input_sizer.Add(self.local_panel, 1, wx.EXPAND | wx.ALL, 10)
 
         right_sizer = wx.BoxSizer(wx.VERTICAL)
         self.right_panel_container.SetSizer(right_sizer)

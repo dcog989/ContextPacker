@@ -2,6 +2,7 @@
 repomix.config.json
 .vscode/
 .gemini/
+TODO.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

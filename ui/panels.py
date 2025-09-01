@@ -169,15 +169,21 @@ class LocalInputPanel(wx.Panel):
     def _create_sizers(self):
         sizer = wx.FlexGridSizer(3, 2, 10, 10)
         sizer.AddGrowableCol(1, 1)
+        sizer.AddGrowableRow(1, 1)
+
+        # Row 0: Input Directory
         sizer.Add(self.local_dir_label, 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         dir_input_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        dir_input_sizer.Add(self.local_dir_ctrl, 1, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        dir_input_sizer.Add(self.local_dir_ctrl, 1, wx.EXPAND | wx.RIGHT, 10)
         dir_input_sizer.Add(self.browse_button, 0, wx.ALIGN_CENTER_VERTICAL)
         sizer.Add(dir_input_sizer, 1, wx.EXPAND)
+
+        # Row 1: Excludes
         sizer.Add(self.local_exclude_label, 0, wx.ALIGN_RIGHT | wx.ALIGN_TOP | wx.TOP, 5)
         sizer.Add(self.local_exclude_ctrl, 1, wx.EXPAND)
-        sizer.Add(wx.StaticText(self, label=""), 0)
 
+        # Row 2: Options
+        sizer.AddSpacer(0)  # Empty cell for alignment
         options_sizer = wx.BoxSizer(wx.VERTICAL)
         options_sizer.Add(self.include_subdirs_check, 0, wx.BOTTOM, 5)
         options_sizer.Add(self.hide_binaries_check, 0)
