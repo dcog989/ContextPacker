@@ -37,7 +37,7 @@ class App(wx.Frame):
         self.worker_thread = None
         self.is_shutting_down = False
         self.is_task_running = False
-        self.is_dark = self._is_dark_mode()
+        self.is_dark = False  # Default to light mode
         self.local_files_to_exclude = set()
         self.exclude_list_last_line = 0
         self.local_scan_worker = None
@@ -53,9 +53,29 @@ class App(wx.Frame):
         self.toggle_input_mode()
         self.Center()
         self.Show()
-        self._set_title_bar_theme()
+
         self.Bind(wx.EVT_CLOSE, self.on_close)
         self.Bind(wx.EVT_TIMER, self.on_exclude_timer, self.exclude_update_timer)
+
+        threading.Thread(target=self._detect_and_apply_theme, daemon=True).start()
+
+    def _detect_and_apply_theme(self):
+        """Worker function to detect dark mode and apply the theme."""
+        is_dark = self._is_dark_mode()
+        wx.CallAfter(self._update_theme, is_dark)
+
+    def _update_theme(self, is_dark):
+        """Updates the application theme. Must be called on the main thread."""
+        if self.is_dark == is_dark:
+            self._set_title_bar_theme()
+            return
+
+        self.is_dark = is_dark
+        if hasattr(self, "main_panel") and self.main_panel:
+            self.main_panel.list_panel.is_dark = is_dark
+        self._set_theme_palette()
+        self._apply_theme_to_widgets()
+        self._set_title_bar_theme()
 
     def _is_dark_mode(self):
         system = platform.system()
