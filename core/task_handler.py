@@ -55,7 +55,11 @@ class TaskHandler:
         self.app._toggle_ui_controls(False, widget_to_keep_enabled=pkg_button)
 
         is_web_mode = self.app.main_panel.web_crawl_radio.GetValue()
-        if not is_web_mode:
+        file_list_for_count = []
+        if is_web_mode:
+            file_list_for_count = self.app.main_panel.list_panel.scraped_files
+        else:
+            file_list_for_count = self.app.main_panel.list_panel.local_files
             source_dir = self.app.main_panel.local_panel.local_dir_ctrl.GetValue()
             if not source_dir or not Path(source_dir).is_dir():
                 msg = f"The specified input directory is not valid:\n{source_dir}"
@@ -74,7 +78,7 @@ class TaskHandler:
         pkg_button.Refresh()
 
         self.app.cancel_event = threading.Event()
-        actions.start_packaging(self.app, self.app.cancel_event)
+        actions.start_packaging(self.app, self.app.cancel_event, file_list_for_count)
 
     def stop_current_task(self):
         if self.app.cancel_event:

@@ -116,7 +116,7 @@ def _clone_repo_worker(url, path, log_queue, cancel_event):
         log_queue.put({"type": "status", "status": "error", "message": f"An error occurred while cloning the repository: {e}"})
 
 
-def start_packaging(app, cancel_event):
+def start_packaging(app, cancel_event, file_list=None):
     """Initializes and starts the packaging process in a new thread."""
     is_web_mode = app.main_panel.web_crawl_radio.GetValue()
     app.filename_prefix = app.main_panel.output_filename_ctrl.GetValue().strip() or "ContextPacker-package"
@@ -149,10 +149,10 @@ def start_packaging(app, cancel_event):
 
     app.main_panel.list_panel.progress_gauge.SetValue(0)
 
-    _run_packaging_thread(app, source_dir, app.filename_prefix, effective_excludes, extension, repomix_style, cancel_event)
+    _run_packaging_thread(app, source_dir, app.filename_prefix, effective_excludes, extension, repomix_style, cancel_event, file_list)
 
 
-def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, extension, repomix_style, cancel_event):
+def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, extension, repomix_style, cancel_event, file_list=None):
     """Configures and runs the repomix packager in a worker thread."""
     timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
     downloads_path = app._get_downloads_folder()
@@ -178,19 +178,22 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
             wx.CallAfter(self.log_queue.put, {"type": "log", "message": msg})
 
     total_files_for_progress = 0
-    if Path(source_dir).is_dir():
-        current_exclude_paths = exclude_paths or []
-        for root, _, files in os.walk(source_dir):
-            for file in files:
-                file_path = Path(root) / file
-                rel_path_str = file_path.relative_to(source_dir).as_posix()
-                is_excluded = False
-                for pattern in current_exclude_paths:
-                    if fnmatch.fnmatch(rel_path_str, pattern):
-                        is_excluded = True
-                        break
-                if not is_excluded:
-                    total_files_for_progress += 1
+    is_web_mode = app.main_panel.web_crawl_radio.GetValue()
+    if file_list is not None:
+        if is_web_mode:
+            total_files_for_progress = len(file_list)
+        else:
+            total_files_for_progress = len([f for f in file_list if f.get("type") == "File"])
+    else:  # Fallback to scanning if file_list is not provided
+        if Path(source_dir).is_dir():
+            current_exclude_paths = exclude_paths or []
+            for root, _, files in os.walk(source_dir):
+                for file in files:
+                    file_path = Path(root) / file
+                    rel_path_str = file_path.relative_to(source_dir).as_posix()
+                    is_excluded = any(fnmatch.fnmatch(rel_path_str, pattern) for pattern in current_exclude_paths)
+                    if not is_excluded:
+                        total_files_for_progress += 1
 
     progress_handler = RepomixProgressHandler(app.log_queue, total_files_for_progress)
     progress_handler.setLevel(logging.INFO)
