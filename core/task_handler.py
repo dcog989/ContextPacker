@@ -11,6 +11,7 @@ class TaskHandler:
         self.app = app_instance
 
     def start_download_task(self):
+        print(f"DIAG: TaskHandler.start_download_task called at {__import__('datetime').datetime.now()}")
         dl_button = self.app.main_panel.crawler_panel.download_button
         self.app._toggle_ui_controls(False, widget_to_keep_enabled=dl_button)
 

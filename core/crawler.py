@@ -111,44 +111,6 @@ def _get_browser_binary_path(browser_name, log_queue):
     return None
 
 
-def _get_driver_path(browser_name, log_queue):
-    """
-    Manually find the latest driver in the selenium cache, traversing
-    platform-specific subdirectories.
-    """
-    driver_map = {"chrome": "chromedriver", "msedge": "msedgedriver", "firefox": "geckodriver"}
-    driver_filename = driver_map.get(browser_name)
-    if not driver_filename:
-        return None
-
-    driver_filename += ".exe" if platform.system() == "Windows" else ""
-
-    try:
-        base_cache_path = Path.home() / ".cache" / "selenium"
-        driver_cache_path = base_cache_path / driver_map[browser_name]
-        if not driver_cache_path.is_dir():
-            return None
-
-        latest_version = "0"
-        latest_driver_path = None
-
-        for platform_dir in driver_cache_path.iterdir():
-            if platform_dir.is_dir():
-                for version_dir in platform_dir.iterdir():
-                    if version_dir.is_dir():
-                        if version_dir.name > latest_version:
-                            potential_driver = version_dir / driver_filename
-                            if potential_driver.exists():
-                                latest_version = version_dir.name
-                                latest_driver_path = potential_driver
-        if latest_driver_path:
-            return str(latest_driver_path)
-        else:
-            return None
-    except Exception:
-        return None
-
-
 def sanitize_filename(url):
     parsed_url = urlparse(url)
     path_segment = parsed_url.path
@@ -168,6 +130,7 @@ def crawl_website(config, log_queue, cancel_event):
     """
     Crawls a website based on the provided configuration.
     """
+    print(f"DIAG: crawl_website thread started at {__import__('datetime').datetime.now()}")
     log_queue.put({"type": "log", "message": "Searching for a compatible web browser..."})
 
     chrome_options = webdriver.ChromeOptions()
@@ -210,23 +173,18 @@ def crawl_website(config, log_queue, cancel_event):
     for name_key, driver_class, options, service_class in browsers_to_try:
         try:
             log_queue.put({"type": "log", "message": f"  -> Attempting to initialize {name_key}..."})
-            driver_path = _get_driver_path(name_key, log_queue)
-
-            if driver_path and Path(driver_path).exists():
-                service = service_class(executable_path=driver_path, creationflags=creation_flags)
-                driver = driver_class(service=service, options=options)
-                log_queue.put({"type": "log", "message": f"✔ Success: Using {name_key} for web crawling."})
-                break
-            else:
-                log_queue.put({"type": "log", "message": f"    Driver not found in cache for {name_key}, skipping."})
+            service = service_class(creationflags=creation_flags)
+            driver = driver_class(service=service, options=options)
+            log_queue.put({"type": "log", "message": f"✔ Success: Using {name_key} for web crawling."})
+            break
 
         except WebDriverException as e:
             log_queue.put({"type": "log", "message": f"  -> {name_key} not found or failed to start. Details: {e.msg}"})
 
     if driver is None:
-        error_msg = "ERROR: Could not find a compatible web browser or its driver.\nPlease run the application from source once (`py app.py`) to allow Selenium to download the necessary drivers."
+        error_msg = "ERROR: Could not find a compatible web browser or its driver.\nPlease ensure a supported browser (Edge, Chrome, or Firefox) is installed."
         log_queue.put({"type": "status", "status": "error", "message": error_msg})
-    return
+        return
 
     driver.set_page_load_timeout(15)
 
@@ -358,10 +316,15 @@ def crawl_website(config, log_queue, cancel_event):
 
     finally:
         if driver:
-            try:
-                driver.quit()
-            except Exception as e:
-                log_queue.put({"type": "log", "message": f"  -> Note: Error while quitting browser driver: {e}"})
+
+            def _cleanup_driver(d):
+                try:
+                    d.quit()
+                except Exception:
+                    pass
+
+            cleanup_thread = threading.Thread(target=_cleanup_driver, args=(driver,), daemon=True)
+            cleanup_thread.start()
 
     if not cancel_event.is_set():
         log_queue.put({"type": "status", "status": "source_complete", "message": f"\nWeb scrape finished. Saved {pages_saved} pages."})

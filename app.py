@@ -162,8 +162,10 @@ class App(wx.Frame):
             self.main_panel.output_format_choice,
         ]
         for widget in widgets_to_toggle:
-            if widget is not widget_to_keep_enabled:
-                widget.Enable(enable)
+            widget.Enable(enable)
+
+        if not enable and widget_to_keep_enabled:
+            widget_to_keep_enabled.Enable(True)
 
     def on_toggle_input_mode(self, event):
         self.toggle_input_mode()
@@ -205,6 +207,7 @@ class App(wx.Frame):
         event.Skip()
 
     def on_download_button_click(self, event):
+        print(f"DIAG: on_download_button_click called at {datetime.now()}")
         if self.is_task_running:
             self.on_stop_process()
         else:
