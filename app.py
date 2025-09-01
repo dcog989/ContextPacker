@@ -8,6 +8,7 @@ import ctypes
 import subprocess
 import platform
 import multiprocessing
+import threading
 
 from ui.main_frame import MainFrame
 from ui.widgets.dialogs import AboutDialog
@@ -39,6 +40,8 @@ class App(wx.Frame):
         self.is_dark = self._is_dark_mode()
         self.local_files_to_exclude = set()
         self.exclude_list_last_line = 0
+        self.local_scan_worker = None
+        self.local_scan_cancel_event = None
 
         self._set_theme_palette()
         self.main_panel = MainFrame(self)
@@ -141,6 +144,8 @@ class App(wx.Frame):
 
     def on_close(self, event):
         self.timer.Stop()
+        if self.local_scan_cancel_event:
+            self.local_scan_cancel_event.set()
         if self.worker_thread and self.worker_thread.is_alive():
             self.is_shutting_down = True
             if self.cancel_event:
@@ -177,7 +182,7 @@ class App(wx.Frame):
         self.main_panel.list_panel.toggle_output_view(is_web_mode=is_url_mode)
         self.main_panel.left_panel.Layout()
         if not is_url_mode:
-            self.populate_local_file_list()
+            self.start_local_file_scan()
         self._update_button_states()
 
     def on_browse(self, event):
@@ -185,12 +190,12 @@ class App(wx.Frame):
             if dlg.ShowModal() == wx.ID_OK:
                 path = dlg.GetPath()
                 self.main_panel.local_panel.local_dir_ctrl.SetValue(path)
-                self.populate_local_file_list()
+                self.start_local_file_scan()
         self._update_button_states()
         wx.CallAfter(self.main_panel.local_panel.local_dir_ctrl.SetFocus)
 
     def on_local_filters_changed(self, event):
-        self.populate_local_file_list()
+        self.start_local_file_scan()
         event.Skip()
 
     def on_exclude_text_update(self, event):
@@ -200,7 +205,7 @@ class App(wx.Frame):
             _, _, current_line = text_ctrl.PositionToXY(pos)
             if current_line != self.exclude_list_last_line:
                 self.exclude_list_last_line = current_line
-                self.populate_local_file_list()
+                self.start_local_file_scan()
                 wx.CallAfter(text_ctrl.SetFocus)
 
         wx.CallAfter(check_caret_and_refresh)
@@ -326,24 +331,54 @@ class App(wx.Frame):
         self.local_files_to_exclude.add(rel_path)
         self.log_verbose(f"Will exclude from package: {rel_path}")
 
-    def populate_local_file_list(self, include_subdirs=None):
-        if include_subdirs is None:
-            include_subdirs = self.main_panel.local_panel.include_subdirs_check.GetValue()
+    def start_local_file_scan(self):
+        if self.local_scan_worker and self.local_scan_worker.is_alive():
+            if self.local_scan_cancel_event:
+                self.local_scan_cancel_event.set()
 
-        self.local_files_to_exclude.clear()
+        self.local_scan_cancel_event = threading.Event()
+
         input_dir = self.main_panel.local_panel.local_dir_ctrl.GetValue()
         if not input_dir or not Path(input_dir).is_dir():
             self.main_panel.list_panel.populate_local_file_list([])
             return
 
+        wx.BeginBusyCursor()
+        self.main_panel.local_panel.Enable(False)
+        self.local_files_to_exclude.clear()
         custom_excludes = [p.strip() for p in self.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
         binary_excludes = BINARY_FILE_PATTERNS if self.main_panel.local_panel.hide_binaries_check.GetValue() else []
+        args = (
+            input_dir,
+            self.main_panel.local_panel.include_subdirs_check.GetValue(),
+            custom_excludes,
+            binary_excludes,
+            self.local_scan_cancel_event,
+        )
+        self.local_scan_worker = threading.Thread(target=self._local_scan_worker, args=args, daemon=True)
+        self.local_scan_worker.start()
 
+    def _local_scan_worker(self, input_dir, include_subdirs, custom_excludes, binary_excludes, cancel_event):
         try:
-            files_to_show = actions.get_local_files(input_dir, include_subdirs, custom_excludes, binary_excludes)
-            wx.CallAfter(self.main_panel.list_panel.populate_local_file_list, files_to_show)
+            files_to_show = actions.get_local_files(input_dir, include_subdirs, custom_excludes, binary_excludes, cancel_event)
+            if not cancel_event.is_set():
+                wx.CallAfter(self._on_local_scan_complete, files_to_show)
+            else:
+                wx.CallAfter(self._on_local_scan_complete, None)
         except Exception as e:
-            self.log_verbose(f"ERROR scanning directory: {e}")
+            wx.CallAfter(self.log_verbose, f"ERROR scanning directory: {e}")
+            wx.CallAfter(self._on_local_scan_complete, None)
+
+    def _on_local_scan_complete(self, files):
+        if files is not None:
+            self.main_panel.list_panel.populate_local_file_list(files)
+        if self.main_panel.local_panel:
+            self.main_panel.local_panel.Enable(True)
+        wx.EndBusyCursor()
+        self.local_scan_worker = None
+
+    def populate_local_file_list(self, include_subdirs=None):
+        self.start_local_file_scan()
 
     def _get_downloads_folder(self):
         return get_downloads_folder()

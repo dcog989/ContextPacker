@@ -188,7 +188,7 @@ def populate_local_files(app):
     app.populate_local_file_list()
 
 
-def get_local_files(root_dir, include_subdirs, custom_excludes, binary_excludes):
+def get_local_files(root_dir, include_subdirs, custom_excludes, binary_excludes, cancel_event=None):
     """
     Scans a directory and returns a filtered list of files and folders,
     pruning ignored directories for efficiency.
@@ -212,6 +212,8 @@ def get_local_files(root_dir, include_subdirs, custom_excludes, binary_excludes)
     all_ignore_patterns.extend(binary_excludes)
 
     for root, dirnames, filenames in os.walk(str(base_path), topdown=True):
+        if cancel_event and cancel_event.is_set():
+            return []
         root_path = Path(root)
         rel_root_path = root_path.relative_to(base_path)
 
@@ -240,6 +242,9 @@ def get_local_files(root_dir, include_subdirs, custom_excludes, binary_excludes)
 
         if not include_subdirs:
             break
+
+    if cancel_event and cancel_event.is_set():
+        return []
 
     files_to_show.sort(key=lambda p: (p["type"] != "Folder", p["name"].lower()), reverse=True)
     return files_to_show
