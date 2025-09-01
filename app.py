@@ -253,6 +253,7 @@ class App(wx.Frame):
 
     def on_check_log_queue(self, event):
         log_messages = []
+        files_to_add = []
         # Process up to 50 messages per tick to prevent UI event flooding
         for _ in range(50):
             try:
@@ -263,7 +264,7 @@ class App(wx.Frame):
                 if msg_type == "log":
                     log_messages.append(message)
                 elif msg_type == "file_saved":
-                    wx.CallAfter(self.main_panel.list_panel.add_scraped_file, msg_obj["url"], msg_obj["path"], msg_obj["filename"])
+                    files_to_add.append(msg_obj)
                     verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
                     log_messages.append(verbose_msg)
                 elif msg_type == "progress":
@@ -275,6 +276,9 @@ class App(wx.Frame):
                     log_messages.append(str(message))
             except queue.Empty:
                 break  # No more messages
+
+        if files_to_add:
+            wx.CallAfter(self.main_panel.list_panel.add_scraped_files_batch, files_to_add)
 
         if log_messages:
             full_log = "\n".join(log_messages)

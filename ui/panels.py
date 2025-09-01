@@ -366,9 +366,10 @@ class ListPanel(wx.Panel):
         wx.CallAfter(self.resize_columns)
         self.update_file_count()
 
-    def add_scraped_file(self, url, path, filename):
-        new_file = {"url": url, "path": path, "filename": filename}
-        self.scraped_files.append(new_file)
+    def add_scraped_files_batch(self, files_data):
+        for file_data in files_data:
+            new_file = {"url": file_data["url"], "path": file_data["path"], "filename": file_data["filename"]}
+            self.scraped_files.append(new_file)
 
         sort_key = ["url", "filename"][self.sort_col_web]
         reverse = self.sort_dir_web == -1
@@ -377,19 +378,23 @@ class ListPanel(wx.Panel):
         self.populate_web_file_list()
 
     def populate_web_file_list(self):
+        self.standard_log_list.Freeze()
         self.standard_log_list.DeleteAllItems()
         for item in self.scraped_files:
             index = self.standard_log_list.InsertItem(self.standard_log_list.GetItemCount(), item["url"])
             self.standard_log_list.SetItem(index, 1, item["filename"])
+        self.standard_log_list.Thaw()
         self.update_file_count()
 
     def populate_local_file_list(self, files):
+        self.local_file_list.Freeze()
         self.local_file_list.DeleteAllItems()
         self.local_files = files
         for f in files:
             index = self.local_file_list.InsertItem(self.local_file_list.GetItemCount(), f["name"])
             self.local_file_list.SetItem(index, 1, f["type"])
             self.local_file_list.SetItem(index, 2, f["size_str"])
+        self.local_file_list.Thaw()
 
         if not self.user_has_resized:
             self.resize_columns()
