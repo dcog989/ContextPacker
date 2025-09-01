@@ -192,6 +192,7 @@ class App(wx.Frame):
         self.main_panel.crawler_panel.exclude_paths_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
         self.main_panel.local_panel.local_exclude_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
         self.main_panel.crawler_panel.about_text.SetForegroundColour(self.theme["accent_color"])
+        self.main_panel.crawler_panel.version_text.SetForegroundColour(self.palette["fg"])
         self.Refresh()
 
     def _set_title_bar_theme(self):

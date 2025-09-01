@@ -35,7 +35,7 @@ class MainFrame(wx.Panel):
         self.local_dir_radio.group = [self.web_crawl_radio, self.local_dir_radio]
         self.web_crawl_radio.SetValue(True)
 
-        self.crawler_panel = CrawlerInputPanel(self.input_static_box, self.theme)
+        self.crawler_panel = CrawlerInputPanel(self.input_static_box, self.theme, self.controller.version)
         self.local_panel = LocalInputPanel(self.input_static_box, self.theme)
 
         self.list_static_box = wx.StaticBox(self.right_panel_container, label="List")

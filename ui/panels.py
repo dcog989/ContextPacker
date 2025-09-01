@@ -11,9 +11,10 @@ config = get_config()
 
 
 class CrawlerInputPanel(wx.Panel):
-    def __init__(self, parent, theme):
+    def __init__(self, parent, theme, version):
         super().__init__(parent)
         self.theme = theme
+        self.version = version
         self._create_widgets()
         self._create_sizers()
         self.on_user_agent_change(None)
@@ -77,6 +78,11 @@ class CrawlerInputPanel(wx.Panel):
         self.about_text.SetFont(about_font)
         self.about_text.SetForegroundColour(self.theme["accent_color"])
 
+        self.version_text = wx.StaticText(self, label=f"v{self.version}")
+        version_font = self.GetFont()
+        version_font.SetPointSize(9)
+        self.version_text.SetFont(version_font)
+
     def _create_sizers(self):
         sizer = wx.FlexGridSizer(10, 2, 15, 10)
         sizer.AddGrowableCol(1, 1)
@@ -107,8 +113,13 @@ class CrawlerInputPanel(wx.Panel):
         sizer.Add(options_sizer, 1, wx.EXPAND | wx.TOP, 5)
         sizer.Add(wx.StaticText(self, label=""), 0)
         sizer.Add(self.download_button, 0, wx.ALIGN_LEFT | wx.TOP, 10)
-        sizer.Add(self.about_logo, 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL | wx.TOP, 15)
-        sizer.Add(self.about_text, 0, wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL | wx.TOP, 15)
+
+        about_text_sizer = wx.BoxSizer(wx.VERTICAL)
+        about_text_sizer.Add(self.about_text, 0, wx.ALIGN_LEFT)
+        about_text_sizer.Add(self.version_text, 0, wx.ALIGN_LEFT | wx.TOP, 2)
+
+        sizer.Add(self.about_logo, 0, wx.ALIGN_RIGHT | wx.ALIGN_TOP | wx.TOP, 15)
+        sizer.Add(about_text_sizer, 0, wx.ALIGN_LEFT | wx.TOP, 15)
 
         self.SetSizer(sizer)
 
@@ -211,10 +222,6 @@ class ListPanel(wx.Panel):
         self.toggle_output_view(is_web_mode=True)
         self.local_file_list.ShowSortIndicator(self.sort_col_local, self.sort_dir_local == 1)
         self.standard_log_list.ShowSortIndicator(self.sort_col_web, self.sort_dir_web == 1)
-
-    def update_discovered_count(self, count):
-        self.discovered_url_count = count
-        self.update_file_count()
 
     def _create_widgets(self):
         self.log_mode_panel = wx.Panel(self)
@@ -420,6 +427,10 @@ class ListPanel(wx.Panel):
         self.scraped_files.clear()
         self.discovered_url_count = 0
         self._update_delete_button_state()
+        self.update_file_count()
+
+    def update_discovered_count(self, count):
+        self.discovered_url_count = count
         self.update_file_count()
 
     def update_file_count(self):
