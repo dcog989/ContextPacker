@@ -52,5 +52,6 @@
         "*.ttf",
         "*.woff",
         "*.woff2"
-    ]
+    ],
+    "max_build_logs": 21
 }

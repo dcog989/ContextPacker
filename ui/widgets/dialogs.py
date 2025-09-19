@@ -75,10 +75,10 @@ class AboutDialog(wx.Dialog):
         else:
             self.log_verbose(f"Warning: Custom font not found at '{self.font_path}'.")
 
-        logo_path = resource_path("assets/icons/ContextPacker.svg")
+        logo_path = resource_path("assets/icons/ContextPacker-x128.png")
         if logo_path.exists():
-            bundle = wx.BitmapBundle.FromSVGFile(str(logo_path), wx.Size(128, 128))
-            logo_bitmap = wx.StaticBitmap(self, bitmap=bundle)
+            bmp = wx.Bitmap(str(logo_path), wx.BITMAP_TYPE_PNG)
+            logo_bitmap = wx.StaticBitmap(self, bitmap=wx.BitmapBundle(bmp))
             main_sizer.Add(logo_bitmap, 0, wx.ALIGN_CENTER | wx.BOTTOM, 10)
 
         title_font = wx.Font(22, wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)

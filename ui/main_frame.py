@@ -56,8 +56,9 @@ class MainFrame(wx.Panel):
         package_button_height = self.package_button.GetBestSize().GetHeight()
         copy_button_size = wx.Size(package_button_height, package_button_height)
 
-        icon_path = resource_path("assets/icons/copy.svg")
-        copy_bitmap = wx.BitmapBundle.FromSVGFile(str(icon_path), wx.Size(24, 24)).GetBitmap(wx.Size(24, 24))
+        icon_path = resource_path("assets/icons/copy.png")
+        img = wx.Image(str(icon_path), wx.BITMAP_TYPE_PNG)
+        copy_bitmap = wx.Bitmap(img)
 
         self.copy_button = IconCustomButton(self.output_static_box, copy_bitmap, self.theme, size=copy_button_size)
         self.copy_button.SetToolTip("Copy final package contents to clipboard")

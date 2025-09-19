@@ -1,6 +1,5 @@
 beautifulsoup4==4.13.5
 markdownify==1.2.0
 repomix==0.3.4
-selenium==4.35.0
-wxpython==4.2.3
-lxml==6.0.1
+
+lxml

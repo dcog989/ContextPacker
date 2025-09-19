@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import sys
 
 CONFIG_FILENAME = "config.json"
 
@@ -52,9 +53,20 @@ DEFAULT_CONFIG = {
         "*.woff",
         "*.woff2",
     ],
+    "max_build_logs": 21,
 }
 
 _config = None
+
+
+def get_base_path():
+    """Gets the base path for data files, handling PyInstaller."""
+    if getattr(sys, "frozen", False):
+        # Running as a PyInstaller bundle
+        return Path(sys.executable).parent
+    else:
+        # Running from source (development)
+        return Path(".")
 
 
 def get_config():
@@ -63,7 +75,8 @@ def get_config():
     if _config is not None:
         return _config
 
-    config_path = Path(CONFIG_FILENAME)
+    base_path = get_base_path()
+    config_path = base_path / CONFIG_FILENAME
     if not config_path.exists():
         try:
             with open(config_path, "w", encoding="utf-8") as f:
