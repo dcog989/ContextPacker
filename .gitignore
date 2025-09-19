@@ -1,8 +1,10 @@
 .repomixignore
 repomix.config.json
+.archive/
 .vscode/
 .gemini/
-TODO.md
+.dev-notes/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
