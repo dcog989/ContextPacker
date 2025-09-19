@@ -62,7 +62,7 @@ function Assert-PythonPackage {
         $choice = Read-Host "$PackageName not found. Would you like to try and install it now via 'pip install $PackageName'? (y/n)"
         if ($choice -eq 'y') {
             Write-Log "User chose to install $PackageName."
-            pip install $PackageName *>> $LogFile
+            & pip install $PackageName 2>&1 | Out-File -FilePath $LogFile -Append
             if (-not (Test-CommandExists $CommandName)) {
                 Write-Host "Installation failed. See log for details." -ForegroundColor Red
                 Write-Log "Installation failed or $PackageName is not in PATH."
@@ -88,8 +88,11 @@ function New-ChangelogFile {
     Write-Host "Generating CHANGELOG.md..."
     Write-Log "Generating CHANGELOG.md..."
     try {
-        git log --pretty=format:"- %s (%h)" *>> $LogFile
-        git log --pretty=format:"- %s (%h)" | Out-File -FilePath $OutputPath -Encoding utf8
+        $gitLogOutput = & git log --pretty=format:"- %s (%h)" 2>&1
+        $gitLogOutput | Out-File -FilePath $LogFile -Append
+        if ($LastExitCode -ne 0) { throw "Git command failed." }
+        
+        $gitLogOutput | Out-File -FilePath $OutputPath -Encoding utf8
         Write-Log "CHANGELOG.md generated successfully at $OutputPath."
         return $true
     }
@@ -104,12 +107,38 @@ function New-ChangelogFile {
 
 function Remove-BuildArtifacts {
     Write-Host "--- Cleaning Build Artifacts ---" -ForegroundColor Cyan
+
+    $processName = "ContextPacker"
+    $distPath = (Join-Path $ProjectRoot "dist").ToLower()
+    # Find a running process that originates from our local 'dist' directory.
+    $existingProcess = Get-Process -Name $processName -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.ToLower().StartsWith($distPath) }
+
+    if ($existingProcess) {
+        $confirm = Read-Host "$processName is running from the 'dist' directory. To clean it, the process must be stopped. Stop it now? (y/n)"
+        if ($confirm.ToLower() -eq 'y') {
+            Write-Host "Stopping existing $processName process..."
+            Write-Log "Stopping existing $processName process (PID: $($existingProcess.Id)) to allow clean-up."
+            Stop-Process -Name $processName -Force
+            Start-Sleep -Seconds 1 # Give the OS a moment to release file handles
+        }
+        else {
+            Write-Host "Skipping clean-up of 'dist' directory because the application is running." -ForegroundColor Yellow
+            Write-Log "User cancelled clean-up of 'dist' because process was running."
+        }
+    }
+
     $DirsToRemove = @("build", "dist")
     foreach ($dir in $DirsToRemove) {
         if (Test-Path $dir) {
             Write-Host "Removing directory: $dir"
             Write-Log "Removing directory: $dir"
-            Remove-Item -Recurse -Force $dir
+            try {
+                Remove-Item -Recurse -Force $dir -ErrorAction Stop
+            }
+            catch {
+                Write-Host "Could not fully remove '$dir'. It may be in use. See log for details." -ForegroundColor Yellow
+                Write-Log "ERROR: Failed to remove '$dir'. Details: $($_.Exception.Message)"
+            }
         }
     }
 
@@ -129,7 +158,7 @@ function New-RequirementsFile {
     if (-not (Assert-PythonPackage -PackageName "pipreqs" -CommandName "pipreqs")) { return }
 
     Write-Host "Running pipreqs..."
-    pipreqs --force --savepath "requirements.txt" "." *>> $LogFile
+    & pipreqs --force --savepath "requirements.txt" "." 2>&1 | Out-File -FilePath $LogFile -Append
     if ($LastExitCode -ne 0) {
         Write-Host "pipreqs failed. See log for details." -ForegroundColor Red
         Write-Log "pipreqs command failed with exit code $LastExitCode."
@@ -142,7 +171,6 @@ function New-RequirementsFile {
 
     Write-Host "✔ Successfully generated requirements.txt" -ForegroundColor Green
 }
-
 
 function Invoke-Build {
     param(
@@ -159,8 +187,8 @@ function Invoke-Build {
     $AbsoluteDistDir = Join-Path $ProjectRoot $DistDir
 
     Write-Host "Cleaning previous build directories..."
-    if (Test-Path $AbsoluteDistDir) { Remove-Item -Recurse -Force $AbsoluteDistDir *>> $LogFile }
-    if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir *>> $LogFile }
+    if (Test-Path $AbsoluteDistDir) { Remove-Item -Recurse -Force $AbsoluteDistDir 2>&1 | Out-File -FilePath $LogFile -Append }
+    if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir 2>&1 | Out-File -FilePath $LogFile -Append }
     Write-Log "Cleaned old build directories."
 
     $originalSpecContent = Get-Content $SpecFile -Raw
@@ -226,7 +254,7 @@ function Invoke-Build {
                 
                 # Use absolute paths for 7z arguments for reliability
                 $7zArgs = @("a", "-t7z", "-m0=LZMA2", "-mx=3", $ArchivePath, $FinalExePath, $ChangelogPath)
-                & $7zExe $7zArgs *>> $LogFile
+                & $7zExe $7zArgs 2>&1 | Out-File -FilePath $LogFile -Append
 
                 if ($LastExitCode -eq 0) {
                     Write-Host "✔ Compression successful." -ForegroundColor Green
@@ -245,7 +273,6 @@ function Invoke-Build {
     Write-Log "Opened output folder: $AbsoluteDistDir"
     return $FinalExePath
 }
-
 
 function Invoke-BuildAndRun {
     $processName = "ContextPacker"
@@ -314,4 +341,4 @@ Remove-OldLogs
 }
 
 Write-Host "Exiting builder."
-Write-Log "--- Script End ---`n"
+Write-Log "--- Script End ---`n"```
