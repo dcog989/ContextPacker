@@ -261,7 +261,7 @@ function Invoke-Build {
             }
             else {
                 $Version = (Get-Content "core/version.py").Split('"')[1]
-                $ArchiveName = "ContextPacker-v$($Version).7z"
+                $ArchiveName = "ContextPacker-Windows-x64-v$($Version).7z"
                 $ArchivePath = Join-Path $AbsoluteDistDir $ArchiveName
                 Write-Host "Compressing build output..."
                 Write-Log "Compressing to $ArchivePath..."
