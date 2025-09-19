@@ -1,7 +1,6 @@
 import wx
 from pathlib import Path
 import threading
-import multiprocessing
 
 import core.actions as actions
 from ui.widgets.dialogs import ThemedMessageDialog
@@ -47,10 +46,9 @@ class TaskHandler:
         dl_button.label = "Stop!"
         dl_button.Refresh()
 
-        self.app.cancel_event = multiprocessing.Event()
+        self.app.cancel_event = threading.Event()
         self.app.start_queue_listener()
         actions.start_download(self.app, self.app.cancel_event)
-        
 
     def start_package_task(self, file_list_for_count):
         pkg_button = self.app.main_panel.package_button
@@ -79,7 +77,6 @@ class TaskHandler:
         self.app.start_queue_listener()
         actions.start_packaging(self.app, self.app.cancel_event, file_list_for_count)
 
-
     def stop_current_task(self):
         if self.app.cancel_event:
             self.app.cancel_event.set()
@@ -99,7 +96,6 @@ class TaskHandler:
             pkg_button.Refresh()
 
         self.app.log_verbose("Stopping process...")
-
 
     def handle_status(self, status, msg_obj):
         message = msg_obj.get("message", "")
@@ -121,7 +117,6 @@ class TaskHandler:
                 self.app._open_output_folder()
             self.cleanup_after_task()
             self.app._update_button_states()
-
 
     def cleanup_after_task(self):
         if self.app.is_task_running:

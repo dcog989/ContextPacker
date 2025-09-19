@@ -127,26 +127,33 @@ function Remove-BuildArtifacts {
         }
     }
 
-    $DirsToRemove = @("build", "dist")
-    foreach ($dir in $DirsToRemove) {
-        if (Test-Path $dir) {
-            Write-Host "Removing directory: $dir"
-            Write-Log "Removing directory: $dir"
-            try {
-                Remove-Item -Recurse -Force $dir -ErrorAction Stop
-            }
-            catch {
-                Write-Host "Could not fully remove '$dir'. It may be in use. See log for details." -ForegroundColor Yellow
-                Write-Log "ERROR: Failed to remove '$dir'. Details: $($_.Exception.Message)"
+    $originalProgressPreference = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    try {
+        $DirsToRemove = @("build", "dist")
+        foreach ($dir in $DirsToRemove) {
+            if (Test-Path $dir) {
+                Write-Host "Removing directory: $dir"
+                Write-Log "Removing directory: $dir"
+                try {
+                    Remove-Item -Recurse -Force $dir -ErrorAction Stop
+                }
+                catch {
+                    Write-Host "Could not fully remove '$dir'. It may be in use. See log for details." -ForegroundColor Yellow
+                    Write-Log "ERROR: Failed to remove '$dir'. Details: $($_.Exception.Message)"
+                }
             }
         }
-    }
 
-    $PyCacheDirs = Get-ChildItem -Path $ProjectRoot -Recurse -Directory -Filter "__pycache__"
-    if ($PyCacheDirs) {
-        Write-Host "Removing __pycache__ directories..."
-        Write-Log "Removing __pycache__ directories..."
-        $PyCacheDirs | Remove-Item -Recurse -Force
+        $PyCacheDirs = Get-ChildItem -Path $ProjectRoot -Recurse -Directory -Filter "__pycache__"
+        if ($PyCacheDirs) {
+            Write-Host "Removing __pycache__ directories..."
+            Write-Log "Removing __pycache__ directories..."
+            $PyCacheDirs | Remove-Item -Recurse -Force
+        }
+    }
+    finally {
+        $ProgressPreference = $originalProgressPreference
     }
 
     Write-Host "✔ Clean-up complete." -ForegroundColor Green
@@ -187,8 +194,15 @@ function Invoke-Build {
     $AbsoluteDistDir = Join-Path $ProjectRoot $DistDir
 
     Write-Host "Cleaning previous build directories..."
-    if (Test-Path $AbsoluteDistDir) { Remove-Item -Recurse -Force $AbsoluteDistDir 2>&1 | Out-File -FilePath $LogFile -Append }
-    if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir 2>&1 | Out-File -FilePath $LogFile -Append }
+    $originalProgressPreference = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    try {
+        if (Test-Path $AbsoluteDistDir) { Remove-Item -Recurse -Force $AbsoluteDistDir 2>&1 | Out-File -FilePath $LogFile -Append }
+        if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir 2>&1 | Out-File -FilePath $LogFile -Append }
+    }
+    finally {
+        $ProgressPreference = $originalProgressPreference
+    }
     Write-Log "Cleaned old build directories."
 
     $originalSpecContent = Get-Content $SpecFile -Raw
@@ -341,4 +355,4 @@ Remove-OldLogs
 }
 
 Write-Host "Exiting builder."
-Write-Log "--- Script End ---`n"```
+Write-Log "--- Script End ---`n"

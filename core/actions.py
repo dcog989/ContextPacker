@@ -9,13 +9,14 @@ import os
 import fnmatch
 import subprocess
 import queue
-import multiprocessing
+import sys
 
 from .packager import run_repomix
+from .crawler import crawl_website
 
 
 def start_download(app, cancel_event):
-    """Initializes and starts the web crawling process in a new process."""
+    """Initializes and starts the web crawling process in a new thread."""
     app.main_panel.list_panel.clear_logs()
     app.main_panel.list_panel.progress_gauge.SetValue(0)
 
@@ -27,7 +28,7 @@ def start_download(app, cancel_event):
     crawler_config = app.main_panel.crawler_panel.get_crawler_config(app.temp_dir)
 
     app.log_verbose("Starting url conversion...")
-    app.worker_thread = multiprocessing.Process(target=_crawl_process_worker, args=(crawler_config, app.log_queue, cancel_event), daemon=True)
+    app.worker_thread = threading.Thread(target=crawl_website, args=(crawler_config, app.log_queue, cancel_event), daemon=True)
     app.worker_thread.start()
 
 
@@ -52,17 +53,6 @@ def start_git_clone(app, cancel_event):
     app.log_verbose(f"Starting git clone for {url}...")
     app.worker_thread = threading.Thread(target=_clone_repo_worker, args=(url, app.temp_dir, app.log_queue, cancel_event), daemon=True)
     app.worker_thread.start()
-
-
-def _crawl_process_worker(crawler_config, log_queue, cancel_event):
-    """
-    This function runs in a separate process to perform the web crawl.
-    It imports necessary modules within the function to ensure it works
-    correctly with multiprocessing.
-    """
-    from .crawler import crawl_website
-
-    crawl_website(crawler_config, log_queue, cancel_event)
 
 
 def _clone_repo_worker(url, path, log_queue, cancel_event):
@@ -143,12 +133,21 @@ def start_packaging(app, cancel_event, file_list=None):
         default_excludes = [p.strip() for p in app.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
 
         additional_excludes = set()
-        if not app.main_panel.local_panel.include_subdirs_check.GetValue():
-            source_path = Path(source_dir)
-            if source_path.is_dir():
-                for item in source_path.iterdir():
-                    if item.is_dir():
-                        additional_excludes.add(f"{item.name}/")
+        max_depth = app.main_panel.local_panel.dir_level_ctrl.GetValue()
+        if max_depth == 9:
+            max_depth = sys.maxsize
+        source_path = Path(source_dir)
+
+        if source_path.is_dir():
+            for root, dirs, _ in os.walk(source_path):
+                root_path = Path(root)
+                rel_path = root_path.relative_to(source_path)
+                depth = 0 if rel_path == Path(".") else len(rel_path.parts)
+
+                if depth >= max_depth:
+                    for d in dirs:
+                        additional_excludes.add(f"{(rel_path / d).as_posix()}/")
+                    dirs[:] = []
 
         effective_excludes = list(set(default_excludes) | app.local_files_to_exclude | additional_excludes)
 
@@ -161,6 +160,26 @@ def start_packaging(app, cancel_event, file_list=None):
     _run_packaging_thread(app, source_dir, app.filename_prefix, effective_excludes, extension, repomix_style, cancel_event, file_list)
 
 
+def _packaging_worker(source_dir, output_path, log_queue, cancel_event, repomix_style, exclude_patterns, progress_handler):
+    """Worker function that wraps run_repomix to handle logging setup/teardown."""
+    repomix_logger = logging.getLogger("repomix")
+    original_level = repomix_logger.level
+    repomix_logger.setLevel(logging.INFO)
+    repomix_logger.addHandler(progress_handler)
+    try:
+        run_repomix(
+            source_dir,
+            output_path,
+            log_queue,
+            cancel_event,
+            repomix_style=repomix_style,
+            exclude_patterns=exclude_patterns,
+        )
+    finally:
+        repomix_logger.removeHandler(progress_handler)
+        repomix_logger.setLevel(original_level)
+
+
 def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, extension, repomix_style, cancel_event, file_list=None):
     """Configures and runs the repomix packager in a worker thread."""
     timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
@@ -169,6 +188,7 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
     app.final_output_path = str(Path(downloads_path) / output_basename)
 
     app.log_verbose("\nStarting packaging process...")
+    app.log_verbose(f"Output file will be saved to: {app.final_output_path}")
 
     class RepomixProgressHandler(logging.Handler):
         def __init__(self, log_queue_ref, total_files_ref):
@@ -207,25 +227,20 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
     progress_handler = RepomixProgressHandler(app.log_queue, total_files_for_progress)
     progress_handler.setLevel(logging.INFO)
 
-    repomix_logger = logging.getLogger("repomix")
-    original_level = repomix_logger.level
-    repomix_logger.setLevel(logging.INFO)
-    repomix_logger.addHandler(progress_handler)
-
-    try:
-        app.worker_thread = threading.Thread(target=run_repomix, args=(source_dir, app.final_output_path, app.log_queue, cancel_event, repomix_style, exclude_paths), daemon=True)
-        app.worker_thread.start()
-    finally:
-        repomix_logger.removeHandler(progress_handler)
-        repomix_logger.setLevel(original_level)
-
-
-def populate_local_files(app):
-    """Convenience function to trigger a refresh of the local file list."""
-    app.populate_local_file_list()
+    args = (
+        source_dir,
+        app.final_output_path,
+        app.log_queue,
+        cancel_event,
+        repomix_style,
+        exclude_paths,
+        progress_handler,
+    )
+    app.worker_thread = threading.Thread(target=_packaging_worker, args=args, daemon=True)
+    app.worker_thread.start()
 
 
-def get_local_files(root_dir, include_subdirs, custom_excludes, binary_excludes, cancel_event=None):
+def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event=None):
     """
     Scans a directory and returns a filtered list of files and folders,
     pruning ignored directories for efficiency.
@@ -234,17 +249,21 @@ def get_local_files(root_dir, include_subdirs, custom_excludes, binary_excludes,
     if not base_path.is_dir():
         return []
 
+    if max_depth == 9:  # Treat 9 as unlimited
+        max_depth = sys.maxsize
+
     files_to_show = []
     all_ignore_patterns = list(custom_excludes)
 
-    gitignore_path = base_path / ".gitignore"
-    if gitignore_path.is_file():
-        try:
-            with open(gitignore_path, "r", encoding="utf-8") as f:
-                gitignore_patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
-                all_ignore_patterns.extend(gitignore_patterns)
-        except Exception:
-            pass
+    if use_gitignore:
+        gitignore_path = base_path / ".gitignore"
+        if gitignore_path.is_file():
+            try:
+                with open(gitignore_path, "r", encoding="utf-8") as f:
+                    gitignore_patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+                    all_ignore_patterns.extend(gitignore_patterns)
+            except Exception:
+                pass
 
     all_ignore_patterns.extend(binary_excludes)
 
@@ -253,6 +272,10 @@ def get_local_files(root_dir, include_subdirs, custom_excludes, binary_excludes,
             return []
         root_path = Path(root)
         rel_root_path = root_path.relative_to(base_path)
+
+        depth = 0 if rel_root_path == Path(".") else len(rel_root_path.parts)
+        if depth >= max_depth:
+            dirnames[:] = []
 
         ignored_dirs = set()
         for d in dirnames:
@@ -276,9 +299,6 @@ def get_local_files(root_dir, include_subdirs, custom_excludes, binary_excludes,
                     files_to_show.append({"name": rel_path_str, "type": "File", "size": size, "size_str": size_str, "rel_path": rel_path_str})
                 except (OSError, ValueError):
                     continue
-
-        if not include_subdirs:
-            break
 
     if cancel_event and cancel_event.is_set():
         return []

@@ -6,8 +6,9 @@ from pathlib import Path
 import ctypes
 import subprocess
 import platform
-import multiprocessing
 import threading
+import queue
+import multiprocessing
 
 from ui.main_frame import MainFrame
 from ui.widgets.dialogs import AboutDialog
@@ -31,7 +32,7 @@ class App(wx.Frame):
         self.temp_dir = None
         self.final_output_path = None
         self.filename_prefix = ""
-        self.log_queue = multiprocessing.Queue()
+        self.log_queue = queue.Queue()
         self.cancel_event = None
         self.worker_thread = None
         self.is_shutting_down = False
@@ -423,7 +424,8 @@ class App(wx.Frame):
 
         wx.BeginBusyCursor()
         self.main_panel.local_panel.browse_button.Enable(False)
-        self.main_panel.local_panel.include_subdirs_check.Enable(False)
+        self.main_panel.local_panel.use_gitignore_check.Enable(False)
+        self.main_panel.local_panel.dir_level_ctrl.Enable(False)
         self.main_panel.local_panel.hide_binaries_check.Enable(False)
 
         self.local_files_to_exclude.clear()
@@ -431,7 +433,8 @@ class App(wx.Frame):
         binary_excludes = BINARY_FILE_PATTERNS if self.main_panel.local_panel.hide_binaries_check.GetValue() else []
         args = (
             input_dir,
-            self.main_panel.local_panel.include_subdirs_check.GetValue(),
+            self.main_panel.local_panel.dir_level_ctrl.GetValue(),
+            self.main_panel.local_panel.use_gitignore_check.GetValue(),
             custom_excludes,
             binary_excludes,
             self.local_scan_cancel_event,
@@ -439,9 +442,9 @@ class App(wx.Frame):
         self.local_scan_worker = threading.Thread(target=self._local_scan_worker, args=args, daemon=True)
         self.local_scan_worker.start()
 
-    def _local_scan_worker(self, input_dir, include_subdirs, custom_excludes, binary_excludes, cancel_event):
+    def _local_scan_worker(self, input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event):
         try:
-            files_to_show = actions.get_local_files(input_dir, include_subdirs, custom_excludes, binary_excludes, cancel_event)
+            files_to_show = actions.get_local_files(input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event)
             if not cancel_event.is_set():
                 wx.CallAfter(self._on_local_scan_complete, files_to_show)
             else:
@@ -455,7 +458,8 @@ class App(wx.Frame):
             self.main_panel.list_panel.populate_local_file_list(files)
         if self.main_panel.local_panel:
             self.main_panel.local_panel.browse_button.Enable(True)
-            self.main_panel.local_panel.include_subdirs_check.Enable(True)
+            self.main_panel.local_panel.use_gitignore_check.Enable(True)
+            self.main_panel.local_panel.dir_level_ctrl.Enable(True)
             self.main_panel.local_panel.hide_binaries_check.Enable(True)
         wx.EndBusyCursor()
         self.local_scan_worker = None

@@ -172,10 +172,15 @@ class LocalInputPanel(wx.Panel):
         default_excludes_list = config.get("default_local_excludes", [])
         default_excludes = "\n".join(default_excludes_list)
         self.local_exclude_ctrl.SetValue(default_excludes)
-        self.include_subdirs_check = CustomCheckBox(self, label="Include Subdirectories", theme=self.theme)
-        self.include_subdirs_check.SetValue(True)
+        self.use_gitignore_check = CustomCheckBox(self, label="Use .gitignore", theme=self.theme)
+        self.use_gitignore_check.SetValue(True)
         self.hide_binaries_check = CustomCheckBox(self, label="Hide Images + Binaries", theme=self.theme)
         self.hide_binaries_check.SetValue(True)
+        self.dir_level_label = wx.StaticText(self, label="Directory Depth:")
+        self.dir_level_ctrl = wx.SpinCtrl(self, value="9", min=0, max=9)
+        dir_level_tooltip = "How many subdirectory levels to include.\n0 = Root directory only.\n1 = Root + 1 level down, etc.\n9 = All levels (unlimited depth)."
+        self.dir_level_label.SetToolTip(dir_level_tooltip)
+        self.dir_level_ctrl.SetToolTip(dir_level_tooltip)
 
     def _create_sizers(self):
         sizer = wx.FlexGridSizer(3, 2, 10, 10)
@@ -196,8 +201,14 @@ class LocalInputPanel(wx.Panel):
         # Row 2: Options
         sizer.AddSpacer(0)  # Empty cell for alignment
         options_sizer = wx.BoxSizer(wx.VERTICAL)
-        options_sizer.Add(self.include_subdirs_check, 0, wx.BOTTOM, 5)
-        options_sizer.Add(self.hide_binaries_check, 0)
+        options_sizer.Add(self.use_gitignore_check, 0, wx.BOTTOM, 5)
+        options_sizer.Add(self.hide_binaries_check, 0, wx.BOTTOM, 10)
+
+        dir_level_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        dir_level_sizer.Add(self.dir_level_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        dir_level_sizer.Add(self.dir_level_ctrl, 0, wx.ALIGN_CENTER_VERTICAL)
+        options_sizer.Add(dir_level_sizer, 0, wx.ALIGN_LEFT)
+
         sizer.Add(options_sizer, 0, wx.EXPAND | wx.TOP, 5)
 
         self.SetSizer(sizer)

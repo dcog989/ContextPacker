@@ -110,8 +110,10 @@ class MainFrame(wx.Panel):
         self.web_crawl_radio.Bind(wx.EVT_RADIOBUTTON, self.controller.on_toggle_input_mode)
         self.local_dir_radio.Bind(wx.EVT_RADIOBUTTON, self.controller.on_toggle_input_mode)
         self.local_panel.browse_button.Bind(wx.EVT_BUTTON, self.controller.on_browse)
-        self.local_panel.include_subdirs_check.Bind(wx.EVT_CHECKBOX, self.controller.on_local_filters_changed)
+        self.local_panel.use_gitignore_check.Bind(wx.EVT_CHECKBOX, self.controller.on_local_filters_changed)
         self.local_panel.hide_binaries_check.Bind(wx.EVT_CHECKBOX, self.controller.on_local_filters_changed)
+        self.local_panel.dir_level_ctrl.Bind(wx.EVT_SPINCTRL, self.controller.on_exclude_text_update)
+        self.local_panel.dir_level_ctrl.Bind(wx.EVT_TEXT, self.controller.on_exclude_text_update)
 
         exclude_ctrl = self.local_panel.local_exclude_ctrl.text_ctrl
         exclude_ctrl.Bind(wx.EVT_KILL_FOCUS, self.controller.on_local_filters_changed)
