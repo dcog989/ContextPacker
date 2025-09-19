@@ -130,7 +130,6 @@ def crawl_website(config, log_queue, cancel_event):
     """
     Crawls a website based on the provided configuration.
     """
-    print(f"DIAG: crawl_website thread started at {__import__('datetime').datetime.now()}")
     log_queue.put({"type": "log", "message": "Searching for a compatible web browser..."})
 
     chrome_options = webdriver.ChromeOptions()

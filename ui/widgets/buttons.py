@@ -47,7 +47,6 @@ class CustomButton(wx.Panel):
         gc.DrawText(self.label, (width - label_width) / 2, (height - label_height) / 2)
 
     def on_mouse_down(self, event):
-        print(f"DIAG: CustomButton on_mouse_down at {__import__('datetime').datetime.now()}")
         if self.IsEnabled():
             wx.PostEvent(self, wx.CommandEvent(wx.EVT_BUTTON.typeId, self.GetId()))
 

@@ -43,6 +43,8 @@ class App(wx.Frame):
         self.local_scan_cancel_event = None
         self.exclude_update_timer = wx.Timer(self)
         self.queue_listener_thread = None
+        self.scraped_files_batch = []
+        self.batch_update_timer = wx.Timer(self)
 
         self._set_theme_palette()
         self.main_panel = MainFrame(self)
@@ -56,6 +58,7 @@ class App(wx.Frame):
 
         self.Bind(wx.EVT_CLOSE, self.on_close)
         self.Bind(wx.EVT_TIMER, self.on_exclude_timer, self.exclude_update_timer)
+        self.Bind(wx.EVT_TIMER, self.on_batch_update_timer, self.batch_update_timer)
 
         threading.Thread(target=self._detect_and_apply_theme, daemon=True).start()
 
@@ -90,8 +93,10 @@ class App(wx.Frame):
         if msg_type == "log":
             self.log_verbose(message)
         elif msg_type == "file_saved":
-            # This is now handled in batches, but a single message handler is fine
-            self.main_panel.list_panel.add_scraped_files_batch([msg_obj])
+            self.scraped_files_batch.append(msg_obj)
+            if not self.batch_update_timer.IsRunning():
+                self.batch_update_timer.StartOnce(250)
+
             queue_size = msg_obj.get("queue_size", 0)
             self.main_panel.list_panel.update_discovered_count(queue_size)
             verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
@@ -103,6 +108,11 @@ class App(wx.Frame):
             self.task_handler.handle_status(msg_obj.get("status"), msg_obj)
         else:
             self.log_verbose(str(message))
+
+    def on_batch_update_timer(self, event):
+        if self.scraped_files_batch:
+            self.main_panel.list_panel.add_scraped_files_batch(self.scraped_files_batch)
+            self.scraped_files_batch.clear()
 
     def _detect_and_apply_theme(self):
         """Worker function to detect dark mode and apply the theme."""
@@ -200,8 +210,8 @@ class App(wx.Frame):
 
     def _setup_timer(self):
         self.timer = wx.Timer(self)
-        self.Bind(wx.EVT_TIMER, self.on_check_log_queue, self.timer)
-        self.timer.Start(100)
+        self.Bind(wx.EVT_TIMER, self.on_update_ui_timer, self.timer)
+        self.timer.Start(1000)
 
     def _set_icon(self):
         try:
@@ -213,6 +223,7 @@ class App(wx.Frame):
 
     def on_close(self, event):
         self.timer.Stop()
+        self.batch_update_timer.Stop()
         self.stop_queue_listener()
         if self.local_scan_cancel_event:
             self.local_scan_cancel_event.set()
@@ -299,7 +310,6 @@ class App(wx.Frame):
         event.Skip()
 
     def on_download_button_click(self, event):
-        print(f"DIAG: on_download_button_click called at {datetime.now()}")
         if self.is_task_running:
             self.on_stop_process()
         else:
@@ -349,7 +359,7 @@ class App(wx.Frame):
                 self.main_panel.output_timestamp_label.SetLabel(timestamp_str)
                 self.main_panel.right_panel_container.Layout()
 
-    def on_check_log_queue(self, event):
+    def on_update_ui_timer(self, event):
         if not (self.worker_thread and self.worker_thread.is_alive()):
             self._update_timestamp_label()
 
@@ -359,7 +369,7 @@ class App(wx.Frame):
         copy_ready = bool(self.final_output_path and Path(self.final_output_path).exists())
 
         if is_web_mode:
-            if self.temp_dir and any(f.is_file() for f in Path(self.temp_dir).iterdir()):
+            if self.main_panel.list_panel.scraped_files:
                 package_ready = True
         else:
             if self.main_panel.local_panel.local_dir_ctrl.GetValue():
@@ -466,8 +476,8 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
-    except Exception as e:
-        print(f"DIAG: DPI awareness setting failed. Error: {e}")
+    except Exception:
+        pass
 
     app = wx.App(False)
     frame = App()

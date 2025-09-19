@@ -16,7 +16,6 @@ from .packager import run_repomix
 
 def start_download(app, cancel_event):
     """Initializes and starts the web crawling process in a new process."""
-    print(f"DIAG: actions.start_download called at {datetime.now()}")
     app.main_panel.list_panel.clear_logs()
     app.main_panel.list_panel.progress_gauge.SetValue(0)
 
@@ -29,7 +28,6 @@ def start_download(app, cancel_event):
 
     app.log_verbose("Starting url conversion...")
     app.worker_thread = multiprocessing.Process(target=_crawl_process_worker, args=(crawler_config, app.log_queue, cancel_event), daemon=True)
-    print(f"DIAG: Worker process created. Starting now at {datetime.now()}.")
     app.worker_thread.start()
 
 
