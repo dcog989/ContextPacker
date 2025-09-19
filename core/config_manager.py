@@ -54,6 +54,8 @@ DEFAULT_CONFIG = {
         "*.woff2",
     ],
     "max_build_logs": 21,
+    "window_size": [-1, -1],
+    "sash_position": 650,
 }
 
 _config = None
@@ -89,9 +91,23 @@ def get_config():
 
     try:
         with open(config_path, "r", encoding="utf-8") as f:
-            _config = json.load(f)
+            loaded_config = json.load(f)
+            # Ensure all default keys are present
+            _config = DEFAULT_CONFIG.copy()
+            _config.update(loaded_config)
     except Exception as e:
         print(f"Warning: Could not load config.json, using defaults: {e}")
         _config = DEFAULT_CONFIG
 
     return _config
+
+
+def save_config(config_data):
+    """Saves the provided configuration dictionary to config.json."""
+    base_path = get_base_path()
+    config_path = base_path / CONFIG_FILENAME
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, indent=4)
+    except Exception as e:
+        print(f"Error: Could not save config file: {e}")

@@ -15,7 +15,7 @@ from ui.widgets.dialogs import AboutDialog
 import core.actions as actions
 from core.packager import resource_path
 from core.version import __version__
-from core.config_manager import get_config
+from core.config_manager import get_config, save_config
 from core.task_handler import TaskHandler
 from core.utils import get_downloads_folder, set_title_bar_theme
 
@@ -25,7 +25,9 @@ BINARY_FILE_PATTERNS = config.get("binary_file_patterns", [])
 
 class App(wx.Frame):
     def __init__(self):
-        super().__init__(None, title="ContextPacker", size=wx.Size(1600, 950))
+        w, h = config.get("window_size", [-1, -1])
+        size = wx.Size(w, h) if w > 0 and h > 0 else wx.Size(1600, 950)
+        super().__init__(None, title="ContextPacker", size=size)
 
         self.version = __version__
         self.task_handler = TaskHandler(self)
@@ -223,6 +225,12 @@ class App(wx.Frame):
             print(f"Warning: Failed to set icon: {e}")
 
     def on_close(self, event):
+        # Save window size and sash position
+        current_size = self.GetSize()
+        config["window_size"] = [current_size.width, current_size.height]
+        config["sash_position"] = self.main_panel.splitter.GetSashPosition()
+        save_config(config)
+
         self.timer.Stop()
         self.batch_update_timer.Stop()
         self.stop_queue_listener()

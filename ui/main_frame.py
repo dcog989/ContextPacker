@@ -103,7 +103,8 @@ class MainFrame(wx.Panel):
         right_sizer.Add(output_box_sizer, 0, wx.EXPAND | wx.ALL, 5)
 
         self.splitter.SplitVertically(self.left_panel, self.right_panel_container)
-        self.splitter.SetSashPosition(650)
+        sash_pos = config.get("sash_position", 650)
+        self.splitter.SetSashPosition(sash_pos)
         self.splitter.SetMinimumPaneSize(600)
 
     def _bind_events(self):
