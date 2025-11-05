@@ -198,8 +198,6 @@ def crawl_website(config, log_queue, cancel_event):
 
     def _normalize_url(url):
         url_no_fragment = url.split("#")[0]
-        if url_no_fragment.endswith(".html"):
-            url_no_fragment = url_no_fragment[:-5]
         if url_no_fragment.endswith("/"):
             url_no_fragment = url_no_fragment[:-1]
         return url_no_fragment
