@@ -1,7 +1,7 @@
-beautifulsoup4==4.13.5
+beautifulsoup4==4.14.2
 markdownify==1.2.0
 repomix==0.3.4
-selenium==4.35.0
-wxpython==4.2.4a15973+352aa39b
+selenium==4.38.0
+wxpython==4.2.4
 
 lxml
