@@ -228,28 +228,30 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
     depth_excludes = set()
     all_ignore_patterns = list(custom_excludes)
 
+    ignore_files_to_check = [".repomixignore"]
     if use_gitignore:
-        gitignore_path = base_path / ".gitignore"
-        cache_key = str(gitignore_path)
-        gitignore_patterns = []
+        ignore_files_to_check.append(".gitignore")
 
-        if gitignore_path.is_file():
-            try:
-                mtime = gitignore_path.stat().st_mtime
-                if gitignore_cache is not None and cache_key in gitignore_cache and gitignore_cache[cache_key].get("mtime") == mtime:
-                    gitignore_patterns = gitignore_cache[cache_key]["patterns"]
-                else:
-                    with open(gitignore_path, "r", encoding="utf-8") as f:
-                        patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
-                        gitignore_patterns = patterns
-                        if gitignore_cache is not None:
-                            gitignore_cache[cache_key] = {"mtime": mtime, "patterns": patterns}
-            except Exception:
-                if gitignore_cache is not None and cache_key in gitignore_cache:
-                    del gitignore_cache[cache_key]
-                gitignore_patterns = []
+    for filename in ignore_files_to_check:
+        ignore_file_path = base_path / filename
+        if not ignore_file_path.is_file():
+            continue
 
-        all_ignore_patterns.extend(gitignore_patterns)
+        cache_key = str(ignore_file_path)
+        try:
+            mtime = ignore_file_path.stat().st_mtime
+            if gitignore_cache is not None and cache_key in gitignore_cache and gitignore_cache[cache_key].get("mtime") == mtime:
+                patterns = gitignore_cache[cache_key]["patterns"]
+            else:
+                with open(ignore_file_path, "r", encoding="utf-8") as f:
+                    read_patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+                    patterns = read_patterns
+                    if gitignore_cache is not None:
+                        gitignore_cache[cache_key] = {"mtime": mtime, "patterns": patterns}
+            all_ignore_patterns.extend(patterns)
+        except Exception:
+            if gitignore_cache is not None and cache_key in gitignore_cache:
+                del gitignore_cache[cache_key]
 
     all_ignore_patterns.extend(binary_excludes)
 
