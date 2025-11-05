@@ -7,12 +7,24 @@ Set-Location $ProjectRoot
 $LogDir = Join-Path $ProjectRoot ".build-tools"
 $LogTimestamp = Get-Date -Format "yyyyMMdd.HHmmss"
 $LogFile = Join-Path $LogDir "ContextPacker-build-$LogTimestamp.log"
+$VenvPython = Join-Path $ProjectRoot "venv\Scripts\python.exe"
 
 # --- Helper Functions ---
 function Write-Log {
     param([string]$Message)
     $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     "[$Timestamp] $Message" | Out-File -FilePath $LogFile -Append
+}
+
+function Assert-Venv {
+    if (-not (Test-Path $VenvPython)) {
+        Write-Host "Virtual environment not found at 'venv\Scripts\python.exe'." -ForegroundColor Red
+        Write-Host "Please create the venv ('python -m venv venv') and install dependencies ('venv\Scripts\pip.exe install -r requirements.txt')."
+        Write-Log "ERROR: venv\Scripts\python.exe not found."
+        return $false
+    }
+    Write-Log "Virtual environment python found at $VenvPython"
+    return $true
 }
 
 function Remove-OldLogs {
@@ -43,46 +55,6 @@ function Remove-OldLogs {
     }
 }
 
-# Function to check for a command's existence
-function Test-CommandExists {
-    param($command)
-    return (Get-Command $command -ErrorAction SilentlyContinue)
-}
-
-# Function to install a Python package if it's missing
-function Assert-PythonPackage {
-    param(
-        [string]$PackageName,
-        [string]$CommandName
-    )
-    Write-Host "Checking for $PackageName..." -ForegroundColor Green
-    Write-Log "Checking for $PackageName..."
-    if (-not (Test-CommandExists $CommandName)) {
-        Write-Log "$PackageName not found."
-        $choice = Read-Host "$PackageName not found. Would you like to try and install it now via 'pip install $PackageName'? (y/n)"
-        if ($choice -eq 'y') {
-            Write-Log "User chose to install $PackageName."
-            & pip install $PackageName 2>&1 | Out-File -FilePath $LogFile -Append
-            if (-not (Test-CommandExists $CommandName)) {
-                Write-Host "Installation failed. See log for details." -ForegroundColor Red
-                Write-Log "Installation failed or $PackageName is not in PATH."
-                return $false
-            }
-            Write-Host "$PackageName installed successfully." -ForegroundColor Green
-            Write-Log "$PackageName installed successfully."
-        }
-        else {
-            Write-Host "Action cancelled. $PackageName is required." -ForegroundColor Red
-            Write-Log "User cancelled installation."
-            return $false
-        }
-    }
-    else {
-        Write-Log "$PackageName found."
-    }
-    return $true
-}
-
 function New-ChangelogFile {
     param([string]$OutputPath)
     Write-Host "Generating CHANGELOG.md..."
@@ -104,7 +76,6 @@ function New-ChangelogFile {
 }
 
 # --- Task Functions ---
-
 function Remove-BuildArtifacts {
     Write-Host "--- Cleaning Build Artifacts ---" -ForegroundColor Cyan
 
@@ -162,10 +133,14 @@ function Remove-BuildArtifacts {
 
 function New-RequirementsFile {
     Write-Host "--- Generating requirements.txt ---" -ForegroundColor Cyan
-    if (-not (Assert-PythonPackage -PackageName "pipreqs" -CommandName "pipreqs")) { return }
+    if (-not (Assert-Venv)) { return }
+
+    Write-Host "Ensuring pipreqs is installed in venv..."
+    Write-Log "Ensuring pipreqs is installed..."
+    & $VenvPython -m pip install pipreqs --upgrade 2>&1 | Out-File -FilePath $LogFile -Append
 
     Write-Host "Running pipreqs..."
-    & pipreqs --force --savepath "requirements.txt" "." 2>&1 | Out-File -FilePath $LogFile -Append
+    & $VenvPython -m pipreqs.pipreqs --force --savepath "requirements.txt" "." 2>&1 | Out-File -FilePath $LogFile -Append
     if ($LastExitCode -ne 0) {
         Write-Host "pipreqs failed. See log for details." -ForegroundColor Red
         Write-Log "pipreqs command failed with exit code $LastExitCode."
@@ -185,13 +160,17 @@ function Invoke-Build {
     )
     $BuildTypeName = if ($DebugMode) { "Debug" } else { "Production" }
     Write-Host "--- Building Executable ($BuildTypeName) ---" -ForegroundColor Cyan
-    if (-not (Assert-PythonPackage -PackageName "pyinstaller" -CommandName "pyinstaller")) { return $null }
+    if (-not (Assert-Venv)) { return $null }
 
     $AppName = "ContextPacker"
     $SpecFile = "$AppName.spec"
     $DistDir = "dist"
     $BuildDir = "build"
     $AbsoluteDistDir = Join-Path $ProjectRoot $DistDir
+
+    Write-Host "Ensuring PyInstaller is installed in venv..."
+    Write-Log "Ensuring PyInstaller is installed..."
+    & $VenvPython -m pip install pyinstaller --upgrade 2>&1 | Out-File -FilePath $LogFile -Append
 
     Write-Host "Cleaning previous build directories..."
     $originalProgressPreference = $ProgressPreference
@@ -209,19 +188,19 @@ function Invoke-Build {
     try {
         if ($DebugMode) {
             Write-Log "Modifying spec file for debug build (console=True)."
-            $modifiedSpecContent = $originalSpecContent -replace 'console=False', 'console=True'
+            $modifiedSpecContent = $originalSpecContent -replace 'console\s*=\s*False', 'console=True'
             $modifiedSpecContent | Set-Content $SpecFile -Encoding utf8
         }
         else {
             Write-Log "Ensuring spec file is set for production build (console=False)."
-            $modifiedSpecContent = $originalSpecContent -replace 'console=True', 'console=False'
+            $modifiedSpecContent = $originalSpecContent -replace 'console\s*=\s*True', 'console=False'
             $modifiedSpecContent | Set-Content $SpecFile -Encoding utf8
         }
 
         Write-Host "Running PyInstaller..."
         $PyInstallerArgs = @("--clean", "--log-level", "ERROR", $SpecFile)
         
-        $output = & pyinstaller $PyInstallerArgs 2>&1
+        $output = & $VenvPython -m PyInstaller.__main__ $PyInstallerArgs 2>&1
         $output | Out-File -FilePath $LogFile -Append
 
         if ($LastExitCode -ne 0) {
@@ -237,16 +216,13 @@ function Invoke-Build {
         $originalSpecContent | Set-Content $SpecFile -Encoding utf8
     }
 
-    # PyInstaller can place the exe in dist/ or dist/AppName/. This handles both.
-    $FinalExePath = Join-Path -Path $AbsoluteDistDir -ChildPath "$AppName\$AppName.exe"
-    if (-not (Test-Path $FinalExePath)) {
-        $FinalExePath = Join-Path -Path $AbsoluteDistDir -ChildPath "$AppName.exe"
-        if (-not (Test-Path $FinalExePath)) {
-            Write-Host "PyInstaller build finished, but the executable could not be found." -ForegroundColor Red
-            Write-Log "ERROR: Could not find $AppName.exe in '$AbsoluteDistDir' or its subdirectory."
-            return $null
-        }
+    $FinalExe = Get-ChildItem -Path $AbsoluteDistDir -Recurse -Filter "$AppName.exe" | Select-Object -First 1
+    if (-not $FinalExe) {
+        Write-Host "PyInstaller build finished, but the executable could not be found." -ForegroundColor Red
+        Write-Log "ERROR: Could not find $AppName.exe in '$AbsoluteDistDir' or its subdirectories."
+        return $null
     }
+    $FinalExePath = $FinalExe.FullName
 
     Write-Host "✔ Build complete!" -ForegroundColor Green
     Write-Log "PyInstaller build successful. Executable at: $FinalExePath"
@@ -254,21 +230,21 @@ function Invoke-Build {
     if (!$DebugMode) {
         $ChangelogPath = Join-Path $AbsoluteDistDir "CHANGELOG.md"
         if (New-ChangelogFile -OutputPath $ChangelogPath) {
-            $7zExe = Join-Path $ProjectRoot ".build-tools\7z\7za.exe"
-            if (-not (Test-Path $7zExe)) {
-                Write-Host "7za.exe not found. Skipping compression." -ForegroundColor Yellow
-                Write-Log "Warning: 7za.exe not found at $7zExe. Skipping compression."
-            }
-            else {
-                $Version = (Get-Content "core/version.py").Split('"')[1]
+            $ArchiveSourceDir = Split-Path -Path $FinalExePath -Parent
+            Copy-Item -Path $ChangelogPath -Destination $ArchiveSourceDir -Force
+            Remove-Item -Path $ChangelogPath -Force
+
+            $Version = (Get-Content "core/version.py").Split('"')[1]
+
+            if (Test-CommandExists "7za") {
                 $ArchiveName = "ContextPacker-Windows-x64-v$($Version).7z"
                 $ArchivePath = Join-Path $AbsoluteDistDir $ArchiveName
-                Write-Host "Compressing build output..."
-                Write-Log "Compressing to $ArchivePath..."
+                if (Test-Path $ArchivePath) { Remove-Item $ArchivePath -Force; Start-Sleep -Milliseconds 250 }
                 
-                # Use absolute paths for 7z arguments for reliability
-                $7zArgs = @("a", "-t7z", "-m0=LZMA2", "-mx=3", $ArchivePath, $FinalExePath, $ChangelogPath)
-                & $7zExe $7zArgs 2>&1 | Out-File -FilePath $LogFile -Append
+                Write-Host "Compressing build output using 7za..."
+                Write-Log "Compressing to $ArchivePath using 7za..."
+                $7zArgs = @("a", "-t7z", "-m0=LZMA2", "-mx=3", $ArchivePath, "$ArchiveSourceDir\*")
+                & 7za $7zArgs 2>&1 | Out-File -FilePath $LogFile -Append
 
                 if ($LastExitCode -eq 0) {
                     Write-Host "✔ Compression successful." -ForegroundColor Green
@@ -277,6 +253,22 @@ function Invoke-Build {
                 else {
                     Write-Host "Compression failed. See log for details." -ForegroundColor Red
                     Write-Log "7z compression failed with exit code $LastExitCode."
+                }
+            }
+            else {
+                $ArchiveName = "ContextPacker-Windows-x64-v$($Version).zip"
+                $ArchivePath = Join-Path $AbsoluteDistDir $ArchiveName
+
+                Write-Host "7za not found in PATH. Compressing with PowerShell..."
+                Write-Log "7za not found. Compressing to $ArchivePath using PowerShell..."
+                try {
+                    Compress-Archive -Path "$ArchiveSourceDir\*" -DestinationPath $ArchivePath -Force
+                    Write-Host "✔ Compression successful." -ForegroundColor Green
+                    Write-Log "PowerShell compression successful."
+                }
+                catch {
+                    Write-Host "Compression failed. See log for details." -ForegroundColor Red
+                    Write-Log "PowerShell compression failed. Details: $($_.Exception.Message)"
                 }
             }
         }
