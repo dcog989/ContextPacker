@@ -153,19 +153,38 @@ class MainFrame(wx.Panel):
                 return
 
         selected_indices = []
-        item = list_ctrl.GetFirstSelected()
-        while item != -1:
-            selected_indices.append(item)
-            item = list_ctrl.GetNextSelected(item)
+        selected_items_info = []
+        item_idx = list_ctrl.GetFirstSelected()
+        while item_idx != -1:
+            selected_indices.append(item_idx)
+            if is_web_mode:
+                info = {"url": list_ctrl.GetItemText(item_idx, 0), "filename": list_ctrl.GetItemText(item_idx, 1)}
+            else:
+                info = {"name": list_ctrl.GetItemText(item_idx, 0)}
+            selected_items_info.append(info)
+            item_idx = list_ctrl.GetNextSelected(item_idx)
+
+        items_to_remove_from_ds = []
+        if is_web_mode:
+            for info in selected_items_info:
+                item_to_remove = next((item for item in data_source if item["url"] == info["url"] and item["filename"] == info["filename"]), None)
+                if item_to_remove:
+                    items_to_remove_from_ds.append(item_to_remove)
+        else:
+            for info in selected_items_info:
+                item_to_remove = next((item for item in data_source if item["name"] == info["name"]), None)
+                if item_to_remove:
+                    items_to_remove_from_ds.append(item_to_remove)
+
+        for item_data in items_to_remove_from_ds:
+            data_source.remove(item_data)
+            if is_web_mode:
+                self.controller.delete_scraped_file(item_data["path"])
+            else:
+                self.controller.remove_local_file_from_package(item_data["rel_path"])
 
         for index in sorted(selected_indices, reverse=True):
-            item_to_remove = data_source.pop(index)
             list_ctrl.DeleteItem(index)
-
-            if is_web_mode:
-                self.controller.delete_scraped_file(item_to_remove["path"])
-            else:
-                self.controller.remove_local_file_from_package(item_to_remove["rel_path"])
 
         self.list_panel.delete_button.SetAlertState(False)
         self.controller._update_button_states()

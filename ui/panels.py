@@ -395,15 +395,15 @@ class ListPanel(wx.Panel):
         self.update_file_count()
 
     def add_scraped_files_batch(self, files_data):
+        self.standard_log_list.Freeze()
         for file_data in files_data:
             new_file = {"url": file_data["url"], "path": file_data["path"], "filename": file_data["filename"]}
             self.scraped_files.append(new_file)
 
-        sort_key = ["url", "filename"][self.sort_col_web]
-        reverse = self.sort_dir_web == -1
-        self.scraped_files.sort(key=lambda item: str(item.get(sort_key, "")).lower(), reverse=reverse)
-
-        self.populate_web_file_list()
+            index = self.standard_log_list.InsertItem(self.standard_log_list.GetItemCount(), new_file["url"])
+            self.standard_log_list.SetItem(index, 1, new_file["filename"])
+        self.standard_log_list.Thaw()
+        self.update_file_count()
 
     def populate_web_file_list(self):
         self.standard_log_list.Freeze()
