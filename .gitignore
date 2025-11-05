@@ -1,5 +1,4 @@
 # Project Specific
-
 .ai-context/
 .archive/
 .dev-notes/
@@ -7,7 +6,6 @@
 .repomixignore
 .vscode/
 repomix.config.json
-
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
