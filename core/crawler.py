@@ -15,7 +15,7 @@ from markdownify import markdownify as md
 import platform
 import subprocess
 import threading
-import json
+import traceback
 
 
 def _get_browser_binary_path_windows(browser_name, log_queue):
@@ -127,10 +127,26 @@ def sanitize_filename(url):
     return re.sub(r'[<>:"/\\|?*]', "_", filename)
 
 
-def crawl_website(config, log_queue, cancel_event):
-    """
-    Crawls a website based on the provided configuration.
-    """
+def _normalize_url(url):
+    url_no_fragment = url.split("#")[0]
+    if url_no_fragment.endswith("/"):
+        url_no_fragment = url_no_fragment[:-1]
+    return url_no_fragment
+
+
+def _url_matches_any_pattern(url, patterns):
+    parsed_url_path = urlparse(url).path
+    for pattern in patterns:
+        if pattern.startswith(("http://", "https://")):
+            if url.startswith(pattern):
+                return True
+        elif pattern in parsed_url_path:
+            return True
+    return False
+
+
+def _initialize_driver(config, log_queue):
+    """Initializes and returns a Selenium WebDriver instance."""
     log_queue.put({"type": "log", "message": "Searching for a compatible web browser..."})
 
     chrome_options = webdriver.ChromeOptions()
@@ -172,55 +188,100 @@ def crawl_website(config, log_queue, cancel_event):
         ("firefox", webdriver.Firefox, firefox_options, FirefoxService),
     ]
 
-    driver = None
     for name_key, driver_class, options, service_class in browsers_to_try:
         try:
             log_queue.put({"type": "log", "message": f"  -> Attempting to initialize {name_key}..."})
             service = service_class(creationflags=creation_flags)
             driver = driver_class(service=service, options=options)
             log_queue.put({"type": "log", "message": f"✔ Success: Using {name_key} for web crawling."})
-            break
-
+            return driver
         except WebDriverException as e:
             log_queue.put({"type": "log", "message": f"  -> {name_key} not found or failed to start. Details: {e.msg}"})
         except Exception as e:
-            import traceback
-
             tb_str = traceback.format_exc()
             log_queue.put({"type": "log", "message": f"  -> An unexpected error occurred with {name_key}: {e}\n{tb_str}"})
+    return None
 
-    if driver is None:
+
+def _process_page(driver, config, current_url):
+    """Fetches, processes, and saves a single web page."""
+    driver.get(current_url)
+    pause_duration = random.uniform(config.min_pause, config.max_pause)
+    time.sleep(pause_duration)
+
+    final_url = driver.current_url
+    if config.ignore_queries:
+        final_url = final_url.split("?")[0]
+
+    if "404" in driver.title or "Not Found" in driver.title:
+        return None, f"  -> Skipping (404 Not Found): {final_url}"
+
+    html_content = driver.page_source
+    soup = BeautifulSoup(html_content, "lxml")
+
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+    cleaned_html = str(soup)
+
+    filename = sanitize_filename(final_url) + ".md"
+    md_content = md(cleaned_html)
+
+    output_path = Path(config.output_dir) / filename
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(md_content)
+
+    return (soup, final_url, output_path, filename), None
+
+
+def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visit, depth):
+    """Finds, filters, and queues new links from a parsed page."""
+    start_domain = urlparse(config.start_url).netloc
+    links = soup.find_all("a", href=True)
+
+    for link in links:
+        if not isinstance(link, Tag):
+            continue
+
+        href_attr = link.get("href")
+        if not isinstance(href_attr, str) or not href_attr or href_attr.startswith(("mailto:", "javascript:", "#")):
+            continue
+
+        abs_link = urljoin(base_url, href_attr)
+        normalized_abs_link = _normalize_url(abs_link)
+
+        parsed_link_domain = urlparse(abs_link).netloc
+        if config.stay_on_subdomain and parsed_link_domain != start_domain:
+            continue
+
+        if config.exclude_paths and _url_matches_any_pattern(abs_link, config.exclude_paths):
+            continue
+
+        if config.include_paths and not _url_matches_any_pattern(abs_link, config.include_paths):
+            continue
+
+        if normalized_abs_link not in processed_urls:
+            processed_urls.add(normalized_abs_link)
+            urls_to_visit.put((abs_link, depth + 1))
+
+
+def crawl_website(config, log_queue, cancel_event):
+    """
+    Crawls a website based on the provided configuration.
+    This function orchestrates the crawling process.
+    """
+    driver = _initialize_driver(config, log_queue)
+    if not driver:
         error_msg = "ERROR: Could not find a compatible web browser or its driver.\nPlease ensure a supported browser (Edge, Chrome, or Firefox) is installed."
         log_queue.put({"type": "status", "status": "error", "message": error_msg})
         return
 
     driver.set_page_load_timeout(15)
-
-    def _normalize_url(url):
-        url_no_fragment = url.split("#")[0]
-        if url_no_fragment.endswith("/"):
-            url_no_fragment = url_no_fragment[:-1]
-        return url_no_fragment
-
-    def _url_matches_any_pattern(url, patterns):
-        parsed_url_path = urlparse(url).path
-        for pattern in patterns:
-            if pattern.startswith(("http://", "https://")):
-                if url.startswith(pattern):
-                    return True
-            elif pattern in parsed_url_path:
-                return True
-        return False
-
     log_queue.put({"type": "log", "message": "Starting web crawl..."})
-
-    start_domain = urlparse(config.start_url).netloc
 
     urls_to_visit = queue.Queue()
     normalized_start_url = _normalize_url(config.start_url)
     urls_to_visit.put((config.start_url, 0))
     processed_urls = {normalized_start_url}
-
     pages_saved = 0
 
     try:
@@ -230,92 +291,45 @@ def crawl_website(config, log_queue, cancel_event):
 
             current_url, depth = urls_to_visit.get()
             log_queue.put({"type": "progress", "value": pages_saved, "max_value": config.max_pages})
+            log_queue.put({"type": "log", "message": f"GET (Depth {depth}): {current_url}"})
 
             try:
-                log_queue.put({"type": "log", "message": f"GET (Depth {depth}): {current_url}"})
-                driver.get(current_url)
-
-                pause_duration = random.uniform(config.min_pause, config.max_pause)
-                time.sleep(pause_duration)
+                page_data, error_msg = _process_page(driver, config, current_url)
 
                 if cancel_event.is_set():
                     break
 
-                final_url_from_driver = driver.current_url
-                if config.ignore_queries:
-                    final_url_from_driver = final_url_from_driver.split("?")[0]
-
-                normalized_final_url = _normalize_url(final_url_from_driver)
-
-                if "404" in driver.title or "Not Found" in driver.title:
-                    log_queue.put({"type": "log", "message": f"  -> Skipping (404 Not Found): {final_url_from_driver}"})
+                if error_msg:
+                    log_queue.put({"type": "log", "message": error_msg})
                     continue
 
-                processed_urls.add(normalized_final_url)
-                html_content = driver.page_source
-                soup = BeautifulSoup(html_content, "lxml")
+                if page_data:
+                    soup, final_url, output_path, filename = page_data
+                    normalized_final_url = _normalize_url(final_url)
+                    processed_urls.add(normalized_final_url)
 
-                for tag in soup(["script", "style"]):
-                    tag.decompose()
-                cleaned_html = str(soup)
+                    pages_saved += 1
+                    log_queue.put(
+                        {
+                            "type": "file_saved",
+                            "url": final_url,
+                            "path": str(output_path),
+                            "filename": filename,
+                            "pages_saved": pages_saved,
+                            "max_pages": config.max_pages,
+                            "queue_size": urls_to_visit.qsize(),
+                        }
+                    )
 
-                filename = sanitize_filename(normalized_final_url) + ".md"
-                md_content = md(cleaned_html)
-
-                output_path = Path(config.output_dir) / filename
-                with open(output_path, "w", encoding="utf-8") as f:
-                    f.write(md_content)
-
-                pages_saved += 1
-                log_queue.put(
-                    {
-                        "type": "file_saved",
-                        "url": final_url_from_driver,
-                        "path": str(output_path),
-                        "filename": filename,
-                        "pages_saved": pages_saved,
-                        "max_pages": config.max_pages,
-                        "queue_size": urls_to_visit.qsize(),
-                    }
-                )
-
-                if depth < config.crawl_depth:
-                    links = soup.find_all("a", href=True)
-                    for link in links:
-                        if not isinstance(link, Tag):
-                            continue
-
-                        href_attr = link.get("href")
-                        if not isinstance(href_attr, str):
-                            continue
-
-                        if not href_attr or href_attr.startswith(("mailto:", "javascript:", "#")):
-                            continue
-
-                        abs_link = urljoin(final_url_from_driver, href_attr)
-                        normalized_abs_link = _normalize_url(abs_link)
-
-                        parsed_link_domain = urlparse(abs_link).netloc
-                        if config.stay_on_subdomain and parsed_link_domain != start_domain:
-                            continue
-
-                        if config.exclude_paths and _url_matches_any_pattern(abs_link, config.exclude_paths):
-                            continue
-
-                        if config.include_paths and not _url_matches_any_pattern(abs_link, config.include_paths):
-                            continue
-
-                        if normalized_abs_link not in processed_urls:
-                            processed_urls.add(normalized_abs_link)
-                            urls_to_visit.put((abs_link, depth + 1))
+                    if depth < config.crawl_depth:
+                        _filter_and_queue_links(soup, final_url, config, processed_urls, urls_to_visit, depth)
 
             except TimeoutException:
-                log_queue.put({"type": "log", "message": f"  -> TIMEOUT after 5s on: {current_url}"})
-                continue
+                log_queue.put({"type": "log", "message": f"  -> TIMEOUT after 15s on: {current_url}"})
             except WebDriverException as e:
-                log_queue.put({"type": "log", "message": f"  -> SELENIUM ERROR: {e.msg}"})
+                log_queue.put({"type": "log", "message": f"  -> SELENIUM ERROR on {current_url}: {e.msg}"})
             except Exception as e:
-                log_queue.put({"type": "log", "message": f"  -> PROCESSING ERROR: {e}"})
+                log_queue.put({"type": "log", "message": f"  -> PROCESSING ERROR on {current_url}: {e}"})
 
     finally:
         if driver:
@@ -329,7 +343,6 @@ def crawl_website(config, log_queue, cancel_event):
             cleanup_thread = threading.Thread(target=_cleanup_driver, args=(driver,), daemon=True)
             cleanup_thread.start()
 
-    if not cancel_event.is_set():
-        log_queue.put({"type": "status", "status": "source_complete", "message": f"\nWeb scrape finished. Saved {pages_saved} pages."})
-    else:
-        log_queue.put({"type": "status", "status": "cancelled", "message": "Process cancelled by user."})
+    status_key = "cancelled" if cancel_event.is_set() else "source_complete"
+    message = "Process cancelled by user." if cancel_event.is_set() else f"\nWeb scrape finished. Saved {pages_saved} pages."
+    log_queue.put({"type": "status", "status": status_key, "message": message})
