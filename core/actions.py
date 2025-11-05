@@ -195,16 +195,6 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
             total_files_for_progress = len(file_list)
         else:
             total_files_for_progress = len([f for f in file_list if f.get("type") == "File"])
-    else:  # Fallback to scanning if file_list is not provided
-        if Path(source_dir).is_dir():
-            current_exclude_paths = exclude_paths or []
-            for root, _, files in os.walk(source_dir):
-                for file in files:
-                    file_path = Path(root) / file
-                    rel_path_str = file_path.relative_to(source_dir).as_posix()
-                    is_excluded = any(fnmatch.fnmatch(rel_path_str, pattern) for pattern in current_exclude_paths)
-                    if not is_excluded:
-                        total_files_for_progress += 1
 
     progress_handler = RepomixProgressHandler(app.log_queue, total_files_for_progress)
     progress_handler.setLevel(logging.INFO)
