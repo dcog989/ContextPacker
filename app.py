@@ -29,7 +29,7 @@ class App(wx.Frame):
     def __init__(self):
         w, h = config.get("window_size", [-1, -1])
         size = wx.Size(w, h) if w > 0 and h > 0 else wx.Size(1600, 950)
-        super().__init__(None, title="ContextPacker", size=size)
+        super(App, self).__init__(None, title="ContextPacker", size=size)
 
         self.version = __version__
         self.task_handler = TaskHandler(self)
@@ -43,6 +43,7 @@ class App(wx.Frame):
         self.is_task_running = False
         self.is_dark = False
         self.local_files_to_exclude = set()
+        self.local_depth_excludes = set()
         self.exclude_list_last_line = 0
         self.local_scan_worker = None
         self.local_scan_cancel_event = None
@@ -443,6 +444,7 @@ class App(wx.Frame):
         self.main_panel.local_panel.hide_binaries_check.Enable(False)
 
         self.local_files_to_exclude.clear()
+        self.local_depth_excludes.clear()
         custom_excludes = [p.strip() for p in self.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
         binary_excludes = BINARY_FILE_PATTERNS if self.main_panel.local_panel.hide_binaries_check.GetValue() else []
         args = (
@@ -458,18 +460,21 @@ class App(wx.Frame):
 
     def _local_scan_worker(self, input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event):
         try:
-            files_to_show = actions.get_local_files(input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event)
+            results = actions.get_local_files(input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event)
             if not cancel_event.is_set():
-                wx.CallAfter(self._on_local_scan_complete, files_to_show)
+                wx.CallAfter(self._on_local_scan_complete, results)
             else:
                 wx.CallAfter(self._on_local_scan_complete, None)
         except Exception as e:
             wx.CallAfter(self.log_verbose, f"ERROR scanning directory: {e}")
             wx.CallAfter(self._on_local_scan_complete, None)
 
-    def _on_local_scan_complete(self, files):
-        if files is not None:
+    def _on_local_scan_complete(self, results):
+        if results is not None:
+            files, depth_excludes = results
             self.main_panel.list_panel.populate_local_file_list(files)
+            self.local_depth_excludes = depth_excludes
+
         if self.main_panel.local_panel:
             self.main_panel.local_panel.browse_button.Enable(True)
             self.main_panel.local_panel.use_gitignore_check.Enable(True)
@@ -491,28 +496,12 @@ class App(wx.Frame):
 
 
 if __name__ == "__main__":
-    import logging
-
-    log_file_path = os.path.join(os.path.expanduser("~"), "contextpacker_debug.log")
-    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - PID:%(process)d - %(levelname)s - %(message)s", filename=log_file_path, filemode="w")
-    logging.info(f"--- Script start in __main__ ---")
-    logging.info(f"PID: {os.getpid()}")
-    if hasattr(os, "getppid"):
-        logging.info(f"PPID: {os.getppid()}")
-    logging.info(f"sys.argv: {sys.argv}")
-    logging.info(f"frozen: {getattr(sys, 'frozen', False)}")
-
     multiprocessing.freeze_support()
-    logging.info("--- After freeze_support() ---")
-
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
-    except Exception as e:
-        logging.warning(f"Failed to set DPI awareness: {e}")
+    except Exception:
+        pass
 
     app = wx.App(False)
-    logging.info("--- wx.App created ---")
     frame = App()
-    logging.info("--- App frame created ---")
     app.MainLoop()
-    logging.info("--- MainLoop finished ---")

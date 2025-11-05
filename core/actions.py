@@ -131,25 +131,7 @@ def start_packaging(app, cancel_event, file_list=None):
     else:
         source_dir = app.main_panel.local_panel.local_dir_ctrl.GetValue()
         default_excludes = [p.strip() for p in app.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
-
-        additional_excludes = set()
-        max_depth = app.main_panel.local_panel.dir_level_ctrl.GetValue()
-        if max_depth == 9:
-            max_depth = sys.maxsize
-        source_path = Path(source_dir)
-
-        if source_path.is_dir():
-            for root, dirs, _ in os.walk(source_path):
-                root_path = Path(root)
-                rel_path = root_path.relative_to(source_path)
-                depth = 0 if rel_path == Path(".") else len(rel_path.parts)
-
-                if depth >= max_depth:
-                    for d in dirs:
-                        additional_excludes.add(f"{(rel_path / d).as_posix()}/")
-                    dirs[:] = []
-
-        effective_excludes = list(set(default_excludes) | app.local_files_to_exclude | additional_excludes)
+        effective_excludes = list(set(default_excludes) | app.local_files_to_exclude | app.local_depth_excludes)
 
     extension = app.main_panel.output_format_choice.GetStringSelection()
     style_map = {".md": "markdown", ".txt": "plain", ".xml": "xml"}
@@ -192,7 +174,7 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
 
     class RepomixProgressHandler(logging.Handler):
         def __init__(self, log_queue_ref, total_files_ref):
-            super().__init__()
+            super(RepomixProgressHandler, self).__init__()
             self.log_queue = log_queue_ref
             self.processed_count = 0
             self.total_files = total_files_ref
@@ -247,12 +229,13 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
     """
     base_path = Path(root_dir)
     if not base_path.is_dir():
-        return []
+        return [], set()
 
     if max_depth == 9:  # Treat 9 as unlimited
         max_depth = sys.maxsize
 
     files_to_show = []
+    depth_excludes = set()
     all_ignore_patterns = list(custom_excludes)
 
     if use_gitignore:
@@ -269,12 +252,14 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
 
     for root, dirnames, filenames in os.walk(str(base_path), topdown=True):
         if cancel_event and cancel_event.is_set():
-            return []
+            return [], set()
         root_path = Path(root)
         rel_root_path = root_path.relative_to(base_path)
 
         depth = 0 if rel_root_path == Path(".") else len(rel_root_path.parts)
         if depth >= max_depth:
+            for d in dirnames:
+                depth_excludes.add(f"{(rel_root_path / d).as_posix()}/")
             dirnames[:] = []
 
         ignored_dirs = set()
@@ -301,7 +286,7 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
                     continue
 
     if cancel_event and cancel_event.is_set():
-        return []
+        return [], set()
 
     files_to_show.sort(key=lambda p: (p["type"] != "Folder", p["name"].lower()), reverse=True)
-    return files_to_show
+    return files_to_show, depth_excludes
