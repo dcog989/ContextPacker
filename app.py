@@ -237,8 +237,11 @@ class App(wx.Frame):
         self.timer.Stop()
         self.batch_update_timer.Stop()
         self.stop_queue_listener()
-        if self.local_scan_cancel_event:
-            self.local_scan_cancel_event.set()
+
+        if self.local_scan_worker and self.local_scan_worker.is_alive():
+            if self.local_scan_cancel_event:
+                self.local_scan_cancel_event.set()
+            self.local_scan_worker.join(timeout=1.0)
 
         if self.worker_thread and self.worker_thread.is_alive():
             if not self.is_shutting_down:
