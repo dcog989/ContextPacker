@@ -222,7 +222,7 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
     app.worker_thread.start()
 
 
-def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event=None):
+def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event=None, gitignore_cache=None):
     """
     Scans a directory and returns a filtered list of files and folders,
     pruning ignored directories for efficiency.
@@ -240,13 +240,26 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
 
     if use_gitignore:
         gitignore_path = base_path / ".gitignore"
+        cache_key = str(gitignore_path)
+        gitignore_patterns = []
+
         if gitignore_path.is_file():
             try:
-                with open(gitignore_path, "r", encoding="utf-8") as f:
-                    gitignore_patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
-                    all_ignore_patterns.extend(gitignore_patterns)
+                mtime = gitignore_path.stat().st_mtime
+                if gitignore_cache is not None and cache_key in gitignore_cache and gitignore_cache[cache_key].get("mtime") == mtime:
+                    gitignore_patterns = gitignore_cache[cache_key]["patterns"]
+                else:
+                    with open(gitignore_path, "r", encoding="utf-8") as f:
+                        patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+                        gitignore_patterns = patterns
+                        if gitignore_cache is not None:
+                            gitignore_cache[cache_key] = {"mtime": mtime, "patterns": patterns}
             except Exception:
-                pass
+                if gitignore_cache is not None and cache_key in gitignore_cache:
+                    del gitignore_cache[cache_key]
+                gitignore_patterns = []
+
+        all_ignore_patterns.extend(gitignore_patterns)
 
     all_ignore_patterns.extend(binary_excludes)
 

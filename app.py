@@ -44,6 +44,7 @@ class App(wx.Frame):
         self.is_dark = False
         self.local_files_to_exclude = set()
         self.local_depth_excludes = set()
+        self.gitignore_cache = {}
         self.exclude_list_last_line = 0
         self.local_scan_worker = None
         self.local_scan_cancel_event = None
@@ -454,13 +455,14 @@ class App(wx.Frame):
             custom_excludes,
             binary_excludes,
             self.local_scan_cancel_event,
+            self.gitignore_cache,
         )
         self.local_scan_worker = threading.Thread(target=self._local_scan_worker, args=args, daemon=True)
         self.local_scan_worker.start()
 
-    def _local_scan_worker(self, input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event):
+    def _local_scan_worker(self, input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event, gitignore_cache):
         try:
-            results = actions.get_local_files(input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event)
+            results = actions.get_local_files(input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event, gitignore_cache)
             if not cancel_event.is_set():
                 wx.CallAfter(self._on_local_scan_complete, results)
             else:
