@@ -8,6 +8,7 @@
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:141.0) Gecko/20100101 Firefox/141.0"
     ],
+    "default_output_format": ".md",
     "default_local_excludes": [
         ".archive/",
         ".git/",
@@ -53,5 +54,10 @@
         "*.woff",
         "*.woff2"
     ],
-    "max_build_logs": 21
+    "max_build_logs": 21,
+    "window_size": [
+        1600,
+        950
+    ],
+    "sash_position": 650
 }

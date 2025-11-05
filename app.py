@@ -9,6 +9,8 @@ import platform
 import threading
 import queue
 import multiprocessing
+import sys
+import selenium.webdriver
 
 from ui.main_frame import MainFrame
 from ui.widgets.dialogs import AboutDialog
@@ -39,7 +41,7 @@ class App(wx.Frame):
         self.worker_thread = None
         self.is_shutting_down = False
         self.is_task_running = False
-        self.is_dark = False  # Default to light mode
+        self.is_dark = False
         self.local_files_to_exclude = set()
         self.exclude_list_last_line = 0
         self.local_scan_worker = None
@@ -116,6 +118,7 @@ class App(wx.Frame):
         if self.scraped_files_batch:
             self.main_panel.list_panel.add_scraped_files_batch(self.scraped_files_batch)
             self.scraped_files_batch.clear()
+            self._update_button_states()
 
     def _detect_and_apply_theme(self):
         """Worker function to detect dark mode and apply the theme."""
@@ -485,12 +488,28 @@ class App(wx.Frame):
 
 
 if __name__ == "__main__":
+    import logging
+
+    log_file_path = os.path.join(os.path.expanduser("~"), "contextpacker_debug.log")
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - PID:%(process)d - %(levelname)s - %(message)s", filename=log_file_path, filemode="w")
+    logging.info(f"--- Script start in __main__ ---")
+    logging.info(f"PID: {os.getpid()}")
+    if hasattr(os, "getppid"):
+        logging.info(f"PPID: {os.getppid()}")
+    logging.info(f"sys.argv: {sys.argv}")
+    logging.info(f"frozen: {getattr(sys, 'frozen', False)}")
+
     multiprocessing.freeze_support()
+    logging.info("--- After freeze_support() ---")
+
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning(f"Failed to set DPI awareness: {e}")
 
     app = wx.App(False)
+    logging.info("--- wx.App created ---")
     frame = App()
+    logging.info("--- App frame created ---")
     app.MainLoop()
+    logging.info("--- MainLoop finished ---")

@@ -377,7 +377,6 @@ class ListPanel(wx.Panel):
             self.Layout()
 
     def toggle_output_view(self, is_web_mode):
-        self.verbose_log_ctrl.Clear()
         self.log_mode_panel.Show(is_web_mode)
         self.local_file_list.Show(not is_web_mode)
         self.progress_gauge.SetValue(0)

@@ -131,46 +131,6 @@ def crawl_website(config, log_queue, cancel_event):
     """
     Crawls a website based on the provided configuration.
     """
-
-    def _get_driver_path_from_manager(browser_name_key):
-        browser_map = {"msedge": "edge", "chrome": "chrome", "firefox": "firefox"}
-        browser_arg = browser_map.get(browser_name_key)
-        if not browser_arg:
-            return None
-
-        manager_path = os.environ.get("SE_MANAGER_PATH")
-        if not manager_path or not os.path.isdir(manager_path):
-            log_queue.put({"type": "log", "message": f"SE_MANAGER_PATH ('{manager_path}') is not a valid directory."})
-            return None
-
-        sm_exe = "selenium-manager.exe" if platform.system() == "Windows" else "selenium-manager"
-        sm_exe_path = os.path.join(manager_path, sm_exe)
-
-        if not os.path.exists(sm_exe_path):
-            log_queue.put({"type": "log", "message": f"Could not find '{sm_exe}' in SE_MANAGER_PATH: {manager_path}"})
-            return None
-        try:
-            command = [sm_exe_path, "--browser", browser_arg, "--output", "json"]
-            process = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", shell=False, check=False)
-
-            if process.returncode == 0 and process.stdout:
-                result_json = json.loads(process.stdout)
-                driver_path = result_json.get("result", {}).get("driver_path")
-                if driver_path and os.path.exists(driver_path):
-                    log_queue.put({"type": "log", "message": f"  -> Located driver for {browser_arg} at: {driver_path}"})
-                    return driver_path
-                else:
-                    log_queue.put({"type": "log", "message": f"  -> Selenium Manager ran for {browser_arg} but returned an invalid path."})
-                    log_queue.put({"type": "log", "message": f"     Output: {process.stdout}"})
-            else:
-                log_queue.put({"type": "log", "message": f"  -> Selenium Manager failed for {browser_arg}. Return Code: {process.returncode}"})
-                log_queue.put({"type": "log", "message": f"     STDERR: {process.stderr}"})
-
-        except Exception as e:
-            log_queue.put({"type": "log", "message": f"  -> An exception occurred while running Selenium Manager for {browser_arg}: {e}"})
-
-        return None
-
     log_queue.put({"type": "log", "message": "Searching for a compatible web browser..."})
 
     chrome_options = webdriver.ChromeOptions()
@@ -216,19 +176,18 @@ def crawl_website(config, log_queue, cancel_event):
     for name_key, driver_class, options, service_class in browsers_to_try:
         try:
             log_queue.put({"type": "log", "message": f"  -> Attempting to initialize {name_key}..."})
-            driver_path = _get_driver_path_from_manager(name_key)
-
-            if not driver_path:
-                log_queue.put({"type": "log", "message": f"  -> Failed to locate driver for {name_key} via Selenium Manager. Skipping."})
-                continue
-
-            service = service_class(executable_path=driver_path, creationflags=creation_flags)
+            service = service_class(creationflags=creation_flags)
             driver = driver_class(service=service, options=options)
             log_queue.put({"type": "log", "message": f"✔ Success: Using {name_key} for web crawling."})
             break
 
         except WebDriverException as e:
-            log_queue.put({"type": "log", "message": f"  -> {name_key} not found or failed to start. Details: {str(e)}"})
+            log_queue.put({"type": "log", "message": f"  -> {name_key} not found or failed to start. Details: {e.msg}"})
+        except Exception as e:
+            import traceback
+
+            tb_str = traceback.format_exc()
+            log_queue.put({"type": "log", "message": f"  -> An unexpected error occurred with {name_key}: {e}\n{tb_str}"})
 
     if driver is None:
         error_msg = "ERROR: Could not find a compatible web browser or its driver.\nPlease ensure a supported browser (Edge, Chrome, or Firefox) is installed."

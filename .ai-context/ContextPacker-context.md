@@ -34,12 +34,18 @@ The content is organized as follows:
 
 # Directory Structure
 ```
-.gitignore
 app.py
+assets/fonts/SourceCodePro-Regular.ttf
+assets/icons/ContextPacker-x128.png
+assets/icons/ContextPacker-x256.png
+assets/icons/ContextPacker-x512.png
+assets/icons/ContextPacker-x64.png
+assets/icons/ContextPacker.ico
 assets/icons/ContextPacker.svg
+assets/icons/copy.png
 assets/icons/copy.svg
-build-for-release.ps1
 config.json
+core/__init__.py
 core/actions.py
 core/config_manager.py
 core/config.py
@@ -48,11 +54,10 @@ core/packager.py
 core/task_handler.py
 core/utils.py
 core/version.py
-generate-requirements.ps1
-LICENSE
 pyi_rth_selenium.py
 README.md
 requirements.txt
+ui/__init__.py
 ui/main_frame.py
 ui/panels.py
 ui/widgets/buttons.py
@@ -82,230 +87,6 @@ ui/widgets/lists.py
 </svg>
 ````
 
-## File: build-for-release.ps1
-````powershell
-# build.ps1 - A simple script to build the ContextPacker executable.
-
-# --- Configuration ---
-$SpecFile = "ContextPacker.spec"
-$DistDir = "dist"
-$BuildDir = "build"
-
-# --- Main Script ---
-
-# Function to check for a command's existence
-function Test-CommandExists {
-    param($command)
-    return (Get-Command $command -ErrorAction SilentlyContinue)
-}
-
-# 1. Check for PyInstaller
-Write-Host "Checking for PyInstaller..." -ForegroundColor Green
-if (-not (Test-CommandExists "pyinstaller")) {
-    Write-Host "PyInstaller not found." -ForegroundColor Yellow
-    $choice = Read-Host "Would you like to try and install it now via 'pip install pyinstaller'? (y/n)"
-    if ($choice -eq 'y') {
-        try {
-            pip install pyinstaller
-            if (-not (Test-CommandExists "pyinstaller")) {
-                Write-Host "Installation failed or PyInstaller is not in your PATH. Please install it manually." -ForegroundColor Red
-                exit 1
-            }
-            Write-Host "PyInstaller installed successfully." -ForegroundColor Green
-        }
-        catch {
-            Write-Host "An error occurred during installation. Please install PyInstaller manually." -ForegroundColor Red
-            exit 1
-        }
-    }
-    else {
-        Write-Host "Build cancelled. PyInstaller is required." -ForegroundColor Red
-        exit 1
-    }
-}
-else {
-    Write-Host "PyInstaller found."
-}
-
-# 2. Clean previous build directories
-Write-Host "Cleaning previous build directories..." -ForegroundColor Green
-if (Test-Path $DistDir) {
-    Write-Host "Removing old '$DistDir' directory..."
-    Remove-Item -Recurse -Force $DistDir
-}
-if (Test-Path $BuildDir) {
-    Write-Host "Removing old '$BuildDir' directory..."
-    Remove-Item -Recurse -Force $BuildDir
-}
-
-# 3. Run PyInstaller
-Write-Host "Running PyInstaller with spec file: $SpecFile" -ForegroundColor Green
-pyinstaller --clean $SpecFile
-
-# 4. Final Result
-if ($LastExitCode -ne 0) {
-    Write-Host "PyInstaller failed to build the application. See output above for errors." -ForegroundColor Red
-    exit 1
-}
-
-$FinalExePath = Join-Path -Path (Get-Location) -ChildPath "$DistDir\ContextPacker.exe"
-Write-Host "--------------------------------------------------" -ForegroundColor Cyan
-Write-Host "Build complete!" -ForegroundColor Green
-Write-Host "The executable can be found at: $FinalExePath"
-Write-Host "--------------------------------------------------" -ForegroundColor Cyan
-
-# Keep the window open if run by double-clicking
-if ($null -eq $psISE) { Read-Host "Press Enter to exit" }
-````
-
-## File: config.json
-````json
-{
-    "user_agents": [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.3351.121",
-        "Mozilla/5.0 (iPhone17,1; CPU iPhone OS 18_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Mohegan Sun/4.7.4",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Linux; Android 7.0; SM-T827R4 Build/NRD90M) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.116 Safari/537.36",
-        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:141.0) Gecko/20100101 Firefox/141.0"
-    ],
-    "default_local_excludes": [
-        ".archive/",
-        ".git/",
-        ".testing/",
-        "node_modules/",
-        ".repomixignore",
-        "repomix.config.json"
-    ],
-    "binary_file_patterns": [
-        "*.png",
-        "*.jpg",
-        "*.jpeg",
-        "*.gif",
-        "*.bmp",
-        "*.ico",
-        "*.svg",
-        "*.zip",
-        "*.rar",
-        "*.7z",
-        "*.tar",
-        "*.gz",
-        "*.pdf",
-        "*.doc",
-        "*.docx",
-        "*.xls",
-        "*.xlsx",
-        "*.ppt",
-        "*.pptx",
-        "*.exe",
-        "*.dll",
-        "*.so",
-        "*.dylib",
-        "*.ai",
-        "*.psd",
-        "*.mp3",
-        "*.wav",
-        "*.flac",
-        "*.mp4",
-        "*.mov",
-        "*.wmv",
-        "*.eot",
-        "*.ttf",
-        "*.woff",
-        "*.woff2"
-    ]
-}
-````
-
-## File: core/config_manager.py
-````python
-import json
-from pathlib import Path
-
-CONFIG_FILENAME = "config.json"
-
-DEFAULT_CONFIG = {
-    "user_agents": [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.3351.121",
-        "Mozilla/5.0 (iPhone17,1; CPU iPhone OS 18_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Mohegan Sun/4.7.4",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Linux; Android 7.0; SM-T827R4 Build/NRD90M) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.116 Safari/537.36",
-        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:141.0) Gecko/20100101 Firefox/141.0",
-    ],
-    "default_output_format": ".md",
-    "default_local_excludes": [".archive/", ".git/", ".testing/", "*node_modules*", "build/", "dist/"],
-    "binary_file_patterns": [
-        "*.png",
-        "*.jpg",
-        "*.jpeg",
-        "*.gif",
-        "*.bmp",
-        "*.ico",
-        "*.svg",
-        "*.zip",
-        "*.rar",
-        "*.7z",
-        "*.tar",
-        "*.gz",
-        "*.pdf",
-        "*.doc",
-        "*.docx",
-        "*.xls",
-        "*.xlsx",
-        "*.ppt",
-        "*.pptx",
-        "*.exe",
-        "*.dll",
-        "*.so",
-        "*.dylib",
-        "*.ai",
-        "*.psd",
-        "*.mp3",
-        "*.wav",
-        "*.flac",
-        "*.mp4",
-        "*.mov",
-        "*.wmv",
-        "*.eot",
-        "*.ttf",
-        "*.woff",
-        "*.woff2",
-    ],
-}
-
-_config = None
-
-
-def get_config():
-    """Loads the config.json file, creating a default one if it doesn't exist."""
-    global _config
-    if _config is not None:
-        return _config
-
-    config_path = Path(CONFIG_FILENAME)
-    if not config_path.exists():
-        try:
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(DEFAULT_CONFIG, f, indent=4)
-            _config = DEFAULT_CONFIG
-        except Exception as e:
-            print(f"Warning: Could not create default config file: {e}")
-            _config = DEFAULT_CONFIG
-        return _config
-
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            _config = json.load(f)
-    except Exception as e:
-        print(f"Warning: Could not load config.json, using defaults: {e}")
-        _config = DEFAULT_CONFIG
-
-    return _config
-````
-
 ## File: core/config.py
 ````python
 from dataclasses import dataclass, field
@@ -324,161 +105,6 @@ class CrawlerConfig:
     user_agent: str
     include_paths: list[str] = field(default_factory=list)
     exclude_paths: list[str] = field(default_factory=list)
-````
-
-## File: core/packager.py
-````python
-from repomix import RepoProcessor, RepomixConfig
-from pathlib import Path
-import sys
-
-
-def resource_path(relative_path):
-    """
-    Get absolute path to resource, works for dev and for PyInstaller.
-    """
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = Path(getattr(sys, "_MEIPASS"))
-    except Exception:
-        base_path = Path(__file__).parent.parent
-    return base_path / relative_path
-
-
-def run_repomix(source_dir, output_filepath, log_queue, cancel_event, repomix_style="markdown", exclude_patterns=None):
-    """
-    Runs the repomix packaging process with the specified configuration.
-
-    This function is designed to be run in a separate thread.
-    """
-    if cancel_event.is_set():
-        log_queue.put({"type": "status", "status": "cancelled", "message": "Skipping packaging because process was cancelled."})
-        return
-
-    source_path = Path(source_dir)
-    if not source_path.is_dir():
-        log_queue.put({"type": "status", "status": "error", "message": "ERROR: Source directory for packaging is missing."})
-        return
-
-    output_path = Path(output_filepath)
-    packaged_filename = output_path.name
-
-    all_excludes = [packaged_filename, Path(output_filepath).name]
-    if exclude_patterns:
-        all_excludes.extend(exclude_patterns)
-
-    log_queue.put({"type": "log", "message": f"Running repomix packager on {source_dir}..."})
-    log_queue.put({"type": "log", "message": f"Output will be saved to: {output_filepath}"})
-
-    try:
-        config = RepomixConfig()
-        config.output.file_path = str(output_path)
-        config.output.style = repomix_style
-        config.ignore.custom_patterns = all_excludes
-        config.output.calculate_tokens = True
-        config.output.show_file_stats = True
-        config.security.enable_security_check = False
-
-        processor = RepoProcessor(str(source_path), config=config)
-        result = processor.process()
-
-        log_queue.put({"type": "status", "status": "package_complete", "message": f"✔ Repomix finished successfully. Output: {result.config.output.file_path}"})
-
-    except Exception as e:
-        log_queue.put({"type": "status", "status": "error", "message": f"ERROR: An unexpected packaging error occurred: {e}"})
-````
-
-## File: generate-requirements.ps1
-````powershell
-# generate-requirements.ps1 - Generates a requirements.txt file for the project.
-
-# --- Configuration ---
-$OutputFile = "requirements.txt"
-$SourceDir = "."
-
-# --- Main Script ---
-
-# Function to check for a command's existence
-function Test-CommandExists {
-    param($command)
-    return (Get-Command $command -ErrorAction SilentlyContinue)
-}
-
-# 1. Check for pipreqs
-Write-Host "Checking for pipreqs..." -ForegroundColor Green
-if (-not (Test-CommandExists "pipreqs")) {
-    Write-Host "pipreqs not found." -ForegroundColor Yellow
-    $choice = Read-Host "Would you like to try and install it now via 'pip install pipreqs'? (y/n)"
-    if ($choice -eq 'y') {
-        try {
-            pip install pipreqs
-            if (-not (Test-CommandExists "pipreqs")) {
-                Write-Host "Installation failed or pipreqs is not in your PATH. Please install it manually." -ForegroundColor Red
-                exit 1
-            }
-            Write-Host "pipreqs installed successfully." -ForegroundColor Green
-        }
-        catch {
-            Write-Host "An error occurred during installation. Please install pipreqs manually." -ForegroundColor Red
-            exit 1
-        }
-    }
-    else {
-        Write-Host "Script cancelled. pipreqs is required." -ForegroundColor Red
-        exit 1
-    }
-}
-else {
-    Write-Host "pipreqs found."
-}
-
-# 2. Run pipreqs
-Write-Host "Generating requirements file..." -ForegroundColor Green
-# Use --force to overwrite existing requirements.txt
-pipreqs --force --savepath $OutputFile $SourceDir
-
-if ($LastExitCode -ne 0) {
-    Write-Host "pipreqs failed. See output above for errors." -ForegroundColor Red
-    exit 1
-}
-
-# 3. Manually add dependencies pipreqs is known to miss for this project
-Write-Host "Adding known dependencies that may have been missed (e.g., lxml)..." -ForegroundColor Green
-Add-Content -Path $OutputFile -Value "`nlxml"
-
-# 4. Final Result
-Write-Host "--------------------------------------------------" -ForegroundColor Cyan
-Write-Host "Successfully generated '$OutputFile'" -ForegroundColor Green
-Write-Host "Please review the file for accuracy before committing."
-Write-Host "--------------------------------------------------" -ForegroundColor Cyan
-
-# Keep the window open if run by double-clicking
-if ($null -eq $psISE) { Read-Host "Press Enter to exit" }
-````
-
-## File: LICENSE
-````
-MIT License
-
-Copyright (c) 2025 dcog989
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 ````
 
 ## File: pyi_rth_selenium.py
@@ -815,6 +441,143 @@ class ThemedListCtrl(wx.ListCtrl):
         self.is_dark = is_dark
 ````
 
+## File: config.json
+````json
+{
+    "user_agents": [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.3351.121",
+        "Mozilla/5.0 (iPhone17,1; CPU iPhone OS 18_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Mohegan Sun/4.7.4",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 7.0; SM-T827R4 Build/NRD90M) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.116 Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:141.0) Gecko/20100101 Firefox/141.0"
+    ],
+    "default_output_format": ".md",
+    "default_local_excludes": [
+        ".archive/",
+        ".git/",
+        ".testing/",
+        "node_modules/",
+        ".repomixignore",
+        "repomix.config.json"
+    ],
+    "binary_file_patterns": [
+        "*.png",
+        "*.jpg",
+        "*.jpeg",
+        "*.gif",
+        "*.bmp",
+        "*.ico",
+        "*.svg",
+        "*.zip",
+        "*.rar",
+        "*.7z",
+        "*.tar",
+        "*.gz",
+        "*.pdf",
+        "*.doc",
+        "*.docx",
+        "*.xls",
+        "*.xlsx",
+        "*.ppt",
+        "*.pptx",
+        "*.exe",
+        "*.dll",
+        "*.so",
+        "*.dylib",
+        "*.ai",
+        "*.psd",
+        "*.mp3",
+        "*.wav",
+        "*.flac",
+        "*.mp4",
+        "*.mov",
+        "*.wmv",
+        "*.eot",
+        "*.ttf",
+        "*.woff",
+        "*.woff2"
+    ],
+    "max_build_logs": 21,
+    "window_size": [
+        1600,
+        950
+    ],
+    "sash_position": 650
+}
+````
+
+## File: core/packager.py
+````python
+from repomix import RepoProcessor, RepomixConfig
+from pathlib import Path
+import sys
+
+
+def resource_path(relative_path):
+    """
+    Get absolute path to resource, works for dev and for PyInstaller.
+    """
+    if getattr(sys, "frozen", False):
+        # We are running in a bundle (frozen)
+        # For --onefile, PyInstaller extracts to a temp folder and sets _MEIPASS
+        # For --onedir, it's just the executable's directory
+        meipass_path = getattr(sys, "_MEIPASS", None)
+        if meipass_path:
+            base_path = Path(meipass_path)
+        else:
+            base_path = Path(sys.executable).parent
+    else:
+        # We are running in a normal Python environment (from source).
+        base_path = Path(__file__).parent.parent
+
+    return base_path / relative_path
+
+
+def run_repomix(source_dir, output_filepath, log_queue, cancel_event, repomix_style="markdown", exclude_patterns=None):
+    """
+    Runs the repomix packaging process with the specified configuration.
+
+    This function is designed to be run in a separate thread.
+    """
+    if cancel_event.is_set():
+        log_queue.put({"type": "status", "status": "cancelled", "message": "Skipping packaging because process was cancelled."})
+        return
+
+    source_path = Path(source_dir)
+    if not source_path.is_dir():
+        log_queue.put({"type": "status", "status": "error", "message": "ERROR: Source directory for packaging is missing."})
+        return
+
+    output_path = Path(output_filepath)
+    packaged_filename = output_path.name
+
+    all_excludes = [packaged_filename, Path(output_filepath).name]
+    if exclude_patterns:
+        all_excludes.extend(exclude_patterns)
+
+    log_queue.put({"type": "log", "message": f"Running repomix packager on {source_dir}..."})
+    log_queue.put({"type": "log", "message": f"Output will be saved to: {output_filepath}"})
+
+    try:
+        config = RepomixConfig()
+        config.output.file_path = str(output_path)
+        config.output.style = repomix_style
+        config.ignore.custom_patterns = all_excludes
+        config.output.calculate_tokens = True
+        config.output.show_file_stats = True
+        config.security.enable_security_check = False
+
+        processor = RepoProcessor(str(source_path), config=config)
+        result = processor.process()
+
+        log_queue.put({"type": "status", "status": "package_complete", "message": f"✔ Repomix finished successfully. Output: {result.config.output.file_path}"})
+
+    except Exception as e:
+        log_queue.put({"type": "status", "status": "error", "message": f"ERROR: An unexpected packaging error occurred: {e}"})
+````
+
 ## File: core/utils.py
 ````python
 import platform
@@ -854,6 +617,123 @@ def get_downloads_folder():
             oledll.ole32.CoTaskMemFree(path_ptr)
             oledll.ole32.CoUninitialize()
     return str(Path.home() / "Downloads")
+````
+
+## File: core/config_manager.py
+````python
+import json
+from pathlib import Path
+import sys
+
+CONFIG_FILENAME = "config.json"
+
+DEFAULT_CONFIG = {
+    "user_agents": [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.3351.121",
+        "Mozilla/5.0 (iPhone17,1; CPU iPhone OS 18_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Mohegan Sun/4.7.4",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 7.0; SM-T827R4 Build/NRD90M) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.116 Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:141.0) Gecko/20100101 Firefox/141.0",
+    ],
+    "default_output_format": ".md",
+    "default_local_excludes": [".archive/", ".git/", ".testing/", "*node_modules*", "build/", "dist/"],
+    "binary_file_patterns": [
+        "*.png",
+        "*.jpg",
+        "*.jpeg",
+        "*.gif",
+        "*.bmp",
+        "*.ico",
+        "*.svg",
+        "*.zip",
+        "*.rar",
+        "*.7z",
+        "*.tar",
+        "*.gz",
+        "*.pdf",
+        "*.doc",
+        "*.docx",
+        "*.xls",
+        "*.xlsx",
+        "*.ppt",
+        "*.pptx",
+        "*.exe",
+        "*.dll",
+        "*.so",
+        "*.dylib",
+        "*.ai",
+        "*.psd",
+        "*.mp3",
+        "*.wav",
+        "*.flac",
+        "*.mp4",
+        "*.mov",
+        "*.wmv",
+        "*.eot",
+        "*.ttf",
+        "*.woff",
+        "*.woff2",
+    ],
+    "max_build_logs": 21,
+    "window_size": [-1, -1],
+    "sash_position": 650,
+}
+
+_config = None
+
+
+def get_base_path():
+    """Gets the base path for data files, handling PyInstaller."""
+    if getattr(sys, "frozen", False):
+        # Running as a PyInstaller bundle
+        return Path(sys.executable).parent
+    else:
+        # Running from source (development)
+        return Path(".")
+
+
+def get_config():
+    """Loads the config.json file, creating a default one if it doesn't exist."""
+    global _config
+    if _config is not None:
+        return _config
+
+    base_path = get_base_path()
+    config_path = base_path / CONFIG_FILENAME
+    if not config_path.exists():
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(DEFAULT_CONFIG, f, indent=4)
+            _config = DEFAULT_CONFIG
+        except Exception as e:
+            print(f"Warning: Could not create default config file: {e}")
+            _config = DEFAULT_CONFIG
+        return _config
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            loaded_config = json.load(f)
+            # Ensure all default keys are present
+            _config = DEFAULT_CONFIG.copy()
+            _config.update(loaded_config)
+    except Exception as e:
+        print(f"Warning: Could not load config.json, using defaults: {e}")
+        _config = DEFAULT_CONFIG
+
+    return _config
+
+
+def save_config(config_data):
+    """Saves the provided configuration dictionary to config.json."""
+    base_path = get_base_path()
+    config_path = base_path / CONFIG_FILENAME
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, indent=4)
+    except Exception as e:
+        print(f"Error: Could not save config file: {e}")
 ````
 
 ## File: ui/widgets/buttons.py
@@ -907,7 +787,6 @@ class CustomButton(wx.Panel):
         gc.DrawText(self.label, (width - label_width) / 2, (height - label_height) / 2)
 
     def on_mouse_down(self, event):
-        print(f"DIAG: CustomButton on_mouse_down at {__import__('datetime').datetime.now()}")
         if self.IsEnabled():
             wx.PostEvent(self, wx.CommandEvent(wx.EVT_BUTTON.typeId, self.GetId()))
 
@@ -1025,6 +904,118 @@ class IconCustomButton(CustomSecondaryButton):
 
     def DoGetBestSize(self):
         return self.GetSize()
+````
+
+## File: core/version.py
+````python
+__version__ = "1.6.0"
+````
+
+## File: README.md
+````markdown
+# ![ContextPacker logo](https://github.com/dcog989/ContextPacker/blob/main/assets/icons/ContextPacker-x64.png) ContextPacker
+
+A desktop app to scrape websites, Git repositories, or package local files into a single file, optimized for consumption by LLMs.
+
+![ContextPacker screenshot](https://github.com/user-attachments/assets/955e7a42-45c7-44e4-a37e-43003e49f06a)
+
+## Features
+
+* **Web Crawling**: Scrape a website, convert pages to Markdown, and package them into one file.
+* **Git Repository Cloning**: Enter a Git URL to automatically clone the repository and switch to local packaging mode.
+* **Local Packaging**: Package a local directory (e.g., a code repository) into a single file.
+* **Multiple Output Formats**: Package files as `.md`, `.txt`, or `.xml`.
+* **Smart Filtering**: Automatically respects `.gitignore` rules and provides an option to hide common binary and image files from the list.
+* **Customizable**: Scraping options (depth, paths, speed) and file exclusions can be configured.
+* **External Configuration**: Key settings can be modified in a `config.json` file.
+* **Cross-Platform**: Light and Dark theme support (detects system theme on Windows, macOS, and Linux).
+
+## Installation
+
+1. **Install a Web Browser**: The web crawling feature requires one of the following browsers to be installed:
+    * Microsoft Edge
+    * Google Chrome
+    * Mozilla Firefox
+
+2. **Install Git**: The Git repository cloning feature requires `git` to be installed and accessible in your system's PATH.
+
+3. Clone the repository or download the source code.
+
+4. It is recommended to create a virtual environment:
+
+    ```sh
+    python -m venv venv
+    # On Windows
+    venv\Scripts\activate
+    # On macOS/Linux
+    source venv/bin/activate
+    ```
+
+5. Install the required dependencies from the virtual environment:
+
+    ```sh
+    pip install -r requirements.txt
+    ```
+
+6. Run the application:
+
+    ```sh
+    python app.py
+    ```
+
+## Usage
+
+The application has two main modes, selectable via radio buttons.
+
+### 1. Web Crawl Mode
+
+This mode is for scraping online content or cloning Git repositories.
+
+1. Select the **"Web Crawl"** radio button.
+2. Enter the **Start URL**.
+    * For a website, enter the full URL to begin scraping.
+    * For a Git repository, enter the repository's clone URL (e.g., `https://github.com/user/repo.git`). The app will detect it, clone the repo, and switch to Local Directory mode.
+3. Adjust the crawling options as needed (these are ignored for Git URLs).
+4. Click **"Download & Convert"**.
+
+### 2. Local Directory Mode
+
+This mode is for packaging local files.
+
+1. Select the **"Local Directory"** radio button.
+2. Choose the **Input Directory** you want to package.
+3. Use the **Excludes** text area to list any files or directories you wish to exclude. These patterns are combined with the rules in your `.gitignore` file.
+4. Use the checkboxes to include subdirectories or hide common binary and image files from the list.
+5. Click **"Package"**. The application will package all visible files into a single file in your Downloads folder, using the format selected in the output dropdown.
+
+## Configuration
+
+On first run, the application creates a `config.json` file in the same directory. You can edit this file to customize:
+
+* `user_agents`: The list of user-agents available in the dropdown.
+* `default_local_excludes`: The default patterns that appear in the "Excludes" text box.
+* `binary_file_patterns`: The list of file patterns to hide when "Hide Images + Binaries" is checked.
+
+## Building from Source
+
+You can create a standalone executable using PyInstaller.
+
+1. Install PyInstaller: `pip install pyinstaller`
+2. The repository includes a pre-configured `ContextPacker.spec` file and a runtime hook (`pyi_rth_selenium.py`) to correctly handle Selenium's dependencies.
+3. Run the build command from the project root:
+
+    ```sh
+    pyinstaller --clean ContextPacker.spec
+    ```
+
+4. The final single-file executable will be located in the `dist` folder.
+
+## Technology Stack
+
+* **UI**: Python with [wxPython](https://wxpython.org/)
+* **Web Scraping**: [Selenium](https://www.selenium.dev/) + [Beautiful Soup](https://pypi.org/project/beautifulsoup4/)
+* **HTML to Markdown**: [markdownify](https://pypi.org/project/markdownify/)
+* **File Packaging**: [repomix](https://pypi.org/project/repomix/)
 ````
 
 ## File: ui/widgets/dialogs.py
@@ -1180,246 +1171,11 @@ class AboutDialog(wx.Dialog):
         set_title_bar_theme(self, is_dark)
 ````
 
-## File: core/version.py
-````python
-__version__ = "1.5.0"
-````
-
-## File: requirements.txt
-````
-beautifulsoup4==4.13.5
-markdownify==1.2.0
-repomix==0.3.4
-selenium==4.35.0
-wxpython==4.2.3
-lxml==6.0.1
-````
-
-## File: .gitignore
-````
-.repomixignore
-repomix.config.json
-.archive/
-.vscode/
-.gemini/
-.dev-notes/
-
-
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
-
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
-
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-#poetry.toml
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
-#pdm.lock
-#pdm.toml
-.pdm-python
-.pdm-build/
-
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-#pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
-
-# Abstra
-# Abstra is an AI-powered process automation framework.
-# Ignore directories containing user credentials, local state, and settings.
-# Learn more at https://abstra.io/docs
-.abstra/
-
-# Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
-
-# Ruff stuff:
-.ruff_cache/
-
-# PyPI configuration file
-.pypirc
-
-# Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
-.cursorignore
-.cursorindexingignore
-
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
-````
-
 ## File: core/task_handler.py
 ````python
 import wx
 from pathlib import Path
 import threading
-import multiprocessing
 
 import core.actions as actions
 from ui.widgets.dialogs import ThemedMessageDialog
@@ -1430,7 +1186,6 @@ class TaskHandler:
         self.app = app_instance
 
     def start_download_task(self):
-        print(f"DIAG: TaskHandler.start_download_task called at {__import__('datetime').datetime.now()}")
         dl_button = self.app.main_panel.crawler_panel.download_button
         self.app._toggle_ui_controls(False, widget_to_keep_enabled=dl_button)
 
@@ -1466,7 +1221,7 @@ class TaskHandler:
         dl_button.label = "Stop!"
         dl_button.Refresh()
 
-        self.app.cancel_event = multiprocessing.Event()
+        self.app.cancel_event = threading.Event()
         self.app.start_queue_listener()
         actions.start_download(self.app, self.app.cancel_event)
 
@@ -1569,285 +1324,15 @@ class TaskHandler:
         self.app.timer.Start(100)
 ````
 
-## File: README.md
-````markdown
-# ![ContextPacker logo](https://github.com/dcog989/ContextPacker/blob/main/assets/icons/ContextPacker-x64.png) ContextPacker
-
-A desktop app to scrape websites, Git repositories, or package local files into a single file, optimized for consumption by LLMs.
-
-![ContextPacker screenshot](https://github.com/user-attachments/assets/955e7a42-45c7-44e4-a37e-43003e49f06a)
-
-## Features
-
-* **Web Crawling**: Scrape a website, convert pages to Markdown, and package them into one file.
-* **Git Repository Cloning**: Enter a Git URL to automatically clone the repository and switch to local packaging mode.
-* **Local Packaging**: Package a local directory (e.g., a code repository) into a single file.
-* **Multiple Output Formats**: Package files as `.md`, `.txt`, or `.xml`.
-* **Smart Filtering**: Automatically respects `.gitignore` rules and provides an option to hide common binary and image files from the list.
-* **Customizable**: Scraping options (depth, paths, speed) and file exclusions can be configured.
-* **External Configuration**: Key settings can be modified in a `config.json` file.
-* **Cross-Platform**: Light and Dark theme support (detects system theme on Windows, macOS, and Linux).
-
-## Installation
-
-1. **Install a Web Browser**: The web crawling feature requires one of the following browsers to be installed:
-    * Microsoft Edge
-    * Google Chrome
-    * Mozilla Firefox
-
-2. **Install Git**: The Git repository cloning feature requires `git` to be installed and accessible in your system's PATH.
-
-3. Clone the repository or download the source code.
-
-4. It is recommended to create a virtual environment:
-
-    ```sh
-    python -m venv venv
-    # On Windows
-    venv\Scripts\activate
-    # On macOS/Linux
-    source venv/bin/activate
-    ```
-
-5. Install the required dependencies from the virtual environment:
-
-    ```sh
-    pip install -r requirements.txt
-    ```
-
-6. Run the application:
-
-    ```sh
-    python app.py
-    ```
-
-## Usage
-
-The application has two main modes, selectable via radio buttons.
-
-### 1. Web Crawl Mode
-
-This mode is for scraping online content or cloning Git repositories.
-
-1. Select the **"Web Crawl"** radio button.
-2. Enter the **Start URL**.
-    * For a website, enter the full URL to begin scraping.
-    * For a Git repository, enter the repository's clone URL (e.g., `https://github.com/user/repo.git`). The app will detect it, clone the repo, and switch to Local Directory mode.
-3. Adjust the crawling options as needed (these are ignored for Git URLs).
-4. Click **"Download & Convert"**.
-
-### 2. Local Directory Mode
-
-This mode is for packaging local files.
-
-1. Select the **"Local Directory"** radio button.
-2. Choose the **Input Directory** you want to package.
-3. Use the **Excludes** text area to list any files or directories you wish to exclude. These patterns are combined with the rules in your `.gitignore` file.
-4. Use the checkboxes to include subdirectories or hide common binary and image files from the list.
-5. Click **"Package"**. The application will package all visible files into a single file in your Downloads folder, using the format selected in the output dropdown.
-
-## Configuration
-
-On first run, the application creates a `config.json` file in the same directory. You can edit this file to customize:
-
-* `user_agents`: The list of user-agents available in the dropdown.
-* `default_local_excludes`: The default patterns that appear in the "Excludes" text box.
-* `binary_file_patterns`: The list of file patterns to hide when "Hide Images + Binaries" is checked.
-
-## Building from Source
-
-You can create a standalone executable using PyInstaller.
-
-1. Install PyInstaller: `pip install pyinstaller`
-2. The repository includes a pre-configured `ContextPacker.spec` file and a runtime hook (`pyi_rth_selenium.py`) to correctly handle Selenium's dependencies.
-3. Run the build command from the project root:
-
-    ```sh
-    pyinstaller --clean ContextPacker.spec
-    ```
-
-4. The final single-file executable will be located in the `dist` folder.
-
-## Technology Stack
-
-* **UI**: Python with [wxPython](https://wxpython.org/)
-* **Web Scraping**: [Selenium](https://www.selenium.dev/) + [Beautiful Soup](https://pypi.org/project/beautifulsoup4/)
-* **HTML to Markdown**: [markdownify](https://pypi.org/project/markdownify/)
-* **File Packaging**: [repomix](https://pypi.org/project/repomix/)
+## File: requirements.txt
 ````
+beautifulsoup4==4.14.2
+markdownify==1.2.0
+repomix==0.3.4
+selenium==4.38.0
+wxpython==4.2.4
 
-## File: ui/main_frame.py
-````python
-import wx
-from .widgets.buttons import CustomButton, IconCustomButton
-from .widgets.dialogs import ThemedMessageDialog
-from .widgets.inputs import CustomRadioButton, FocusTextCtrl
-from .panels import CrawlerInputPanel, LocalInputPanel, ListPanel
-from core.config_manager import get_config
-from core.packager import resource_path
-
-config = get_config()
-
-
-class MainFrame(wx.Panel):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.controller = parent
-        self.theme = self.controller.theme
-
-        font = self.GetFont()
-        font.SetPointSize(11)
-        self.SetFont(font)
-
-        self._create_widgets()
-        self.create_sizers()
-        self._bind_events()
-
-    def _create_widgets(self):
-        self.splitter = wx.SplitterWindow(self, style=wx.SP_LIVE_UPDATE | wx.SP_BORDER)
-        self.left_panel = wx.Panel(self.splitter)
-        self.right_panel_container = wx.Panel(self.splitter)
-
-        self.input_static_box = wx.StaticBox(self.left_panel, label="Input")
-        self.web_crawl_radio = CustomRadioButton(self.input_static_box, label="Web Crawl", theme=self.theme)
-        self.local_dir_radio = CustomRadioButton(self.input_static_box, label="Local Directory", theme=self.theme)
-        self.web_crawl_radio.group = [self.web_crawl_radio, self.local_dir_radio]
-        self.local_dir_radio.group = [self.web_crawl_radio, self.local_dir_radio]
-        self.web_crawl_radio.SetValue(True)
-
-        self.crawler_panel = CrawlerInputPanel(self.input_static_box, self.theme, self.controller.version)
-        self.local_panel = LocalInputPanel(self.input_static_box, self.theme)
-
-        self.list_static_box = wx.StaticBox(self.right_panel_container, label="List")
-        self.list_panel = ListPanel(self.list_static_box, self.theme, self.controller.is_dark)
-
-        self.output_static_box = wx.StaticBox(self.right_panel_container, label="Output")
-        self.output_filename_ctrl = FocusTextCtrl(self.output_static_box, value="ContextPacker-package", theme=self.theme)
-        self.output_timestamp_label = wx.StaticText(self.output_static_box, label="")
-        self.output_format_choice = wx.Choice(self.output_static_box, choices=[".md", ".txt", ".xml"])
-        default_format = config.get("default_output_format", ".md")
-        choices = self.output_format_choice.GetStrings()
-        if default_format in choices:
-            self.output_format_choice.SetSelection(choices.index(default_format))
-        else:
-            self.output_format_choice.SetSelection(0)
-        self.package_button = CustomButton(self.output_static_box, label="Package", theme=self.theme)
-
-        package_button_height = self.package_button.GetBestSize().GetHeight()
-        copy_button_size = wx.Size(package_button_height, package_button_height)
-
-        icon_path = resource_path("assets/icons/copy.png")
-        img = wx.Image(str(icon_path), wx.BITMAP_TYPE_PNG)
-        img.Rescale(24, 24, wx.IMAGE_QUALITY_HIGH)
-        copy_bitmap = wx.Bitmap(img)
-
-        self.copy_button = IconCustomButton(self.output_static_box, copy_bitmap, self.theme, size=copy_button_size)
-        self.copy_button.SetToolTip("Copy final package contents to clipboard")
-        self.copy_button.Disable()
-
-        font = self.output_timestamp_label.GetFont()
-        font.SetStyle(wx.FONTSTYLE_ITALIC)
-        self.output_timestamp_label.SetFont(font)
-
-    def create_sizers(self):
-        main_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        main_sizer.Add(self.splitter, 1, wx.EXPAND | wx.ALL, 5)
-        self.SetSizer(main_sizer)
-
-        left_sizer = wx.BoxSizer(wx.VERTICAL)
-        self.left_panel.SetSizer(left_sizer)
-
-        input_sizer = wx.StaticBoxSizer(self.input_static_box, wx.VERTICAL)
-        left_sizer.Add(input_sizer, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 5)
-        radio_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        radio_sizer.Add(self.web_crawl_radio, 0, wx.RIGHT, 10)
-        radio_sizer.Add(self.local_dir_radio, 0)
-        input_sizer.Add(radio_sizer, 0, wx.ALL, 10)
-        input_sizer.Add(self.crawler_panel, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
-        input_sizer.Add(self.local_panel, 1, wx.EXPAND | wx.ALL, 10)
-
-        right_sizer = wx.BoxSizer(wx.VERTICAL)
-        self.right_panel_container.SetSizer(right_sizer)
-
-        list_box_sizer = wx.StaticBoxSizer(self.list_static_box, wx.VERTICAL)
-        list_box_sizer.Add(self.list_panel, 1, wx.EXPAND | wx.ALL, 5)
-        right_sizer.Add(list_box_sizer, 1, wx.EXPAND | wx.ALL, 5)
-
-        output_box_sizer = wx.StaticBoxSizer(self.output_static_box, wx.VERTICAL)
-        filename_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        filename_sizer.Add(self.output_filename_ctrl, 1, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
-        filename_sizer.Add(self.output_timestamp_label, 0, wx.ALIGN_CENTER_VERTICAL)
-        filename_sizer.Add(self.output_format_choice, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT | wx.RIGHT, 10)
-        filename_sizer.Add(self.package_button, 0, wx.ALIGN_CENTER_VERTICAL)
-        filename_sizer.Add(self.copy_button, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 5)
-        output_box_sizer.Add(filename_sizer, 0, wx.EXPAND | wx.ALL, 10)
-        right_sizer.Add(output_box_sizer, 0, wx.EXPAND | wx.ALL, 5)
-
-        self.splitter.SplitVertically(self.left_panel, self.right_panel_container)
-        self.splitter.SetSashPosition(650)
-        self.splitter.SetMinimumPaneSize(600)
-
-    def _bind_events(self):
-        self.web_crawl_radio.Bind(wx.EVT_RADIOBUTTON, self.controller.on_toggle_input_mode)
-        self.local_dir_radio.Bind(wx.EVT_RADIOBUTTON, self.controller.on_toggle_input_mode)
-        self.local_panel.browse_button.Bind(wx.EVT_BUTTON, self.controller.on_browse)
-        self.local_panel.include_subdirs_check.Bind(wx.EVT_CHECKBOX, self.controller.on_local_filters_changed)
-        self.local_panel.hide_binaries_check.Bind(wx.EVT_CHECKBOX, self.controller.on_local_filters_changed)
-
-        exclude_ctrl = self.local_panel.local_exclude_ctrl.text_ctrl
-        exclude_ctrl.Bind(wx.EVT_KILL_FOCUS, self.controller.on_local_filters_changed)
-        exclude_ctrl.Bind(wx.EVT_TEXT_ENTER, self.controller.on_local_filters_changed)
-        exclude_ctrl.Bind(wx.EVT_KEY_UP, self.controller.on_exclude_text_update)
-        exclude_ctrl.Bind(wx.EVT_LEFT_UP, self.controller.on_exclude_text_update)
-
-        self.crawler_panel.download_button.Bind(wx.EVT_BUTTON, self.controller.on_download_button_click)
-        self.package_button.Bind(wx.EVT_BUTTON, self.controller.on_package_button_click)
-        self.list_panel.delete_button.Bind(wx.EVT_BUTTON, self.on_delete_selected_item)
-        self.copy_button.Bind(wx.EVT_BUTTON, self.controller.on_copy_to_clipboard)
-
-        self.crawler_panel.about_logo.Bind(wx.EVT_LEFT_DOWN, self.controller.on_show_about_dialog)
-        self.crawler_panel.about_logo.Bind(wx.EVT_RIGHT_DOWN, self.controller.on_show_about_dialog)
-        self.crawler_panel.about_text.Bind(wx.EVT_LEFT_DOWN, self.controller.on_show_about_dialog)
-        self.crawler_panel.about_text.Bind(wx.EVT_RIGHT_DOWN, self.controller.on_show_about_dialog)
-
-    def on_delete_selected_item(self, event):
-        is_web_mode = self.web_crawl_radio.GetValue()
-        list_ctrl = self.list_panel.standard_log_list if is_web_mode else self.list_panel.local_file_list
-        data_source = self.list_panel.scraped_files if is_web_mode else self.list_panel.local_files
-
-        selected_count = list_ctrl.GetSelectedItemCount()
-        if selected_count == 0:
-            return
-
-        if is_web_mode:
-            title = "Confirm Deletion"
-            message = f"Are you sure you want to permanently delete {selected_count} downloaded file(s)?"
-        else:
-            title = "Confirm Removal"
-            message = f"Are you sure you want to remove {selected_count} item(s) from the package list?"
-
-        with ThemedMessageDialog(self, message, title, wx.YES_NO | wx.NO_DEFAULT, self.theme) as dlg:
-            if dlg.ShowModal() != wx.ID_YES:
-                return
-
-        selected_indices = []
-        item = list_ctrl.GetFirstSelected()
-        while item != -1:
-            selected_indices.append(item)
-            item = list_ctrl.GetNextSelected(item)
-
-        for index in sorted(selected_indices, reverse=True):
-            item_to_remove = data_source.pop(index)
-            list_ctrl.DeleteItem(index)
-
-            if is_web_mode:
-                self.controller.delete_scraped_file(item_to_remove["path"])
-            else:
-                self.controller.remove_local_file_from_package(item_to_remove["rel_path"])
-
-        self.list_panel.delete_button.SetAlertState(False)
-        self.controller._update_button_states()
-        self.list_panel.update_file_count()
+lxml
 ````
 
 ## File: core/crawler.py
@@ -1869,6 +1354,7 @@ from markdownify import markdownify as md
 import platform
 import subprocess
 import threading
+import json
 
 
 def _get_browser_binary_path_windows(browser_name, log_queue):
@@ -1984,7 +1470,46 @@ def crawl_website(config, log_queue, cancel_event):
     """
     Crawls a website based on the provided configuration.
     """
-    print(f"DIAG: crawl_website thread started at {__import__('datetime').datetime.now()}")
+
+    def _get_driver_path_from_manager(browser_name_key):
+        browser_map = {"msedge": "edge", "chrome": "chrome", "firefox": "firefox"}
+        browser_arg = browser_map.get(browser_name_key)
+        if not browser_arg:
+            return None
+
+        manager_path = os.environ.get("SE_MANAGER_PATH")
+        if not manager_path or not os.path.isdir(manager_path):
+            log_queue.put({"type": "log", "message": f"SE_MANAGER_PATH ('{manager_path}') is not a valid directory."})
+            return None
+
+        sm_exe = "selenium-manager.exe" if platform.system() == "Windows" else "selenium-manager"
+        sm_exe_path = os.path.join(manager_path, sm_exe)
+
+        if not os.path.exists(sm_exe_path):
+            log_queue.put({"type": "log", "message": f"Could not find '{sm_exe}' in SE_MANAGER_PATH: {manager_path}"})
+            return None
+        try:
+            command = [sm_exe_path, "--browser", browser_arg, "--output", "json"]
+            process = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", shell=False, check=False)
+
+            if process.returncode == 0 and process.stdout:
+                result_json = json.loads(process.stdout)
+                driver_path = result_json.get("result", {}).get("driver_path")
+                if driver_path and os.path.exists(driver_path):
+                    log_queue.put({"type": "log", "message": f"  -> Located driver for {browser_arg} at: {driver_path}"})
+                    return driver_path
+                else:
+                    log_queue.put({"type": "log", "message": f"  -> Selenium Manager ran for {browser_arg} but returned an invalid path."})
+                    log_queue.put({"type": "log", "message": f"     Output: {process.stdout}"})
+            else:
+                log_queue.put({"type": "log", "message": f"  -> Selenium Manager failed for {browser_arg}. Return Code: {process.returncode}"})
+                log_queue.put({"type": "log", "message": f"     STDERR: {process.stderr}"})
+
+        except Exception as e:
+            log_queue.put({"type": "log", "message": f"  -> An exception occurred while running Selenium Manager for {browser_arg}: {e}"})
+
+        return None
+
     log_queue.put({"type": "log", "message": "Searching for a compatible web browser..."})
 
     chrome_options = webdriver.ChromeOptions()
@@ -1992,6 +1517,7 @@ def crawl_website(config, log_queue, cancel_event):
     chrome_options.add_argument("--log-level=3")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-logging", "enable-automation"])
     chrome_options.page_load_strategy = "eager"
+    chrome_options.add_argument(f"user-agent={config.user_agent}")
     chrome_binary_path = _get_browser_binary_path("chrome", log_queue)
     if chrome_binary_path:
         chrome_options.binary_location = chrome_binary_path
@@ -2001,6 +1527,7 @@ def crawl_website(config, log_queue, cancel_event):
     edge_options.add_argument("--log-level=3")
     edge_options.add_experimental_option("excludeSwitches", ["enable-logging", "enable-automation"])
     edge_options.page_load_strategy = "eager"
+    edge_options.add_argument(f"user-agent={config.user_agent}")
     edge_binary_path = _get_browser_binary_path("msedge", log_queue)
     if edge_binary_path:
         edge_options.binary_location = edge_binary_path
@@ -2009,6 +1536,7 @@ def crawl_website(config, log_queue, cancel_event):
     firefox_options.add_argument("--headless")
     firefox_options.add_argument("--log-level=3")
     firefox_options.page_load_strategy = "eager"
+    firefox_options.add_argument(f"user-agent={config.user_agent}")
     firefox_binary_path = _get_browser_binary_path("firefox", log_queue)
     if firefox_binary_path:
         firefox_options.binary_location = firefox_binary_path
@@ -2027,13 +1555,19 @@ def crawl_website(config, log_queue, cancel_event):
     for name_key, driver_class, options, service_class in browsers_to_try:
         try:
             log_queue.put({"type": "log", "message": f"  -> Attempting to initialize {name_key}..."})
-            service = service_class(creationflags=creation_flags)
+            driver_path = _get_driver_path_from_manager(name_key)
+
+            if not driver_path:
+                log_queue.put({"type": "log", "message": f"  -> Failed to locate driver for {name_key} via Selenium Manager. Skipping."})
+                continue
+
+            service = service_class(executable_path=driver_path, creationflags=creation_flags)
             driver = driver_class(service=service, options=options)
             log_queue.put({"type": "log", "message": f"✔ Success: Using {name_key} for web crawling."})
             break
 
         except WebDriverException as e:
-            log_queue.put({"type": "log", "message": f"  -> {name_key} not found or failed to start. Details: {e.msg}"})
+            log_queue.put({"type": "log", "message": f"  -> {name_key} not found or failed to start. Details: {str(e)}"})
 
     if driver is None:
         error_msg = "ERROR: Could not find a compatible web browser or its driver.\nPlease ensure a supported browser (Edge, Chrome, or Firefox) is installed."
@@ -2183,297 +1717,180 @@ def crawl_website(config, log_queue, cancel_event):
         log_queue.put({"type": "status", "status": "cancelled", "message": "Process cancelled by user."})
 ````
 
-## File: core/actions.py
+## File: ui/main_frame.py
 ````python
-import threading
-import tempfile
-import shutil
-from pathlib import Path
-from datetime import datetime
 import wx
-import logging
-import os
-import fnmatch
-import subprocess
-import queue
-import multiprocessing
+from .widgets.buttons import CustomButton, IconCustomButton
+from .widgets.dialogs import ThemedMessageDialog
+from .widgets.inputs import CustomRadioButton, FocusTextCtrl
+from .panels import CrawlerInputPanel, LocalInputPanel, ListPanel
+from core.config_manager import get_config
+from core.packager import resource_path
 
-from .packager import run_repomix
-
-
-def start_download(app, cancel_event):
-    """Initializes and starts the web crawling process in a new process."""
-    print(f"DIAG: actions.start_download called at {datetime.now()}")
-    app.main_panel.list_panel.clear_logs()
-    app.main_panel.list_panel.progress_gauge.SetValue(0)
-
-    if app.temp_dir and Path(app.temp_dir).is_dir():
-        shutil.rmtree(app.temp_dir)
-
-    app.temp_dir = tempfile.mkdtemp(prefix="ContextPacker-")
-    app.log_verbose(f"Created temporary directory: {app.temp_dir}")
-    crawler_config = app.main_panel.crawler_panel.get_crawler_config(app.temp_dir)
-
-    app.log_verbose("Starting url conversion...")
-    app.worker_thread = multiprocessing.Process(target=_crawl_process_worker, args=(crawler_config, app.log_queue, cancel_event), daemon=True)
-    print(f"DIAG: Worker process created. Starting now at {datetime.now()}.")
-    app.worker_thread.start()
+config = get_config()
 
 
-def _enqueue_output(stream, q):
-    """Reads lines from a stream and puts them into a queue."""
-    for line in iter(stream.readline, ""):
-        q.put(line)
-    stream.close()
+class MainFrame(wx.Panel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.controller = parent
+        self.theme = self.controller.theme
 
+        font = self.GetFont()
+        font.SetPointSize(11)
+        self.SetFont(font)
 
-def start_git_clone(app, cancel_event):
-    """Initializes and starts a git clone process in a new thread."""
-    app.main_panel.list_panel.clear_logs()
+        self._create_widgets()
+        self.create_sizers()
+        self._bind_events()
 
-    if app.temp_dir and Path(app.temp_dir).is_dir():
-        shutil.rmtree(app.temp_dir)
+    def _create_widgets(self):
+        self.splitter = wx.SplitterWindow(self, style=wx.SP_LIVE_UPDATE | wx.SP_BORDER)
+        self.left_panel = wx.Panel(self.splitter)
+        self.right_panel_container = wx.Panel(self.splitter)
 
-    app.temp_dir = tempfile.mkdtemp(prefix="ContextPacker-")
-    app.log_verbose(f"Created temporary directory for git clone: {app.temp_dir}")
-    url = app.main_panel.crawler_panel.start_url_ctrl.GetValue()
+        self.input_static_box = wx.StaticBox(self.left_panel, label="Input")
+        self.web_crawl_radio = CustomRadioButton(self.input_static_box, label="Web Crawl", theme=self.theme)
+        self.local_dir_radio = CustomRadioButton(self.input_static_box, label="Local Directory", theme=self.theme)
+        self.web_crawl_radio.group = [self.web_crawl_radio, self.local_dir_radio]
+        self.local_dir_radio.group = [self.web_crawl_radio, self.local_dir_radio]
+        self.web_crawl_radio.SetValue(True)
 
-    app.log_verbose(f"Starting git clone for {url}...")
-    app.worker_thread = threading.Thread(target=_clone_repo_worker, args=(url, app.temp_dir, app.log_queue, cancel_event), daemon=True)
-    app.worker_thread.start()
+        self.crawler_panel = CrawlerInputPanel(self.input_static_box, self.theme, self.controller.version)
+        self.local_panel = LocalInputPanel(self.input_static_box, self.theme)
 
+        self.list_static_box = wx.StaticBox(self.right_panel_container, label="List")
+        self.list_panel = ListPanel(self.list_static_box, self.theme, self.controller.is_dark)
 
-def _crawl_process_worker(crawler_config, log_queue, cancel_event):
-    """
-    This function runs in a separate process to perform the web crawl.
-    It imports necessary modules within the function to ensure it works
-    correctly with multiprocessing.
-    """
-    from .crawler import crawl_website
-
-    crawl_website(crawler_config, log_queue, cancel_event)
-
-
-def _clone_repo_worker(url, path, log_queue, cancel_event):
-    """Worker function to perform a git clone and stream output."""
-    if not shutil.which("git"):
-        error_msg = "ERROR: Git is not installed or not found in your system's PATH. Please install Git to use this feature."
-        log_queue.put({"type": "status", "status": "error", "message": error_msg})
-        return
-
-    try:
-        process = subprocess.Popen(
-            ["git", "clone", "--depth", "1", url, path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-        )
-
-        if not process.stdout:
-            process.wait()
-            log_queue.put({"type": "status", "status": "error", "message": "Failed to capture git clone output stream."})
-            return
-
-        output_queue = queue.Queue()
-        reader_thread = threading.Thread(target=_enqueue_output, args=(process.stdout, output_queue), daemon=True)
-        reader_thread.start()
-
-        while process.poll() is None:
-            if cancel_event.is_set():
-                process.terminate()
-                try:
-                    process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                break
-
-            try:
-                line = output_queue.get(timeout=0.1)
-                if line:
-                    log_queue.put({"type": "log", "message": line.strip()})
-            except queue.Empty:
-                continue
-
-        while not output_queue.empty():
-            line = output_queue.get_nowait()
-            if line:
-                log_queue.put({"type": "log", "message": line.strip()})
-
-        if cancel_event.is_set():
-            log_queue.put({"type": "status", "status": "cancelled", "message": "Git clone cancelled."})
-            return
-
-        if process.returncode == 0:
-            log_queue.put({"type": "status", "status": "clone_complete", "path": path})
+        self.output_static_box = wx.StaticBox(self.right_panel_container, label="Output")
+        self.output_filename_ctrl = FocusTextCtrl(self.output_static_box, value="ContextPacker-package", theme=self.theme)
+        self.output_timestamp_label = wx.StaticText(self.output_static_box, label="")
+        self.output_format_choice = wx.Choice(self.output_static_box, choices=[".md", ".txt", ".xml"])
+        default_format = config.get("default_output_format", ".md")
+        choices = self.output_format_choice.GetStrings()
+        if default_format in choices:
+            self.output_format_choice.SetSelection(choices.index(default_format))
         else:
-            log_queue.put({"type": "status", "status": "error", "message": "Git clone failed. Check the log for details."})
+            self.output_format_choice.SetSelection(0)
+        self.package_button = CustomButton(self.output_static_box, label="Package", theme=self.theme)
 
-    except Exception as e:
-        log_queue.put({"type": "status", "status": "error", "message": f"An error occurred while cloning the repository: {e}"})
+        package_button_height = self.package_button.GetBestSize().GetHeight()
+        copy_button_size = wx.Size(package_button_height, package_button_height)
 
+        icon_path = resource_path("assets/icons/copy.png")
+        img = wx.Image(str(icon_path), wx.BITMAP_TYPE_PNG)
+        copy_bitmap = wx.Bitmap(img)
 
-def start_packaging(app, cancel_event, file_list=None):
-    """Initializes and starts the packaging process in a new thread."""
-    is_web_mode = app.main_panel.web_crawl_radio.GetValue()
-    app.filename_prefix = app.main_panel.output_filename_ctrl.GetValue().strip() or "ContextPacker-package"
-    source_dir = ""
-    effective_excludes = []
+        self.copy_button = IconCustomButton(self.output_static_box, copy_bitmap, self.theme, size=copy_button_size)
+        self.copy_button.SetToolTip("Copy final package contents to clipboard")
+        self.copy_button.Disable()
 
-    if is_web_mode:
-        if not app.temp_dir or not any(Path(app.temp_dir).iterdir()):
-            app.log_verbose("ERROR: No downloaded content to package. Please run 'Download & Convert' first.")
+        font = self.output_timestamp_label.GetFont()
+        font.SetStyle(wx.FONTSTYLE_ITALIC)
+        self.output_timestamp_label.SetFont(font)
+
+    def create_sizers(self):
+        main_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        main_sizer.Add(self.splitter, 1, wx.EXPAND | wx.ALL, 5)
+        self.SetSizer(main_sizer)
+
+        left_sizer = wx.BoxSizer(wx.VERTICAL)
+        self.left_panel.SetSizer(left_sizer)
+
+        input_sizer = wx.StaticBoxSizer(self.input_static_box, wx.VERTICAL)
+        left_sizer.Add(input_sizer, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 5)
+        radio_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        radio_sizer.Add(self.web_crawl_radio, 0, wx.RIGHT, 10)
+        radio_sizer.Add(self.local_dir_radio, 0)
+        input_sizer.Add(radio_sizer, 0, wx.ALL, 10)
+        input_sizer.Add(self.crawler_panel, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+        input_sizer.Add(self.local_panel, 1, wx.EXPAND | wx.ALL, 10)
+
+        right_sizer = wx.BoxSizer(wx.VERTICAL)
+        self.right_panel_container.SetSizer(right_sizer)
+
+        list_box_sizer = wx.StaticBoxSizer(self.list_static_box, wx.VERTICAL)
+        list_box_sizer.Add(self.list_panel, 1, wx.EXPAND | wx.ALL, 5)
+        right_sizer.Add(list_box_sizer, 1, wx.EXPAND | wx.ALL, 5)
+
+        output_box_sizer = wx.StaticBoxSizer(self.output_static_box, wx.VERTICAL)
+        filename_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        filename_sizer.Add(self.output_filename_ctrl, 1, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        filename_sizer.Add(self.output_timestamp_label, 0, wx.ALIGN_CENTER_VERTICAL)
+        filename_sizer.Add(self.output_format_choice, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT | wx.RIGHT, 10)
+        filename_sizer.Add(self.package_button, 0, wx.ALIGN_CENTER_VERTICAL)
+        filename_sizer.Add(self.copy_button, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 5)
+        output_box_sizer.Add(filename_sizer, 0, wx.EXPAND | wx.ALL, 10)
+        right_sizer.Add(output_box_sizer, 0, wx.EXPAND | wx.ALL, 5)
+
+        self.splitter.SplitVertically(self.left_panel, self.right_panel_container)
+        sash_pos = config.get("sash_position", 650)
+        self.splitter.SetSashPosition(sash_pos)
+        self.splitter.SetMinimumPaneSize(600)
+
+    def _bind_events(self):
+        self.web_crawl_radio.Bind(wx.EVT_RADIOBUTTON, self.controller.on_toggle_input_mode)
+        self.local_dir_radio.Bind(wx.EVT_RADIOBUTTON, self.controller.on_toggle_input_mode)
+        self.local_panel.browse_button.Bind(wx.EVT_BUTTON, self.controller.on_browse)
+        self.local_panel.use_gitignore_check.Bind(wx.EVT_CHECKBOX, self.controller.on_local_filters_changed)
+        self.local_panel.hide_binaries_check.Bind(wx.EVT_CHECKBOX, self.controller.on_local_filters_changed)
+        self.local_panel.dir_level_ctrl.Bind(wx.EVT_SPINCTRL, self.controller.on_exclude_text_update)
+        self.local_panel.dir_level_ctrl.Bind(wx.EVT_TEXT, self.controller.on_exclude_text_update)
+
+        exclude_ctrl = self.local_panel.local_exclude_ctrl.text_ctrl
+        exclude_ctrl.Bind(wx.EVT_KILL_FOCUS, self.controller.on_local_filters_changed)
+        exclude_ctrl.Bind(wx.EVT_TEXT_ENTER, self.controller.on_local_filters_changed)
+        exclude_ctrl.Bind(wx.EVT_KEY_UP, self.controller.on_exclude_text_update)
+        exclude_ctrl.Bind(wx.EVT_LEFT_UP, self.controller.on_exclude_text_update)
+
+        self.crawler_panel.download_button.Bind(wx.EVT_BUTTON, self.controller.on_download_button_click)
+        self.package_button.Bind(wx.EVT_BUTTON, self.controller.on_package_button_click)
+        self.list_panel.delete_button.Bind(wx.EVT_BUTTON, self.on_delete_selected_item)
+        self.copy_button.Bind(wx.EVT_BUTTON, self.controller.on_copy_to_clipboard)
+
+        self.crawler_panel.about_logo.Bind(wx.EVT_LEFT_DOWN, self.controller.on_show_about_dialog)
+        self.crawler_panel.about_logo.Bind(wx.EVT_RIGHT_DOWN, self.controller.on_show_about_dialog)
+        self.crawler_panel.about_text.Bind(wx.EVT_LEFT_DOWN, self.controller.on_show_about_dialog)
+        self.crawler_panel.about_text.Bind(wx.EVT_RIGHT_DOWN, self.controller.on_show_about_dialog)
+
+    def on_delete_selected_item(self, event):
+        is_web_mode = self.web_crawl_radio.GetValue()
+        list_ctrl = self.list_panel.standard_log_list if is_web_mode else self.list_panel.local_file_list
+        data_source = self.list_panel.scraped_files if is_web_mode else self.list_panel.local_files
+
+        selected_count = list_ctrl.GetSelectedItemCount()
+        if selected_count == 0:
             return
-        source_dir = app.temp_dir
-        effective_excludes = []
-    else:
-        source_dir = app.main_panel.local_panel.local_dir_ctrl.GetValue()
-        default_excludes = [p.strip() for p in app.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
 
-        additional_excludes = set()
-        if not app.main_panel.local_panel.include_subdirs_check.GetValue():
-            source_path = Path(source_dir)
-            if source_path.is_dir():
-                for item in source_path.iterdir():
-                    if item.is_dir():
-                        additional_excludes.add(f"{item.name}/")
-
-        effective_excludes = list(set(default_excludes) | app.local_files_to_exclude | additional_excludes)
-
-    extension = app.main_panel.output_format_choice.GetStringSelection()
-    style_map = {".md": "markdown", ".txt": "plain", ".xml": "xml"}
-    repomix_style = style_map.get(extension, "markdown")
-
-    app.main_panel.list_panel.progress_gauge.SetValue(0)
-
-    _run_packaging_thread(app, source_dir, app.filename_prefix, effective_excludes, extension, repomix_style, cancel_event, file_list)
-
-
-def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, extension, repomix_style, cancel_event, file_list=None):
-    """Configures and runs the repomix packager in a worker thread."""
-    timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
-    downloads_path = app._get_downloads_folder()
-    output_basename = f"{filename_prefix}-{timestamp}{extension}"
-    app.final_output_path = str(Path(downloads_path) / output_basename)
-
-    app.log_verbose("\nStarting packaging process...")
-
-    class RepomixProgressHandler(logging.Handler):
-        def __init__(self, log_queue_ref, total_files_ref):
-            super().__init__()
-            self.log_queue = log_queue_ref
-            self.processed_count = 0
-            self.total_files = total_files_ref
-
-        def emit(self, record):
-            msg = self.format(record)
-            if "Processing file:" in msg:
-                self.processed_count += 1
-                progress_value = int((self.processed_count / self.total_files) * 100) if self.total_files > 0 else 0
-                wx.CallAfter(self.log_queue.put, {"type": "progress", "value": progress_value, "max_value": 100})
-
-            wx.CallAfter(self.log_queue.put, {"type": "log", "message": msg})
-
-    total_files_for_progress = 0
-    is_web_mode = app.main_panel.web_crawl_radio.GetValue()
-    if file_list is not None:
         if is_web_mode:
-            total_files_for_progress = len(file_list)
+            title = "Confirm Deletion"
+            message = f"Are you sure you want to permanently delete {selected_count} downloaded file(s)?"
         else:
-            total_files_for_progress = len([f for f in file_list if f.get("type") == "File"])
-    else:  # Fallback to scanning if file_list is not provided
-        if Path(source_dir).is_dir():
-            current_exclude_paths = exclude_paths or []
-            for root, _, files in os.walk(source_dir):
-                for file in files:
-                    file_path = Path(root) / file
-                    rel_path_str = file_path.relative_to(source_dir).as_posix()
-                    is_excluded = any(fnmatch.fnmatch(rel_path_str, pattern) for pattern in current_exclude_paths)
-                    if not is_excluded:
-                        total_files_for_progress += 1
+            title = "Confirm Removal"
+            message = f"Are you sure you want to remove {selected_count} item(s) from the package list?"
 
-    progress_handler = RepomixProgressHandler(app.log_queue, total_files_for_progress)
-    progress_handler.setLevel(logging.INFO)
+        with ThemedMessageDialog(self, message, title, wx.YES_NO | wx.NO_DEFAULT, self.theme) as dlg:
+            if dlg.ShowModal() != wx.ID_YES:
+                return
 
-    repomix_logger = logging.getLogger("repomix")
-    original_level = repomix_logger.level
-    repomix_logger.setLevel(logging.INFO)
-    repomix_logger.addHandler(progress_handler)
+        selected_indices = []
+        item = list_ctrl.GetFirstSelected()
+        while item != -1:
+            selected_indices.append(item)
+            item = list_ctrl.GetNextSelected(item)
 
-    try:
-        app.worker_thread = threading.Thread(target=run_repomix, args=(source_dir, app.final_output_path, app.log_queue, cancel_event, repomix_style, exclude_paths), daemon=True)
-        app.worker_thread.start()
-    finally:
-        repomix_logger.removeHandler(progress_handler)
-        repomix_logger.setLevel(original_level)
+        for index in sorted(selected_indices, reverse=True):
+            item_to_remove = data_source.pop(index)
+            list_ctrl.DeleteItem(index)
 
+            if is_web_mode:
+                self.controller.delete_scraped_file(item_to_remove["path"])
+            else:
+                self.controller.remove_local_file_from_package(item_to_remove["rel_path"])
 
-def populate_local_files(app):
-    """Convenience function to trigger a refresh of the local file list."""
-    app.populate_local_file_list()
-
-
-def get_local_files(root_dir, include_subdirs, custom_excludes, binary_excludes, cancel_event=None):
-    """
-    Scans a directory and returns a filtered list of files and folders,
-    pruning ignored directories for efficiency.
-    """
-    base_path = Path(root_dir)
-    if not base_path.is_dir():
-        return []
-
-    files_to_show = []
-    all_ignore_patterns = list(custom_excludes)
-
-    gitignore_path = base_path / ".gitignore"
-    if gitignore_path.is_file():
-        try:
-            with open(gitignore_path, "r", encoding="utf-8") as f:
-                gitignore_patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
-                all_ignore_patterns.extend(gitignore_patterns)
-        except Exception:
-            pass
-
-    all_ignore_patterns.extend(binary_excludes)
-
-    for root, dirnames, filenames in os.walk(str(base_path), topdown=True):
-        if cancel_event and cancel_event.is_set():
-            return []
-        root_path = Path(root)
-        rel_root_path = root_path.relative_to(base_path)
-
-        ignored_dirs = set()
-        for d in dirnames:
-            dir_path_posix = (rel_root_path / d).as_posix()
-            if any(fnmatch.fnmatch(dir_path_posix, pattern) or fnmatch.fnmatch(f"{dir_path_posix}/", pattern) for pattern in all_ignore_patterns):
-                ignored_dirs.add(d)
-        dirnames[:] = [d for d in dirnames if d not in ignored_dirs]
-
-        for d in dirnames:
-            rel_path_str = (rel_root_path / d).as_posix()
-            files_to_show.append({"name": rel_path_str + "/", "type": "Folder", "size": 0, "size_str": "", "rel_path": rel_path_str + "/"})
-
-        for f in filenames:
-            rel_path = rel_root_path / f
-            if not any(fnmatch.fnmatch(rel_path.as_posix(), pattern) for pattern in all_ignore_patterns):
-                try:
-                    full_path = root_path / f
-                    size = full_path.stat().st_size
-                    size_str = f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
-                    rel_path_str = rel_path.as_posix()
-                    files_to_show.append({"name": rel_path_str, "type": "File", "size": size, "size_str": size_str, "rel_path": rel_path_str})
-                except (OSError, ValueError):
-                    continue
-
-        if not include_subdirs:
-            break
-
-    if cancel_event and cancel_event.is_set():
-        return []
-
-    files_to_show.sort(key=lambda p: (p["type"] != "Folder", p["name"].lower()), reverse=True)
-    return files_to_show
+        self.list_panel.delete_button.SetAlertState(False)
+        self.controller._update_button_states()
+        self.list_panel.update_file_count()
 ````
 
 ## File: ui/panels.py
@@ -2652,10 +2069,15 @@ class LocalInputPanel(wx.Panel):
         default_excludes_list = config.get("default_local_excludes", [])
         default_excludes = "\n".join(default_excludes_list)
         self.local_exclude_ctrl.SetValue(default_excludes)
-        self.include_subdirs_check = CustomCheckBox(self, label="Include Subdirectories", theme=self.theme)
-        self.include_subdirs_check.SetValue(True)
+        self.use_gitignore_check = CustomCheckBox(self, label="Use .gitignore", theme=self.theme)
+        self.use_gitignore_check.SetValue(True)
         self.hide_binaries_check = CustomCheckBox(self, label="Hide Images + Binaries", theme=self.theme)
         self.hide_binaries_check.SetValue(True)
+        self.dir_level_label = wx.StaticText(self, label="Directory Depth:")
+        self.dir_level_ctrl = wx.SpinCtrl(self, value="9", min=0, max=9)
+        dir_level_tooltip = "How many subdirectory levels to include.\n0 = Root directory only.\n1 = Root + 1 level down, etc.\n9 = All levels (unlimited depth)."
+        self.dir_level_label.SetToolTip(dir_level_tooltip)
+        self.dir_level_ctrl.SetToolTip(dir_level_tooltip)
 
     def _create_sizers(self):
         sizer = wx.FlexGridSizer(3, 2, 10, 10)
@@ -2676,8 +2098,14 @@ class LocalInputPanel(wx.Panel):
         # Row 2: Options
         sizer.AddSpacer(0)  # Empty cell for alignment
         options_sizer = wx.BoxSizer(wx.VERTICAL)
-        options_sizer.Add(self.include_subdirs_check, 0, wx.BOTTOM, 5)
-        options_sizer.Add(self.hide_binaries_check, 0)
+        options_sizer.Add(self.use_gitignore_check, 0, wx.BOTTOM, 5)
+        options_sizer.Add(self.hide_binaries_check, 0, wx.BOTTOM, 10)
+
+        dir_level_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        dir_level_sizer.Add(self.dir_level_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        dir_level_sizer.Add(self.dir_level_ctrl, 0, wx.ALIGN_CENTER_VERTICAL)
+        options_sizer.Add(dir_level_sizer, 0, wx.ALIGN_LEFT)
+
         sizer.Add(options_sizer, 0, wx.EXPAND | wx.TOP, 5)
 
         self.SetSizer(sizer)
@@ -2928,6 +2356,317 @@ class ListPanel(wx.Panel):
         self.file_count_label.SetLabel(label)
 ````
 
+## File: core/actions.py
+````python
+import threading
+import tempfile
+import shutil
+from pathlib import Path
+from datetime import datetime
+import wx
+import logging
+import os
+import fnmatch
+import subprocess
+import queue
+import sys
+
+from .packager import run_repomix
+from .crawler import crawl_website
+
+
+def start_download(app, cancel_event):
+    """Initializes and starts the web crawling process in a new thread."""
+    app.main_panel.list_panel.clear_logs()
+    app.main_panel.list_panel.progress_gauge.SetValue(0)
+
+    if app.temp_dir and Path(app.temp_dir).is_dir():
+        shutil.rmtree(app.temp_dir)
+
+    app.temp_dir = tempfile.mkdtemp(prefix="ContextPacker-")
+    app.log_verbose(f"Created temporary directory: {app.temp_dir}")
+    crawler_config = app.main_panel.crawler_panel.get_crawler_config(app.temp_dir)
+
+    app.log_verbose("Starting url conversion...")
+    app.worker_thread = threading.Thread(target=crawl_website, args=(crawler_config, app.log_queue, cancel_event), daemon=True)
+    app.worker_thread.start()
+
+
+def _enqueue_output(stream, q):
+    """Reads lines from a stream and puts them into a queue."""
+    for line in iter(stream.readline, ""):
+        q.put(line)
+    stream.close()
+
+
+def start_git_clone(app, cancel_event):
+    """Initializes and starts a git clone process in a new thread."""
+    app.main_panel.list_panel.clear_logs()
+
+    if app.temp_dir and Path(app.temp_dir).is_dir():
+        shutil.rmtree(app.temp_dir)
+
+    app.temp_dir = tempfile.mkdtemp(prefix="ContextPacker-")
+    app.log_verbose(f"Created temporary directory for git clone: {app.temp_dir}")
+    url = app.main_panel.crawler_panel.start_url_ctrl.GetValue()
+
+    app.log_verbose(f"Starting git clone for {url}...")
+    app.worker_thread = threading.Thread(target=_clone_repo_worker, args=(url, app.temp_dir, app.log_queue, cancel_event), daemon=True)
+    app.worker_thread.start()
+
+
+def _clone_repo_worker(url, path, log_queue, cancel_event):
+    """Worker function to perform a git clone and stream output."""
+    if not shutil.which("git"):
+        error_msg = "ERROR: Git is not installed or not found in your system's PATH. Please install Git to use this feature."
+        log_queue.put({"type": "status", "status": "error", "message": error_msg})
+        return
+
+    try:
+        process = subprocess.Popen(
+            ["git", "clone", "--depth", "1", url, path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+
+        if not process.stdout:
+            process.wait()
+            log_queue.put({"type": "status", "status": "error", "message": "Failed to capture git clone output stream."})
+            return
+
+        output_queue = queue.Queue()
+        reader_thread = threading.Thread(target=_enqueue_output, args=(process.stdout, output_queue), daemon=True)
+        reader_thread.start()
+
+        while process.poll() is None:
+            if cancel_event.is_set():
+                process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                break
+
+            try:
+                line = output_queue.get(timeout=0.1)
+                if line:
+                    log_queue.put({"type": "log", "message": line.strip()})
+            except queue.Empty:
+                continue
+
+        while not output_queue.empty():
+            line = output_queue.get_nowait()
+            if line:
+                log_queue.put({"type": "log", "message": line.strip()})
+
+        if cancel_event.is_set():
+            log_queue.put({"type": "status", "status": "cancelled", "message": "Git clone cancelled."})
+            return
+
+        if process.returncode == 0:
+            log_queue.put({"type": "status", "status": "clone_complete", "path": path})
+        else:
+            log_queue.put({"type": "status", "status": "error", "message": "Git clone failed. Check the log for details."})
+
+    except Exception as e:
+        log_queue.put({"type": "status", "status": "error", "message": f"An error occurred while cloning the repository: {e}"})
+
+
+def start_packaging(app, cancel_event, file_list=None):
+    """Initializes and starts the packaging process in a new thread."""
+    is_web_mode = app.main_panel.web_crawl_radio.GetValue()
+    app.filename_prefix = app.main_panel.output_filename_ctrl.GetValue().strip() or "ContextPacker-package"
+    source_dir = ""
+    effective_excludes = []
+
+    if is_web_mode:
+        if not app.temp_dir or not any(Path(app.temp_dir).iterdir()):
+            app.log_verbose("ERROR: No downloaded content to package. Please run 'Download & Convert' first.")
+            return
+        source_dir = app.temp_dir
+        effective_excludes = []
+    else:
+        source_dir = app.main_panel.local_panel.local_dir_ctrl.GetValue()
+        default_excludes = [p.strip() for p in app.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
+
+        additional_excludes = set()
+        max_depth = app.main_panel.local_panel.dir_level_ctrl.GetValue()
+        if max_depth == 9:
+            max_depth = sys.maxsize
+        source_path = Path(source_dir)
+
+        if source_path.is_dir():
+            for root, dirs, _ in os.walk(source_path):
+                root_path = Path(root)
+                rel_path = root_path.relative_to(source_path)
+                depth = 0 if rel_path == Path(".") else len(rel_path.parts)
+
+                if depth >= max_depth:
+                    for d in dirs:
+                        additional_excludes.add(f"{(rel_path / d).as_posix()}/")
+                    dirs[:] = []
+
+        effective_excludes = list(set(default_excludes) | app.local_files_to_exclude | additional_excludes)
+
+    extension = app.main_panel.output_format_choice.GetStringSelection()
+    style_map = {".md": "markdown", ".txt": "plain", ".xml": "xml"}
+    repomix_style = style_map.get(extension, "markdown")
+
+    app.main_panel.list_panel.progress_gauge.SetValue(0)
+
+    _run_packaging_thread(app, source_dir, app.filename_prefix, effective_excludes, extension, repomix_style, cancel_event, file_list)
+
+
+def _packaging_worker(source_dir, output_path, log_queue, cancel_event, repomix_style, exclude_patterns, progress_handler):
+    """Worker function that wraps run_repomix to handle logging setup/teardown."""
+    repomix_logger = logging.getLogger("repomix")
+    original_level = repomix_logger.level
+    repomix_logger.setLevel(logging.INFO)
+    repomix_logger.addHandler(progress_handler)
+    try:
+        run_repomix(
+            source_dir,
+            output_path,
+            log_queue,
+            cancel_event,
+            repomix_style=repomix_style,
+            exclude_patterns=exclude_patterns,
+        )
+    finally:
+        repomix_logger.removeHandler(progress_handler)
+        repomix_logger.setLevel(original_level)
+
+
+def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, extension, repomix_style, cancel_event, file_list=None):
+    """Configures and runs the repomix packager in a worker thread."""
+    timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
+    downloads_path = app._get_downloads_folder()
+    output_basename = f"{filename_prefix}-{timestamp}{extension}"
+    app.final_output_path = str(Path(downloads_path) / output_basename)
+
+    app.log_verbose("\nStarting packaging process...")
+    app.log_verbose(f"Output file will be saved to: {app.final_output_path}")
+
+    class RepomixProgressHandler(logging.Handler):
+        def __init__(self, log_queue_ref, total_files_ref):
+            super().__init__()
+            self.log_queue = log_queue_ref
+            self.processed_count = 0
+            self.total_files = total_files_ref
+
+        def emit(self, record):
+            msg = self.format(record)
+            if "Processing file:" in msg:
+                self.processed_count += 1
+                progress_value = int((self.processed_count / self.total_files) * 100) if self.total_files > 0 else 0
+                wx.CallAfter(self.log_queue.put, {"type": "progress", "value": progress_value, "max_value": 100})
+
+            wx.CallAfter(self.log_queue.put, {"type": "log", "message": msg})
+
+    total_files_for_progress = 0
+    is_web_mode = app.main_panel.web_crawl_radio.GetValue()
+    if file_list is not None:
+        if is_web_mode:
+            total_files_for_progress = len(file_list)
+        else:
+            total_files_for_progress = len([f for f in file_list if f.get("type") == "File"])
+    else:  # Fallback to scanning if file_list is not provided
+        if Path(source_dir).is_dir():
+            current_exclude_paths = exclude_paths or []
+            for root, _, files in os.walk(source_dir):
+                for file in files:
+                    file_path = Path(root) / file
+                    rel_path_str = file_path.relative_to(source_dir).as_posix()
+                    is_excluded = any(fnmatch.fnmatch(rel_path_str, pattern) for pattern in current_exclude_paths)
+                    if not is_excluded:
+                        total_files_for_progress += 1
+
+    progress_handler = RepomixProgressHandler(app.log_queue, total_files_for_progress)
+    progress_handler.setLevel(logging.INFO)
+
+    args = (
+        source_dir,
+        app.final_output_path,
+        app.log_queue,
+        cancel_event,
+        repomix_style,
+        exclude_paths,
+        progress_handler,
+    )
+    app.worker_thread = threading.Thread(target=_packaging_worker, args=args, daemon=True)
+    app.worker_thread.start()
+
+
+def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event=None):
+    """
+    Scans a directory and returns a filtered list of files and folders,
+    pruning ignored directories for efficiency.
+    """
+    base_path = Path(root_dir)
+    if not base_path.is_dir():
+        return []
+
+    if max_depth == 9:  # Treat 9 as unlimited
+        max_depth = sys.maxsize
+
+    files_to_show = []
+    all_ignore_patterns = list(custom_excludes)
+
+    if use_gitignore:
+        gitignore_path = base_path / ".gitignore"
+        if gitignore_path.is_file():
+            try:
+                with open(gitignore_path, "r", encoding="utf-8") as f:
+                    gitignore_patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+                    all_ignore_patterns.extend(gitignore_patterns)
+            except Exception:
+                pass
+
+    all_ignore_patterns.extend(binary_excludes)
+
+    for root, dirnames, filenames in os.walk(str(base_path), topdown=True):
+        if cancel_event and cancel_event.is_set():
+            return []
+        root_path = Path(root)
+        rel_root_path = root_path.relative_to(base_path)
+
+        depth = 0 if rel_root_path == Path(".") else len(rel_root_path.parts)
+        if depth >= max_depth:
+            dirnames[:] = []
+
+        ignored_dirs = set()
+        for d in dirnames:
+            dir_path_posix = (rel_root_path / d).as_posix()
+            if any(fnmatch.fnmatch(dir_path_posix, pattern) or fnmatch.fnmatch(f"{dir_path_posix}/", pattern) for pattern in all_ignore_patterns):
+                ignored_dirs.add(d)
+        dirnames[:] = [d for d in dirnames if d not in ignored_dirs]
+
+        for d in dirnames:
+            rel_path_str = (rel_root_path / d).as_posix()
+            files_to_show.append({"name": rel_path_str + "/", "type": "Folder", "size": 0, "size_str": "", "rel_path": rel_path_str + "/"})
+
+        for f in filenames:
+            rel_path = rel_root_path / f
+            if not any(fnmatch.fnmatch(rel_path.as_posix(), pattern) for pattern in all_ignore_patterns):
+                try:
+                    full_path = root_path / f
+                    size = full_path.stat().st_size
+                    size_str = f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
+                    rel_path_str = rel_path.as_posix()
+                    files_to_show.append({"name": rel_path_str, "type": "File", "size": size, "size_str": size_str, "rel_path": rel_path_str})
+                except (OSError, ValueError):
+                    continue
+
+    if cancel_event and cancel_event.is_set():
+        return []
+
+    files_to_show.sort(key=lambda p: (p["type"] != "Folder", p["name"].lower()), reverse=True)
+    return files_to_show
+````
+
 ## File: app.py
 ````python
 import wx
@@ -2938,15 +2677,18 @@ from pathlib import Path
 import ctypes
 import subprocess
 import platform
-import multiprocessing
 import threading
+import queue
+import multiprocessing
+import sys
+import selenium.webdriver
 
 from ui.main_frame import MainFrame
 from ui.widgets.dialogs import AboutDialog
 import core.actions as actions
 from core.packager import resource_path
 from core.version import __version__
-from core.config_manager import get_config
+from core.config_manager import get_config, save_config
 from core.task_handler import TaskHandler
 from core.utils import get_downloads_folder, set_title_bar_theme
 
@@ -2956,25 +2698,36 @@ BINARY_FILE_PATTERNS = config.get("binary_file_patterns", [])
 
 class App(wx.Frame):
     def __init__(self):
-        super().__init__(None, title="ContextPacker", size=wx.Size(1600, 950))
+        w, h = config.get("window_size", [-1, -1])
+        size = wx.Size(w, h) if w > 0 and h > 0 else wx.Size(1600, 950)
+        super().__init__(None, title="ContextPacker", size=size)
+
+        if not getattr(sys, "frozen", False):
+            if os.environ.get("SE_MANAGER_PATH") is None:
+                # Set path to the directory containing selenium-manager.exe
+                # This is a sibling directory to the __init__.py of selenium/webdriver
+                selenium_path = Path(selenium.webdriver.__file__).parent
+                os.environ["SE_MANAGER_PATH"] = str(selenium_path)
 
         self.version = __version__
         self.task_handler = TaskHandler(self)
         self.temp_dir = None
         self.final_output_path = None
         self.filename_prefix = ""
-        self.log_queue = multiprocessing.Queue()
+        self.log_queue = queue.Queue()
         self.cancel_event = None
         self.worker_thread = None
         self.is_shutting_down = False
         self.is_task_running = False
-        self.is_dark = False  # Default to light mode
+        self.is_dark = False
         self.local_files_to_exclude = set()
         self.exclude_list_last_line = 0
         self.local_scan_worker = None
         self.local_scan_cancel_event = None
         self.exclude_update_timer = wx.Timer(self)
         self.queue_listener_thread = None
+        self.scraped_files_batch = []
+        self.batch_update_timer = wx.Timer(self)
 
         self._set_theme_palette()
         self.main_panel = MainFrame(self)
@@ -2988,6 +2741,7 @@ class App(wx.Frame):
 
         self.Bind(wx.EVT_CLOSE, self.on_close)
         self.Bind(wx.EVT_TIMER, self.on_exclude_timer, self.exclude_update_timer)
+        self.Bind(wx.EVT_TIMER, self.on_batch_update_timer, self.batch_update_timer)
 
         threading.Thread(target=self._detect_and_apply_theme, daemon=True).start()
 
@@ -3022,8 +2776,10 @@ class App(wx.Frame):
         if msg_type == "log":
             self.log_verbose(message)
         elif msg_type == "file_saved":
-            # This is now handled in batches, but a single message handler is fine
-            self.main_panel.list_panel.add_scraped_files_batch([msg_obj])
+            self.scraped_files_batch.append(msg_obj)
+            if not self.batch_update_timer.IsRunning():
+                self.batch_update_timer.StartOnce(250)
+
             queue_size = msg_obj.get("queue_size", 0)
             self.main_panel.list_panel.update_discovered_count(queue_size)
             verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
@@ -3035,6 +2791,12 @@ class App(wx.Frame):
             self.task_handler.handle_status(msg_obj.get("status"), msg_obj)
         else:
             self.log_verbose(str(message))
+
+    def on_batch_update_timer(self, event):
+        if self.scraped_files_batch:
+            self.main_panel.list_panel.add_scraped_files_batch(self.scraped_files_batch)
+            self.scraped_files_batch.clear()
+            self._update_button_states()
 
     def _detect_and_apply_theme(self):
         """Worker function to detect dark mode and apply the theme."""
@@ -3132,8 +2894,8 @@ class App(wx.Frame):
 
     def _setup_timer(self):
         self.timer = wx.Timer(self)
-        self.Bind(wx.EVT_TIMER, self.on_check_log_queue, self.timer)
-        self.timer.Start(100)
+        self.Bind(wx.EVT_TIMER, self.on_update_ui_timer, self.timer)
+        self.timer.Start(1000)
 
     def _set_icon(self):
         try:
@@ -3144,7 +2906,14 @@ class App(wx.Frame):
             print(f"Warning: Failed to set icon: {e}")
 
     def on_close(self, event):
+        # Save window size and sash position
+        current_size = self.GetSize()
+        config["window_size"] = [current_size.width, current_size.height]
+        config["sash_position"] = self.main_panel.splitter.GetSashPosition()
+        save_config(config)
+
         self.timer.Stop()
+        self.batch_update_timer.Stop()
         self.stop_queue_listener()
         if self.local_scan_cancel_event:
             self.local_scan_cancel_event.set()
@@ -3231,7 +3000,6 @@ class App(wx.Frame):
         event.Skip()
 
     def on_download_button_click(self, event):
-        print(f"DIAG: on_download_button_click called at {datetime.now()}")
         if self.is_task_running:
             self.on_stop_process()
         else:
@@ -3281,7 +3049,7 @@ class App(wx.Frame):
                 self.main_panel.output_timestamp_label.SetLabel(timestamp_str)
                 self.main_panel.right_panel_container.Layout()
 
-    def on_check_log_queue(self, event):
+    def on_update_ui_timer(self, event):
         if not (self.worker_thread and self.worker_thread.is_alive()):
             self._update_timestamp_label()
 
@@ -3291,7 +3059,7 @@ class App(wx.Frame):
         copy_ready = bool(self.final_output_path and Path(self.final_output_path).exists())
 
         if is_web_mode:
-            if self.temp_dir and any(f.is_file() for f in Path(self.temp_dir).iterdir()):
+            if self.main_panel.list_panel.scraped_files:
                 package_ready = True
         else:
             if self.main_panel.local_panel.local_dir_ctrl.GetValue():
@@ -3345,7 +3113,8 @@ class App(wx.Frame):
 
         wx.BeginBusyCursor()
         self.main_panel.local_panel.browse_button.Enable(False)
-        self.main_panel.local_panel.include_subdirs_check.Enable(False)
+        self.main_panel.local_panel.use_gitignore_check.Enable(False)
+        self.main_panel.local_panel.dir_level_ctrl.Enable(False)
         self.main_panel.local_panel.hide_binaries_check.Enable(False)
 
         self.local_files_to_exclude.clear()
@@ -3353,7 +3122,8 @@ class App(wx.Frame):
         binary_excludes = BINARY_FILE_PATTERNS if self.main_panel.local_panel.hide_binaries_check.GetValue() else []
         args = (
             input_dir,
-            self.main_panel.local_panel.include_subdirs_check.GetValue(),
+            self.main_panel.local_panel.dir_level_ctrl.GetValue(),
+            self.main_panel.local_panel.use_gitignore_check.GetValue(),
             custom_excludes,
             binary_excludes,
             self.local_scan_cancel_event,
@@ -3361,9 +3131,9 @@ class App(wx.Frame):
         self.local_scan_worker = threading.Thread(target=self._local_scan_worker, args=args, daemon=True)
         self.local_scan_worker.start()
 
-    def _local_scan_worker(self, input_dir, include_subdirs, custom_excludes, binary_excludes, cancel_event):
+    def _local_scan_worker(self, input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event):
         try:
-            files_to_show = actions.get_local_files(input_dir, include_subdirs, custom_excludes, binary_excludes, cancel_event)
+            files_to_show = actions.get_local_files(input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event)
             if not cancel_event.is_set():
                 wx.CallAfter(self._on_local_scan_complete, files_to_show)
             else:
@@ -3377,7 +3147,8 @@ class App(wx.Frame):
             self.main_panel.list_panel.populate_local_file_list(files)
         if self.main_panel.local_panel:
             self.main_panel.local_panel.browse_button.Enable(True)
-            self.main_panel.local_panel.include_subdirs_check.Enable(True)
+            self.main_panel.local_panel.use_gitignore_check.Enable(True)
+            self.main_panel.local_panel.dir_level_ctrl.Enable(True)
             self.main_panel.local_panel.hide_binaries_check.Enable(True)
         wx.EndBusyCursor()
         self.local_scan_worker = None
@@ -3398,8 +3169,8 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
-    except Exception as e:
-        print(f"DIAG: DPI awareness setting failed. Error: {e}")
+    except Exception:
+        pass
 
     app = wx.App(False)
     frame = App()
