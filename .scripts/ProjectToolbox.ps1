@@ -1,4 +1,4 @@
-# Project Toolbox - clean & build the project 
+# Project Toolbox - clean & build
 # Version: 0.1.0
 
 function Show-Menu {
@@ -6,8 +6,8 @@ function Show-Menu {
     Write-Host "================ ContextPacker Build Menu ================" -ForegroundColor Cyan
     Write-Host
     Write-Host " 1. Clean Build Artifacts (dist, build, __pycache__)"
-    Write-Host " 2. Build for Production"
-    Write-Host " 3. Build and Run (Debug)"
+    Write-Host " 2. Build and Run (Debug)"
+    Write-Host " 3. Build for Production"
     Write-Host " 4. Exit"
     Write-Host
     Write-Host "==========================================================" -ForegroundColor Cyan
@@ -29,12 +29,12 @@ do {
                 poetry run nox -s clean
             }
             '2' {
-                Write-Host "`n>>> Building for production..." -ForegroundColor Green
-                poetry run nox -s build
+                Write-Host "`n>>> Building and running for debug..." -ForegroundColor Green
+                poetry run nox -s build_run
             }
             '3' {
-                Write-Host "`n>>> Building and running for debug..." -ForegroundColor Green
-                poetry run nox -s build-run
+                Write-Host "`n>>> Building for production..." -ForegroundColor Green
+                poetry run nox -s build
             }
             '4' {
                 Write-Host "`nExiting script."
