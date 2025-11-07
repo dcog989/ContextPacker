@@ -9,15 +9,13 @@ import platform
 import threading
 import queue
 import multiprocessing
-import sys
-import selenium.webdriver
 
 from ui.main_frame import MainFrame
 from ui.widgets.dialogs import AboutDialog
 import core.actions as actions
 from core.packager import resource_path
 from core.version import __version__
-from core.config_manager import get_config, save_config
+from core.config_manager import get_config, save_config, get_base_path
 from core.task_handler import TaskHandler
 from core.utils import get_downloads_folder, set_title_bar_theme
 
@@ -517,6 +515,12 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    app = wx.App(False)
+    # Set up logging to a local file instead of the user's home directory
+    base_path = get_base_path()
+    log_dir = base_path / "logs"
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = log_dir / "contextpacker.log"
+
+    app = wx.App(redirect=True, filename=str(log_path))
     frame = App()
     app.MainLoop()
