@@ -1,8 +1,7 @@
 # Project Specific
-.ai-context/
-.archive/
-.dev-notes/
-.gemini/
+.ai/
+.docs/
+.drivers/
 .repomixignore
 .vscode/
 repomix.config.json

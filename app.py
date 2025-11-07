@@ -31,6 +31,19 @@ class App(wx.Frame):
         size = wx.Size(w, h) if w > 0 and h > 0 else wx.Size(1600, 950)
         super(App, self).__init__(None, title="ContextPacker", size=size)
 
+        # Add local drivers to PATH at startup
+        drivers_dir = Path(__file__).parent / ".drivers"
+        if drivers_dir.exists():
+            for browser in ["edge", "chrome", "firefox"]:
+                browser_dir = drivers_dir / browser
+                if browser_dir.exists():
+                    # Look for driver in most recent version folder
+                    versions = [d for d in browser_dir.iterdir() if d.is_dir()]
+                    if versions:
+                        latest = max(versions)
+                        path = os.environ.get("PATH", "")
+                        os.environ["PATH"] = str(latest.absolute()) + os.pathsep + path
+
         self.version = __version__
         self.task_handler = TaskHandler(self)
         self.temp_dir = None

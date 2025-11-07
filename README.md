@@ -40,6 +40,52 @@ A desktop app to scrape websites, Git repositories, or package local files into 
     poetry run python app.py
     ```
 
+## Developer Troubleshooting
+
+### Selenium Drivers
+
+The web crawler needs a matching browser driver. You can either:
+
+1. **Use the helper script** (requires network access):
+
+    ```pwsh
+    poetry run python scripts/get_driver.py --browser edge   # for Edge
+    poetry run python scripts/get_driver.py --browser chrome # for Chrome
+    poetry run python scripts/get_driver.py --browser firefox # for Firefox
+    ```
+
+2. **Download manually** if the script fails (DNS/network issues):
+
+    ```pwsh
+    # For Edge: First, get your Edge version
+    $ver = (Get-Item "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe").VersionInfo.FileVersion
+    Write-Host "Edge version: $ver"
+    $major = $ver.Split('.')[0]
+    Write-Host "Major version: $major"
+    
+    # Download and extract Edge driver for your version
+    $zip = "edgedriver_win64.zip"
+    $url = "https://msedgedriver.microsoft.com/${major}/edgedriver_win64.zip"
+    Write-Host "Downloading from: $url"
+    Invoke-WebRequest $url -OutFile $zip -UseBasicParsing
+    
+    New-Item -ItemType Directory -Force -Path ".drivers/edge/$major" | Out-Null
+    Expand-Archive $zip -DestinationPath ".drivers/edge/$major" -Force
+    Remove-Item $zip
+    
+    # The driver is now in .drivers/edge/<version>/msedgedriver.exe
+    # Test it works:
+    & "./.drivers/edge/$major/msedgedriver.exe" --version
+    ```
+
+3. **Check environment** to validate browser/driver setup:
+
+    ```pwsh
+    poetry run python scripts/check_env.py
+    ```
+
+### Running from Source
+
 ## Usage
 
 The application has two main modes, selectable via radio buttons.
@@ -75,24 +121,56 @@ On first run, the application creates a `config.json` file in the same directory
 
 ## Building from Source
 
-You can create a standalone executable using the included PowerShell build script.
+This project uses [Nox](https://nox.thea.codes/) for task automation. Ensure you have run `poetry install` to install Nox into the development environment.
 
-1. Ensure you have followed the installation steps and installed dependencies with `poetry install`.
-2. The repository includes a pre-configured `ContextPacker.spec` file and a runtime hook (`pyi_rth_selenium.py`) to correctly handle Selenium's dependencies.
-3. Run the interactive builder from a PowerShell terminal:
+### Available Build Commands
 
-    ```powershell
-    # Navigate to the .build-tools directory
-    cd .build-tools
-    
-    # Run the builder script
-    ./Builder.ps1
+Run these commands from the project root in your terminal.
+
+* **Build for Production:**
+    Creates a compressed archive (`.7z` or `.zip`) in the `dist` folder.
+
+    ```sh
+    poetry run nox -s build
     ```
 
-4. Select an option from the menu, such as "Build Executable (Production)".
-5. The final executable will be located in the `dist` folder.
+* **Build and Run for Debugging:**
+    Builds a version with the console enabled, then launches it immediately.
+
+    ```sh
+    poetry run nox -s build-run
+    ```
+
+* **Clean Build Artifacts:**
+    Removes the `dist`, `build`, and `__pycache__` directories.
+
+    ```sh
+    poetry run nox -s clean
+    ```
 
 ## Technology Stack
+
+## Developer troubleshooting
+
+There is a small environment checker that validates Python, git, browsers, and key packages:
+
+```pwsh
+poetry run python scripts/check_env.py
+# or (Windows) use the helper:
+.\scripts\check_env.ps1
+```
+
+Enable automatic webdriver downloads
+
+The env-checker can automatically download matching webdriver binaries if `webdriver-manager` is installed. To enable this in your development environment, add it as a dev dependency:
+
+```pwsh
+poetry add --dev webdriver-manager
+# or install system-wide with pipx:
+pipx install webdriver-manager
+```
+
+Once installed, `scripts/check_env.py` will try to download missing drivers (chromedriver, msedgedriver, geckodriver) and report their installed paths.
 
 * **UI**: Python with [wxPython](https://wxpython.org/)
 * **Web Scraping**: [Selenium](https://www.selenium.dev/) + [Beautiful Soup](https://pypi.org/project/beautifulsoup4/)
