@@ -3,13 +3,13 @@
 
 function Show-Menu {
     Clear-Host
-    Write-Host "================ ContextPacker Build Menu ================" -ForegroundColor Cyan
+    Write-Host "============= ContextPacker Project Toolbox ==============" -ForegroundColor Cyan
     Write-Host
-    Write-Host " 1. Clean Build Artifacts (dist, build, __pycache__)"
-    Write-Host " 2. Build and Run (Debug)"
-    Write-Host " 3. Build for Production"
-    Write-Host " 4. Check for Package Updates"
-    Write-Host " 5. Exit"
+    Write-Host " 1 > Clean Build Artifacts"
+    Write-Host " 2 > Check for Package Updates"
+    Write-Host " 3 > Build and Run (Debug)"
+    Write-Host " 4 > Build for Production"
+    Write-Host " 5 > Exit"
     Write-Host
     Write-Host "==========================================================" -ForegroundColor Cyan
 }
@@ -18,7 +18,7 @@ $ProjectRoot = Resolve-Path -Path (Join-Path $PSScriptRoot "..")
 
 do {
     Show-Menu
-    $choice = Read-Host "Please enter your choice [1-5]"
+    $choice = Read-Host "Enter option [1-5]"
 
     # Set location to the project root for Poetry/Nox commands
     Push-Location -Path $ProjectRoot
@@ -30,16 +30,16 @@ do {
                 poetry run nox -s clean
             }
             '2' {
+                Write-Host "`n>>> Checking for outdated packages..." -ForegroundColor Green
+                poetry show --outdated
+            }
+            '3' {
                 Write-Host "`n>>> Building and running for debug..." -ForegroundColor Green
                 poetry run nox -s build_run
             }
-            '3' {
+            '4' {
                 Write-Host "`n>>> Building for production..." -ForegroundColor Green
                 poetry run nox -s build
-            }
-            '4' {
-                Write-Host "`n>>> Checking for outdated packages..." -ForegroundColor Green
-                poetry show --outdated
             }
             '5' {
                 Write-Host "`nExiting script."
