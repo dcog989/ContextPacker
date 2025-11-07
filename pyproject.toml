@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "contextpacker"
+version = "1.7.0"
+description = "A desktop app to scrape websites, Git repositories, or package local files into a single file, optimized for consumption by LLMs."
+authors = ["dcog989 you@example.com"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+beautifulsoup4 = "^4.14.2"
+markdownify = "^1.2.0"
+repomix = "^0.3.4"
+selenium = "^4.38.0"
+wxpython = "==4.2.4"
+lxml = "^6.0.2"
+
+[tool.poetry.group.dev.dependencies]
+pyinstaller = "^6.16.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

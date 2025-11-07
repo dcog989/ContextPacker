@@ -24,28 +24,20 @@ A desktop app to scrape websites, Git repositories, or package local files into 
 
 2. **Install Git**: The Git repository cloning feature requires `git` to be installed and accessible in your system's PATH.
 
-3. Clone the repository or download the source code.
+3. **Install Python and Poetry**: This project uses [Poetry](https://python-poetry.org/) for dependency management. Please install a modern version of Python (3.10+) and follow the [official instructions](https://python-poetry.org/docs/#installation) to install Poetry.
 
-4. It is recommended to create a virtual environment:
+4. Clone the repository or download the source code.
+
+5. Install the required dependencies using Poetry. This command will create a virtual environment and install all necessary packages.
 
     ```sh
-    python -m venv venv
-    # On Windows
-    venv\Scripts\activate
-    # On macOS/Linux
-    source venv/bin/activate
+    poetry install
     ```
 
-5. Install the required dependencies from the virtual environment:
+6. Run the application using Poetry:
 
     ```sh
-    pip install -r requirements.txt
-    ```
-
-6. Run the application:
-
-    ```sh
-    python app.py
+    poetry run python app.py
     ```
 
 ## Usage
@@ -83,17 +75,22 @@ On first run, the application creates a `config.json` file in the same directory
 
 ## Building from Source
 
-You can create a standalone executable using PyInstaller.
+You can create a standalone executable using the included PowerShell build script.
 
-1. Install PyInstaller: `pip install pyinstaller`
+1. Ensure you have followed the installation steps and installed dependencies with `poetry install`.
 2. The repository includes a pre-configured `ContextPacker.spec` file and a runtime hook (`pyi_rth_selenium.py`) to correctly handle Selenium's dependencies.
-3. Run the build command from the project root:
+3. Run the interactive builder from a PowerShell terminal:
 
-    ```sh
-    pyinstaller --clean ContextPacker.spec
+    ```powershell
+    # Navigate to the .build-tools directory
+    cd .build-tools
+    
+    # Run the builder script
+    ./Builder.ps1
     ```
 
-4. The final single-file executable will be located in the `dist` folder.
+4. Select an option from the menu, such as "Build Executable (Production)".
+5. The final executable will be located in the `dist` folder.
 
 ## Technology Stack
 

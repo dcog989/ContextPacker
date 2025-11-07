@@ -7,24 +7,12 @@ Set-Location $ProjectRoot
 $LogDir = Join-Path $ProjectRoot ".build-tools"
 $LogTimestamp = Get-Date -Format "yyyyMMdd.HHmmss"
 $LogFile = Join-Path $LogDir "ContextPacker-build-$LogTimestamp.log"
-$VenvPython = Join-Path $ProjectRoot "venv\Scripts\python.exe"
 
 # --- Helper Functions ---
 function Write-Log {
     param([string]$Message)
     $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     "[$Timestamp] $Message" | Out-File -FilePath $LogFile -Append
-}
-
-function Assert-Venv {
-    if (-not (Test-Path $VenvPython)) {
-        Write-Host "Virtual environment not found at 'venv\Scripts\python.exe'." -ForegroundColor Red
-        Write-Host "Please create the venv ('python -m venv venv') and install dependencies ('venv\Scripts\pip.exe install -r requirements.txt')."
-        Write-Log "ERROR: venv\Scripts\python.exe not found."
-        return $false
-    }
-    Write-Log "Virtual environment python found at $VenvPython"
-    return $true
 }
 
 function Remove-OldLogs {
@@ -55,6 +43,25 @@ function Remove-OldLogs {
     }
 }
 
+# Function to check for a command's existence
+function Test-CommandExists {
+    param($command)
+    return (Get-Command $command -ErrorAction SilentlyContinue)
+}
+
+function Assert-Poetry {
+    Write-Host "Checking for Poetry..." -ForegroundColor Green
+    if (-not (Test-CommandExists "poetry")) {
+        Write-Host "Poetry not found. Please install Poetry to manage this project." -ForegroundColor Red
+        Write-Host "See: https://python-poetry.org/docs/#installation"
+        Write-Log "ERROR: Poetry command not found."
+        return $false
+    }
+    Write-Log "Poetry command found."
+    return $true
+}
+
+
 function New-ChangelogFile {
     param([string]$OutputPath)
     Write-Host "Generating CHANGELOG.md..."
@@ -76,6 +83,7 @@ function New-ChangelogFile {
 }
 
 # --- Task Functions ---
+
 function Remove-BuildArtifacts {
     Write-Host "--- Cleaning Build Artifacts ---" -ForegroundColor Cyan
 
@@ -131,36 +139,13 @@ function Remove-BuildArtifacts {
     Write-Log "Clean-up complete."
 }
 
-function New-RequirementsFile {
-    Write-Host "--- Generating requirements.txt ---" -ForegroundColor Cyan
-    if (-not (Assert-Venv)) { return }
-
-    Write-Host "Ensuring pipreqs is installed in venv..."
-    Write-Log "Ensuring pipreqs is installed..."
-    & $VenvPython -m pip install pipreqs --upgrade 2>&1 | Out-File -FilePath $LogFile -Append
-
-    Write-Host "Running pipreqs..."
-    & $VenvPython -m pipreqs.pipreqs --force --savepath "requirements.txt" "." 2>&1 | Out-File -FilePath $LogFile -Append
-    if ($LastExitCode -ne 0) {
-        Write-Host "pipreqs failed. See log for details." -ForegroundColor Red
-        Write-Log "pipreqs command failed with exit code $LastExitCode."
-        return
-    }
-
-    Write-Host "Adding known dependencies..."
-    Add-Content -Path "requirements.txt" -Value "`nlxml"
-    Write-Log "Appended 'lxml' to requirements.txt"
-
-    Write-Host "✔ Successfully generated requirements.txt" -ForegroundColor Green
-}
-
 function Invoke-Build {
     param(
         [switch]$DebugMode
     )
     $BuildTypeName = if ($DebugMode) { "Debug" } else { "Production" }
     Write-Host "--- Building Executable ($BuildTypeName) ---" -ForegroundColor Cyan
-    if (-not (Assert-Venv)) { return $null }
+    if (-not (Assert-Poetry)) { return $null }
 
     $AppName = "ContextPacker"
     $SpecFile = "$AppName.spec"
@@ -168,9 +153,14 @@ function Invoke-Build {
     $BuildDir = "build"
     $AbsoluteDistDir = Join-Path $ProjectRoot $DistDir
 
-    Write-Host "Ensuring PyInstaller is installed in venv..."
-    Write-Log "Ensuring PyInstaller is installed..."
-    & $VenvPython -m pip install pyinstaller --upgrade 2>&1 | Out-File -FilePath $LogFile -Append
+    Write-Host "Installing/updating dependencies with Poetry..."
+    Write-Log "Running 'poetry install'..."
+    & poetry install 2>&1 | Out-File -FilePath $LogFile -Append
+    if ($LastExitCode -ne 0) {
+        Write-Host "Poetry install failed. See log for details." -ForegroundColor Red
+        Write-Log "Poetry install failed with exit code $LastExitCode."
+        return $null
+    }
 
     Write-Host "Cleaning previous build directories..."
     $originalProgressPreference = $ProgressPreference
@@ -200,7 +190,7 @@ function Invoke-Build {
         Write-Host "Running PyInstaller..."
         $PyInstallerArgs = @("--clean", "--log-level", "ERROR", $SpecFile)
         
-        $output = & $VenvPython -m PyInstaller.__main__ $PyInstallerArgs 2>&1
+        $output = & poetry run pyinstaller $PyInstallerArgs 2>&1
         $output | Out-File -FilePath $LogFile -Append
 
         if ($LastExitCode -ne 0) {
@@ -234,7 +224,7 @@ function Invoke-Build {
             Copy-Item -Path $ChangelogPath -Destination $ArchiveSourceDir -Force
             Remove-Item -Path $ChangelogPath -Force
 
-            $Version = (Get-Content "core/version.py").Split('"')[1]
+            $Version = (& poetry version --short).Trim()
 
             if (Test-CommandExists "7za") {
                 $ArchiveName = "ContextPacker-Windows-x64-v$($Version).7z"
@@ -323,9 +313,8 @@ Remove-OldLogs
     Write-Host (Split-Path $LogFile -Leaf) -ForegroundColor Gray
     Write-Host ""
     Write-Host "1. Clean Build Artifacts"
-    Write-Host "2. Generate requirements.txt"
-    Write-Host "3. Build and Run (Debug)"
-    Write-Host "4. Build Executable (Production)"
+    Write-Host "2. Build and Run (Debug)"
+    Write-Host "3. Build Executable (Production)"
     Write-Host "Q. Quit"
     $choice = Read-Host "`nPlease select an option"
     
@@ -333,9 +322,8 @@ Remove-OldLogs
 
     switch ($choice) {
         "1" { Remove-BuildArtifacts }
-        "2" { New-RequirementsFile }
-        "3" { Invoke-BuildAndRun }
-        "4" { Invoke-Build }
+        "2" { Invoke-BuildAndRun }
+        "3" { Invoke-Build }
         "q" { break menuLoop }
         default { Write-Host "Invalid option." -ForegroundColor Red }
     }
