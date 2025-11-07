@@ -8,7 +8,8 @@ function Show-Menu {
     Write-Host " 1. Clean Build Artifacts (dist, build, __pycache__)"
     Write-Host " 2. Build and Run (Debug)"
     Write-Host " 3. Build for Production"
-    Write-Host " 4. Exit"
+    Write-Host " 4. Check for Package Updates"
+    Write-Host " 5. Exit"
     Write-Host
     Write-Host "==========================================================" -ForegroundColor Cyan
 }
@@ -17,7 +18,7 @@ $ProjectRoot = Resolve-Path -Path (Join-Path $PSScriptRoot "..")
 
 do {
     Show-Menu
-    $choice = Read-Host "Please enter your choice [1-4]"
+    $choice = Read-Host "Please enter your choice [1-5]"
 
     # Set location to the project root for Poetry/Nox commands
     Push-Location -Path $ProjectRoot
@@ -37,6 +38,10 @@ do {
                 poetry run nox -s build
             }
             '4' {
+                Write-Host "`n>>> Checking for outdated packages..." -ForegroundColor Green
+                poetry show --outdated
+            }
+            '5' {
                 Write-Host "`nExiting script."
             }
             default {
@@ -53,9 +58,9 @@ do {
         Pop-Location
     }
 
-    if ($choice -ne '4') {
+    if ($choice -ne '5') {
         Write-Host "`nPress Enter to return to the menu..." -ForegroundColor Yellow
         Read-Host | Out-Null
     }
 
-} until ($choice -eq '4')
+} until ($choice -eq '5')
