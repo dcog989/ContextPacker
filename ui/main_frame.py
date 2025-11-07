@@ -1,6 +1,5 @@
 import wx
 from .widgets.buttons import CustomButton, IconCustomButton
-from .widgets.dialogs import ThemedMessageDialog
 from .widgets.inputs import CustomRadioButton, FocusTextCtrl
 from .panels import CrawlerInputPanel, LocalInputPanel, ListPanel
 from core.config_manager import get_config
@@ -140,17 +139,6 @@ class MainFrame(wx.Panel):
         selected_count = list_ctrl.GetSelectedItemCount()
         if selected_count == 0:
             return
-
-        if is_web_mode:
-            title = "Confirm Deletion"
-            message = f"Are you sure you want to permanently delete {selected_count} downloaded file(s)?"
-        else:
-            title = "Confirm Removal"
-            message = f"Are you sure you want to remove {selected_count} item(s) from the package list?"
-
-        with ThemedMessageDialog(self, message, title, wx.YES_NO | wx.NO_DEFAULT, self.theme) as dlg:
-            if dlg.ShowModal() != wx.ID_YES:
-                return
 
         selected_indices = []
         selected_items_info = []
