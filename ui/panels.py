@@ -30,7 +30,7 @@ class CrawlerInputPanel(wx.Panel):
         if user_agents:
             self.user_agent_combo.SetStringSelection(user_agents[0])
         self.max_pages_label = wx.StaticText(self, label="Max Pages:")
-        self.max_pages_ctrl = FocusTextCtrl(self, value="50", theme=self.theme)
+        self.max_pages_ctrl = FocusTextCtrl(self, value="5", theme=self.theme)
         self.crawl_depth_label = wx.StaticText(self, label="Crawl Depth:")
         self.crawl_depth_ctrl = wx.SpinCtrl(self, value="1", min=0, max=99)
         crawl_depth_tooltip = "0 = only the start URL.\n1 = the start URL and all pages linked from it.\n2 = pages linked from those pages, and so on."

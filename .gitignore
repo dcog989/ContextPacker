@@ -5,6 +5,8 @@
 .repomixignore
 .vscode/
 repomix.config.json
+poetry.lock
+*.lock
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
