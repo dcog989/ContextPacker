@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "contextpacker"
-version = "1.7.0"
+version = "1.7.1"
 description = "A desktop app to scrape websites, Git repositories, or package local files into a single file, optimized for consumption by LLMs."
 authors = ["dcog989 you@example.com"]
 readme = "README.md"
