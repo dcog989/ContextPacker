@@ -1,5 +1,6 @@
 # Project Toolbox - clean & build
 # Version: 0.1.0
+# -----------------------------------------------------------------------------
 
 function Show-Menu {
     Clear-Host
@@ -9,16 +10,18 @@ function Show-Menu {
     Write-Host " 2 > Check for Package Updates"
     Write-Host " 3 > Build and Run (Debug)"
     Write-Host " 4 > Build for Production"
-    Write-Host " 5 > Exit"
+    Write-Host " 5 > Open Log File"
+    Write-Host " 6 > Exit"
     Write-Host
     Write-Host "==========================================================" -ForegroundColor Cyan
 }
 
 $ProjectRoot = Resolve-Path -Path (Join-Path $PSScriptRoot "..")
+$LogFilePath = Join-Path $ProjectRoot "logs\contextpacker.log"
 
 do {
     Show-Menu
-    $choice = Read-Host "Enter option [1-5]"
+    $choice = Read-Host "Enter option [1-6]"
 
     # Set location to the project root for Poetry/Nox commands
     Push-Location -Path $ProjectRoot
@@ -42,6 +45,15 @@ do {
                 poetry run nox -s build
             }
             '5' {
+                Write-Host "`n>>> Opening log file..." -ForegroundColor Green
+                if (Test-Path $LogFilePath) {
+                    Invoke-Item $LogFilePath
+                }
+                else {
+                    Write-Host "Log file not found at: $LogFilePath" -ForegroundColor Yellow
+                }
+            }
+            '6' {
                 Write-Host "`nExiting script."
             }
             default {
@@ -52,15 +64,20 @@ do {
     catch {
         Write-Host "`nAn error occurred:" -ForegroundColor Red
         Write-Host $_.Exception.Message -ForegroundColor Red
+
+        if (Test-Path $LogFilePath) {
+            Write-Host "Opening log file for details..." -ForegroundColor Yellow
+            Invoke-Item $LogFilePath
+        }
     }
     finally {
         # Return to the original directory
         Pop-Location
     }
 
-    if ($choice -ne '5') {
+    if ($choice -ne '6') {
         Write-Host "`nPress Enter to return to the menu..." -ForegroundColor Yellow
         Read-Host | Out-Null
     }
 
-} until ($choice -eq '5')
+} until ($choice -eq '6')
