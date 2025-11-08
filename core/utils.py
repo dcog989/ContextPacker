@@ -1,6 +1,46 @@
 import platform
 from pathlib import Path
 import ctypes
+import shutil
+from datetime import datetime, timedelta
+
+
+def get_app_data_dir():
+    """Gets the platform-specific application data directory."""
+    if platform.system() == "Windows":
+        return Path.home() / "AppData" / "Local" / "ContextPacker"
+    elif platform.system() == "Darwin":
+        return Path.home() / "Library" / "Application Support" / "ContextPacker"
+    else:  # Linux
+        return Path.home() / ".local" / "share" / "ContextPacker"
+
+
+def cleanup_old_directories(base_dir, days_threshold):
+    """Deletes subdirectories in base_dir older than a given number of days."""
+    if not base_dir.is_dir():
+        return
+
+    cutoff = datetime.now() - timedelta(days=days_threshold)
+
+    for subdir in base_dir.iterdir():
+        if subdir.is_dir():
+            try:
+                # Attempt to get modification time as a fallback
+                dir_time = datetime.fromtimestamp(subdir.stat().st_mtime)
+
+                # Try to parse timestamp from name for better accuracy
+                parts = subdir.name.split("-")
+                if len(parts) > 2:
+                    try:
+                        timestamp_str = f"{parts[-2]}-{parts[-1]}"
+                        dir_time = datetime.strptime(timestamp_str, "%y%m%d-%H%M%S")
+                    except ValueError:
+                        pass  # Stick with mtime if parsing fails
+
+                if dir_time < cutoff:
+                    shutil.rmtree(subdir, ignore_errors=True)
+            except (OSError, ValueError):
+                continue  # Ignore directories we can't process
 
 
 def set_title_bar_theme(window, is_dark):

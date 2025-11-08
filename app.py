@@ -15,9 +15,9 @@ from ui.widgets.dialogs import AboutDialog
 import core.actions as actions
 from core.packager import resource_path
 from core.version import __version__
-from core.config_manager import get_config, save_config, get_base_path
+from core.config_manager import get_config, save_config
 from core.task_handler import TaskHandler
-from core.utils import get_downloads_folder, set_title_bar_theme
+from core.utils import get_downloads_folder, set_title_bar_theme, get_app_data_dir, cleanup_old_directories
 
 config = get_config()
 BINARY_FILE_PATTERNS = config.get("binary_file_patterns", [])
@@ -28,6 +28,8 @@ class App(wx.Frame):
         w, h = config.get("window_size", [-1, -1])
         size = wx.Size(w, h) if w > 0 and h > 0 else wx.Size(1600, 950)
         super(App, self).__init__(None, title="ContextPacker", size=size)
+
+        self._setup_app_dirs_and_cleanup()
 
         # Add local drivers to PATH at startup
         drivers_dir = Path(__file__).parent / ".drivers"
@@ -79,6 +81,20 @@ class App(wx.Frame):
         self.Bind(wx.EVT_TIMER, self.on_batch_update_timer, self.batch_update_timer)
 
         threading.Thread(target=self._detect_and_apply_theme, daemon=True).start()
+
+    def _setup_app_dirs_and_cleanup(self):
+        """Creates app directories and cleans up old cache files."""
+        app_data_dir = get_app_data_dir()
+        cache_dir = app_data_dir / "Cache"
+
+        # Create directories if they don't exist
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Clean up old cache directories
+        try:
+            cleanup_old_directories(cache_dir, 21)
+        except Exception as e:
+            print(f"Warning: Failed to clean up old cache files: {e}")
 
     def start_queue_listener(self):
         if self.queue_listener_thread is None:
@@ -515,11 +531,11 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    # Set up logging to a local file instead of the user's home directory
-    base_path = get_base_path()
-    log_dir = base_path / "logs"
-    os.makedirs(log_dir, exist_ok=True)
-    log_path = log_dir / "contextpacker.log"
+    # Set up logging to a file in the app data directory
+    app_data_dir = get_app_data_dir()
+    log_dir = app_data_dir / "Logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "contextpacker-wx.log"
 
     app = wx.App(redirect=True, filename=str(log_path))
     frame = App()

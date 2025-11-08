@@ -1,5 +1,4 @@
 import threading
-import tempfile
 import shutil
 from pathlib import Path
 from datetime import datetime
@@ -13,6 +12,19 @@ import sys
 
 from .packager import run_repomix
 from .crawler import crawl_website
+from .utils import get_app_data_dir
+
+
+def _create_session_dir():
+    """Creates a new timestamped directory for a session in the app data cache."""
+    app_data_path = get_app_data_dir()
+    cache_path = app_data_path / "Cache"
+    cache_path.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
+    session_dir = cache_path / f"session-{timestamp}"
+    session_dir.mkdir(exist_ok=True)
+    return str(session_dir)
 
 
 def start_download(app, cancel_event):
@@ -23,7 +35,7 @@ def start_download(app, cancel_event):
     if app.temp_dir and Path(app.temp_dir).is_dir():
         shutil.rmtree(app.temp_dir)
 
-    app.temp_dir = tempfile.mkdtemp(prefix="ContextPacker-")
+    app.temp_dir = _create_session_dir()
     app.log_verbose(f"Created temporary directory: {app.temp_dir}")
     crawler_config = app.main_panel.crawler_panel.get_crawler_config(app.temp_dir)
 
@@ -46,7 +58,7 @@ def start_git_clone(app, cancel_event):
     if app.temp_dir and Path(app.temp_dir).is_dir():
         shutil.rmtree(app.temp_dir)
 
-    app.temp_dir = tempfile.mkdtemp(prefix="ContextPacker-")
+    app.temp_dir = _create_session_dir()
     app.log_verbose(f"Created temporary directory for git clone: {app.temp_dir}")
     url = app.main_panel.crawler_panel.start_url_ctrl.GetValue()
 
