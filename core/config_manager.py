@@ -54,6 +54,7 @@ DEFAULT_CONFIG = {
         "*.woff2",
     ],
     "max_build_logs": 21,
+    "max_age_logs": 21,
     "window_size": [-1, -1],
     "sash_position": 650,
 }

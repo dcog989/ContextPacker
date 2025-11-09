@@ -1,7 +1,8 @@
 class AppTheme:
     def __init__(self):
         self.accent_color = "#2E8B57"  # Darker green from logo
-        self.accent_hover_color = "#3CB371"  # Lighter green from logo
+        self.accent_color_lighter = "#3CB371"  # Lighter green from logo
+        self.accent_color_darker = "#153E27"  # Darker green
 
     def get_stylesheet(self):
         return f"""
@@ -14,29 +15,17 @@ class AppTheme:
                 font-weight: bold;
             }}
             QPushButton#PrimaryButton:hover {{
-                background-color: {self.accent_hover_color};
-                border: 1px solid {self.accent_hover_color};
+                background-color: {self.accent_color_lighter};
+                border: 1px solid {self.accent_color_lighter};
             }}
             QPushButton#PrimaryButton:disabled {{
                 background-color: #888;
-                border: 1px solid #888;
-            }}
-            QProgressBar::chunk {{
-                background-color: {self.accent_color};
+                border: 1px solid #ccc;
             }}
             QSplitter::handle {{
-                background-color: #555; /* Visible splitter handle */
+                background-color: {self.accent_color_darker};
             }}
             QSplitter::handle:hover {{
-                background-color: {self.accent_hover_color};
-            }}
-            QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QComboBox:focus {{
-                border: 1px solid {self.accent_color};
-            }}
-            QRadioButton::indicator:checked, QRadioButton::indicator:checked:hover {{
-                background-color: {self.accent_color};
-            }}
-            QCheckBox::indicator:checked, QCheckBox::indicator:checked:hover {{
-                background-color: {self.accent_color};
+                background-color: {self.accent_color_lighter};
             }}
         """

@@ -1,10 +1,12 @@
 # Project Specific
 .ai/
+.cheetah/
 .docs/
 .drivers/
 .repomixignore
 .vscode/
 repomix.config.json
+config.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

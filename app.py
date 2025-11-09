@@ -14,6 +14,7 @@ from PySide6.QtCore import QObject, Signal, QTimer, Qt
 from PySide6.QtGui import QIcon
 
 from ui.main_window import MainWindow, AboutDialog
+from ui.styles import AppTheme
 import core.actions as actions
 from core.packager import resource_path
 from core.version import __version__
@@ -61,6 +62,11 @@ class App(QMainWindow):
 
         self.main_panel = MainWindow(self)
         self.setCentralWidget(self.main_panel)
+
+        # Apply the application theme
+        theme = AppTheme()
+        self.setStyleSheet(theme.get_stylesheet())
+
         self._set_icon()
 
         self.queue_listener_thread = None
@@ -88,7 +94,8 @@ class App(QMainWindow):
         cache_dir = app_data_dir / "Cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
         try:
-            cleanup_old_directories(cache_dir, 21)
+            days_threshold = config.get("max_age_logs", 21)
+            cleanup_old_directories(cache_dir, days_threshold)
         except Exception as e:
             print(f"Warning: Failed to clean up old cache files: {e}")
 
