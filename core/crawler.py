@@ -240,16 +240,23 @@ def crawl_website(config, log_queue, cancel_event):
 
     finally:
         if driver:
-
-            def _cleanup_driver(d):
-                try:
-                    d.quit()
-                except Exception:
-                    pass
-
-            cleanup_thread = threading.Thread(target=_cleanup_driver, args=(driver,), daemon=True)
-            cleanup_thread.start()
+            _cleanup_driver(driver, timeout=10, log_queue=log_queue)
 
     status_key = "cancelled" if cancel_event.is_set() else "source_complete"
     message = "Process cancelled by user." if cancel_event.is_set() else f"\nWeb scrape finished. Saved {pages_saved} pages."
     log_queue.put({"type": "status", "status": status_key, "message": message})
+
+
+def _cleanup_driver(driver, timeout=10, log_queue=None):
+    """Clean up driver with timeout and error handling."""
+    if log_queue:
+        log_queue.put({"type": "log", "message": "Cleaning up browser driver..."})
+
+    try:
+        # Try graceful quit first
+        driver.quit()
+        if log_queue:
+            log_queue.put({"type": "log", "message": "Browser driver cleaned up successfully."})
+    except Exception as e:
+        if log_queue:
+            log_queue.put({"type": "log", "message": f"Warning during driver cleanup: {e}"})
