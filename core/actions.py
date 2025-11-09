@@ -45,9 +45,17 @@ def start_download(app, cancel_event):
 
 def _enqueue_output(stream, q):
     """Reads lines from a stream and puts them into a queue."""
-    for line in iter(stream.readline, ""):
-        q.put(line)
-    stream.close()
+    try:
+        for line in iter(stream.readline, ""):
+            q.put(line)
+    finally:
+        # Ensure stream is always closed, even if an exception occurs
+        try:
+            stream.close()
+        except Exception:
+            # Log the error but don't let it propagate
+            # The stream might already be closed or invalid
+            pass
 
 
 def start_git_clone(app, cancel_event):
@@ -72,6 +80,10 @@ def _clone_repo_worker(url, path, log_queue, cancel_event):
         error_msg = "ERROR: Git is not installed or not found in your system's PATH. Please install Git to use this feature."
         log_queue.put({"type": "status", "status": "error", "message": error_msg})
         return
+
+    process = None
+    output_queue = None
+    reader_thread = None
 
     try:
         process = subprocess.Popen(
@@ -124,6 +136,44 @@ def _clone_repo_worker(url, path, log_queue, cancel_event):
 
     except Exception as e:
         log_queue.put({"type": "status", "status": "error", "message": f"An error occurred while cloning the repository: {e}"})
+    finally:
+        # Ensure proper cleanup of process resources
+        if process is not None:
+            # Wait for reader thread to finish processing the stream
+            if reader_thread is not None and reader_thread.is_alive():
+                reader_thread.join(timeout=1.0)
+
+            # Ensure the process is properly terminated
+            if process.poll() is None:
+                try:
+                    process.terminate()
+                    process.wait(timeout=2)
+                except (subprocess.TimeoutExpired, OSError):
+                    try:
+                        process.kill()
+                        process.wait(timeout=1)
+                    except (subprocess.TimeoutExpired, OSError):
+                        # Process couldn't be killed, but we've done our best
+                        pass
+
+            # Close any remaining file descriptors
+            try:
+                if process.stdout:
+                    process.stdout.close()
+            except Exception:
+                pass  # Stream might already be closed
+
+            try:
+                if process.stderr:
+                    process.stderr.close()
+            except Exception:
+                pass  # Stream might already be closed
+
+            try:
+                if process.stdin:
+                    process.stdin.close()
+            except Exception:
+                pass  # Stream might already be closed
 
 
 def start_packaging(app, cancel_event, file_list=None):
