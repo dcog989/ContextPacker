@@ -1,7 +1,6 @@
 import threading
 from pathlib import Path
-from PySide6.QtWidgets import QMessageBox, QApplication
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QMessageBox
 
 import core.actions as actions
 
@@ -11,7 +10,6 @@ class TaskHandler:
         self.app = app_instance
 
     def start_download_task(self):
-        dl_button = self.app.main_panel.download_button
         self.app.signals.message.emit({"type": "ui_task_start", "task": "download"})
 
         start_url = self.app.main_panel.start_url_ctrl.text()
