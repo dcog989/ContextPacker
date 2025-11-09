@@ -13,7 +13,6 @@ import re
 from markdownify import markdownify as md
 import platform
 import subprocess
-import threading
 import traceback
 
 from .platform_utils import get_browser_binary_path
