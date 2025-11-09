@@ -48,6 +48,7 @@ class App(QMainWindow):
         self.log_queue = queue.Queue()
         self.cancel_event = None
         self.worker_thread = None
+        self.queue_listener_shutdown = threading.Event()
         self.is_shutting_down = False
         self.is_task_running = False
         self.local_files_to_exclude = set()
@@ -108,24 +109,82 @@ class App(QMainWindow):
             print(f"Warning: Failed to clean up old cache files: {e}")
 
     def start_queue_listener(self):
-        if self.queue_listener_thread is None:
+        """Start the queue listener thread if not already running."""
+        if self.queue_listener_thread is None or not self.queue_listener_thread.is_alive():
+            self.queue_listener_shutdown.clear()
             self.queue_listener_thread = threading.Thread(target=self._queue_listener_worker, daemon=True)
             self.queue_listener_thread.start()
 
-    def stop_queue_listener(self):
-        if self.queue_listener_thread is not None:
-            self.log_queue.put(None)
-            self.queue_listener_thread.join(timeout=1)
+    def stop_queue_listener(self, timeout=5.0):
+        """
+        Safely stop the queue listener thread.
+
+        Args:
+            timeout: Maximum seconds to wait for thread to finish
+
+        Returns:
+            bool: True if stopped cleanly, False if timeout occurred
+        """
+        if self.queue_listener_thread is None:
+            return True
+
+        if not self.queue_listener_thread.is_alive():
             self.queue_listener_thread = None
+            return True
+
+        self.queue_listener_shutdown.set()
+
+        try:
+            self.log_queue.put(None, timeout=1.0)
+        except queue.Full:
+            pass
+
+        self.queue_listener_thread.join(timeout=timeout)
+
+        if self.queue_listener_thread.is_alive():
+            self._drain_queue()
+            return False
+
+        self.queue_listener_thread = None
+        return True
 
     def _queue_listener_worker(self):
-        while True:
+        """
+        Worker thread that processes messages from log_queue.
+
+        Runs until shutdown event is set AND queue is empty,
+        or until sentinel (None) is received.
+        """
+        while not self.queue_listener_shutdown.is_set():
             try:
-                msg_obj = self.log_queue.get()
+                msg_obj = self.log_queue.get(timeout=0.5)
+
                 if msg_obj is None:
                     break
+
                 self.signals.message.emit(msg_obj)
-            except Exception:
+                self.log_queue.task_done()
+
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"Error processing queue message: {e}")
+                continue
+
+        self._drain_queue()
+
+    def _drain_queue(self):
+        """Process all remaining messages in the queue without blocking."""
+        while True:
+            try:
+                msg_obj = self.log_queue.get_nowait()
+                if msg_obj is not None:
+                    self.signals.message.emit(msg_obj)
+                    self.log_queue.task_done()
+            except queue.Empty:
+                break
+            except Exception as e:
+                print(f"Error draining queue: {e}")
                 continue
 
     def _process_log_queue_message(self, msg_obj):
@@ -201,7 +260,7 @@ class App(QMainWindow):
             QApplication.restoreOverrideCursor()
             self.is_task_running = False
 
-        self.stop_queue_listener()
+        self.stop_queue_listener(timeout=2.0)  # <-- CHANGED (shorter timeout for UI responsiveness)
         self._toggle_ui_controls(True)
 
         self.worker_thread = None
@@ -247,7 +306,9 @@ class App(QMainWindow):
         config["sash_state"] = str(sash_qba, "utf-8")  # type: ignore
         save_config(config)
 
-        self.stop_queue_listener()
+        queue_stopped = self.stop_queue_listener(timeout=5.0)  # <-- CHANGED
+        if not queue_stopped:
+            print("Warning: Queue listener did not stop cleanly")
 
         if self._cleanup_workers():
             event.ignore()
