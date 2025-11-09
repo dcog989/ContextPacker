@@ -11,7 +11,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog
 from PySide6.QtCore import QObject, Signal, QTimer, Qt
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QFontDatabase
 
 from ui.main_window import MainWindow, AboutDialog
 from ui.styles import AppTheme
@@ -62,6 +62,8 @@ class App(QMainWindow):
         self.main_panel = MainWindow(self)
         self.setCentralWidget(self.main_panel)
 
+        self._load_custom_font()
+
         # Apply the application theme
         theme = AppTheme()
         self.setStyleSheet(theme.get_stylesheet())
@@ -87,6 +89,13 @@ class App(QMainWindow):
 
         self.toggle_input_mode()
         self.show()
+
+    def _load_custom_font(self):
+        font_path = resource_path("assets/fonts/SourceCodePro-Regular.ttf")
+        if font_path.exists():
+            font_id = QFontDatabase.addApplicationFont(str(font_path))
+            if font_id == -1:
+                self.log_verbose(f"Warning: Failed to load font from {font_path}")
 
     def _setup_app_dirs_and_cleanup(self):
         app_data_dir = get_app_data_dir()
