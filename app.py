@@ -144,6 +144,14 @@ class App(QMainWindow):
             self.main_panel.progress_gauge.setMaximum(msg_obj["max_value"])
         elif msg_type == "status":
             self.task_handler.handle_status(msg_obj.get("status"), msg_obj)
+        elif msg_type == "ui_task_start":
+            self._handle_ui_task_start(msg_obj["task"])
+        elif msg_type == "ui_task_stopping":
+            self._handle_ui_task_stopping()
+        elif msg_type == "ui_task_stop":
+            self._handle_ui_task_stop(msg_obj.get("was_cancelled", False))
+        elif msg_type == "git_clone_done":
+            self._handle_git_clone_done(msg_obj["path"])
         elif msg_type == "local_scan_complete":
             QApplication.restoreOverrideCursor()
             self.main_panel.local_panel.setEnabled(True)
@@ -155,6 +163,72 @@ class App(QMainWindow):
                 self.local_depth_excludes = depth_excludes
         else:
             self.log_verbose(str(msg_obj.get("message", "")))
+
+    def _handle_ui_task_start(self, task):
+        dl_button = self.main_panel.download_button
+        pkg_button = self.main_panel.package_button
+
+        widget_to_keep_enabled = dl_button if task == "download" else pkg_button
+        self._toggle_ui_controls(False, widget_to_keep_enabled=widget_to_keep_enabled)
+
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self.is_task_running = True
+        self.main_panel.copy_button.setEnabled(False)
+
+        if task == "download":
+            dl_button.setText("Stop!")
+            pkg_button.setEnabled(False)
+        elif task == "package":
+            pkg_button.setText("Stop!")
+            dl_button.setEnabled(False)
+
+    def _handle_ui_task_stopping(self):
+        dl_button = self.main_panel.download_button
+        pkg_button = self.main_panel.package_button
+
+        if dl_button.isEnabled():
+            dl_button.setText("Stopping...")
+            dl_button.setEnabled(False)
+
+        if pkg_button.isEnabled():
+            pkg_button.setText("Stopping...")
+            pkg_button.setEnabled(False)
+
+        self.log_verbose("Stopping process...")
+
+    def _handle_ui_task_stop(self, was_cancelled):
+        if self.is_task_running:
+            QApplication.restoreOverrideCursor()
+            self.is_task_running = False
+
+        self.stop_queue_listener()
+        self._toggle_ui_controls(True)
+
+        self.worker_thread = None
+        self.cancel_event = None
+
+        if self.is_shutting_down:
+            self.close()
+            return
+
+        dl_button = self.main_panel.download_button
+        dl_button.setText("Download & Convert")
+        dl_button.setEnabled(True)
+
+        pkg_button = self.main_panel.package_button
+        pkg_button.setText("Package")
+        pkg_button.setEnabled(True)
+
+        self.main_panel.progress_gauge.setValue(0)
+        self._update_button_states()
+
+        self.ui_update_timer.start()
+
+    def _handle_git_clone_done(self, path):
+        self.main_panel.local_dir_ctrl.setText(path)
+        self.main_panel.web_crawl_radio.setChecked(False)
+        self.main_panel.local_dir_radio.setChecked(True)
+        self.toggle_input_mode()
 
     def on_batch_update_timer(self):
         if self.scraped_files_batch:
@@ -208,9 +282,6 @@ class App(QMainWindow):
                 widget.setEnabled(enable)
         if not enable and widget_to_keep_enabled:
             widget_to_keep_enabled.setEnabled(True)
-
-    def on_toggle_input_mode(self):
-        self.toggle_input_mode()
 
     def toggle_input_mode(self):
         is_url_mode = self.main_panel.web_crawl_radio.isChecked()

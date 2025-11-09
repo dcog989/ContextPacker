@@ -12,17 +12,19 @@ class TaskHandler:
 
     def start_download_task(self):
         dl_button = self.app.main_panel.download_button
-        self.app._toggle_ui_controls(False, widget_to_keep_enabled=dl_button)
+        self.app.signals.message.emit({"type": "ui_task_start", "task": "download"})
 
         start_url = self.app.main_panel.start_url_ctrl.text()
         git_pattern = r"(\.git$)|(github\.com)|(gitlab\.com)|(bitbucket\.org)"
         if __import__("re").search(git_pattern, start_url):
-            self.app.main_panel.copy_button.setEnabled(False)
-            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-            self.app.is_task_running = True
-            self.app.main_panel.package_button.setEnabled(False)
-            self.app.main_panel.copy_button.setEnabled(False)
-            dl_button.setText("Cloning...")
+            try:
+                self.app.main_panel.get_crawler_config("dummy_dir_for_validation")
+            except (ValueError, AttributeError):
+                msg = "Invalid input. Please ensure 'Max Pages', 'Min Pause', and 'Max Pause' are whole numbers."
+                QMessageBox.critical(self.app, "Input Error", msg)
+                self.app.signals.message.emit({"type": "ui_task_stop"})
+                return
+
             self.app.cancel_event = threading.Event()
             actions.start_git_clone(self.app, self.app.cancel_event)
             return
@@ -32,23 +34,15 @@ class TaskHandler:
         except (ValueError, AttributeError):
             msg = "Invalid input. Please ensure 'Max Pages', 'Min Pause', and 'Max Pause' are whole numbers."
             QMessageBox.critical(self.app, "Input Error", msg)
-            self.app._toggle_ui_controls(True)
+            self.app.signals.message.emit({"type": "ui_task_stop"})
             return
-
-        self.app.main_panel.copy_button.setEnabled(False)
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        self.app.is_task_running = True
-        self.app.main_panel.package_button.setEnabled(False)
-        self.app.main_panel.copy_button.setEnabled(False)
-        dl_button.setText("Stop!")
 
         self.app.cancel_event = threading.Event()
         self.app.start_queue_listener()
         actions.start_download(self.app, self.app.cancel_event)
 
     def start_package_task(self, file_list_for_count):
-        pkg_button = self.app.main_panel.package_button
-        self.app._toggle_ui_controls(False, widget_to_keep_enabled=pkg_button)
+        self.app.signals.message.emit({"type": "ui_task_start", "task": "package"})
 
         is_web_mode = self.app.main_panel.web_crawl_radio.isChecked()
         if not is_web_mode:
@@ -56,15 +50,8 @@ class TaskHandler:
             if not source_dir or not Path(source_dir).is_dir():
                 msg = f"The specified input directory is not valid:\n{source_dir}"
                 QMessageBox.critical(self.app, "Input Error", msg)
-                self.app._toggle_ui_controls(True)
+                self.app.signals.message.emit({"type": "ui_task_stop"})
                 return
-
-        self.app.main_panel.copy_button.setEnabled(False)
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        self.app.is_task_running = True
-        self.app.main_panel.download_button.setEnabled(False)
-        self.app.main_panel.copy_button.setEnabled(False)
-        pkg_button.setText("Stop!")
 
         self.app.cancel_event = threading.Event()
         self.app.start_queue_listener()
@@ -73,63 +60,21 @@ class TaskHandler:
     def stop_current_task(self):
         if self.app.cancel_event:
             self.app.cancel_event.set()
-
-        dl_button = self.app.main_panel.download_button
-        pkg_button = self.app.main_panel.package_button
-
-        if dl_button.isEnabled():
-            dl_button.setText("Stopping...")
-            dl_button.setEnabled(False)
-
-        if pkg_button.isEnabled():
-            pkg_button.setText("Stopping...")
-            pkg_button.setEnabled(False)
-
-        self.app.log_verbose("Stopping process...")
+            self.app.signals.message.emit({"type": "ui_task_stopping"})
 
     def handle_status(self, status, msg_obj):
         message = msg_obj.get("message", "")
         if status == "error":
             QMessageBox.critical(self.app, "An Error Occurred", message)
+            self.app.signals.message.emit({"type": "log", "message": message})
         elif status == "clone_complete":
-            self.app.log_verbose("✔ Git clone successful.")
-            self.app.main_panel.local_dir_ctrl.setText(msg_obj.get("path", ""))
-            self.app.main_panel.web_crawl_radio.setChecked(False)
-            self.app.main_panel.local_dir_radio.setChecked(True)
-            self.app.toggle_input_mode()
+            self.app.signals.message.emit({"type": "log", "message": "✔ Git clone successful."})
+            self.app.signals.message.emit({"type": "git_clone_done", "path": msg_obj.get("path", "")})
         elif message:
-            self.app.log_verbose(message)
+            self.app.signals.message.emit({"type": "log", "message": message})
 
         if status in ["source_complete", "package_complete", "cancelled", "error", "clone_complete"]:
             if status == "package_complete":
                 self.app._open_output_folder()
-            self.cleanup_after_task()
-            self.app._update_button_states()
 
-    def cleanup_after_task(self):
-        if self.app.is_task_running:
-            QApplication.restoreOverrideCursor()
-            self.app.is_task_running = False
-
-        self.app.stop_queue_listener()
-        self.app._toggle_ui_controls(True)
-
-        self.app.worker_thread = None
-        self.app.cancel_event = None
-
-        if self.app.is_shutting_down:
-            self.app.close()
-            return
-
-        dl_button = self.app.main_panel.download_button
-        dl_button.setText("Download & Convert")
-        dl_button.setEnabled(True)
-
-        pkg_button = self.app.main_panel.package_button
-        pkg_button.setText("Package")
-        pkg_button.setEnabled(True)
-
-        self.app.main_panel.progress_gauge.setValue(0)
-        self.app._update_button_states()
-
-        self.app.ui_update_timer.start()
+            self.app.signals.message.emit({"type": "ui_task_stop", "was_cancelled": status == "cancelled"})
