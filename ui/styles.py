@@ -3,6 +3,12 @@ class AppTheme:
         self.accent_color = "#2E8B57"  # Darker green from logo
         self.accent_color_lighter = "#3CB371"  # Lighter green from logo
         self.accent_color_darker = "#153E27"  # Darker green
+        self.color_gray_active = "#999"
+        self.color_gray_highlight = "#ccc"
+        self.color_gray_dark = "#333"
+        self.color_gray_light = "#ddd"
+        self.color_gray_hover = "#aaa"
+        self.color_gray_inactive = "#666"
 
     def get_stylesheet(self):
         return f"""
@@ -23,9 +29,9 @@ class AppTheme:
                 border: 1px solid #ccc;
             }}
             QSplitter::handle {{
-                background-color: {self.accent_color_darker};
+                background-color: {self.color_gray_active};
             }}
             QSplitter::handle:hover {{
-                background-color: {self.accent_color_lighter};
+                background-color: {self.color_gray_hover};
             }}
         """
