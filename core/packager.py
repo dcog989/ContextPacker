@@ -37,7 +37,18 @@ def run_repomix(source_dir, output_filepath, log_queue, cancel_event, repomix_st
         config.security.enable_security_check = False
 
         processor = RepoProcessor(str(source_path), config=config)
+
+        # Check for cancellation before starting the processor
+        if cancel_event.is_set():
+            log_queue.put({"type": "status", "status": "cancelled", "message": "Packaging cancelled by user."})
+            return
+
         result = processor.process()
+
+        # Check for cancellation after processing
+        if cancel_event.is_set():
+            log_queue.put({"type": "status", "status": "cancelled", "message": "Packaging cancelled by user."})
+            return
 
         log_queue.put({"type": "status", "status": "package_complete", "message": f"✔ Repomix finished successfully. Output: {result.config.output.file_path}"})
 

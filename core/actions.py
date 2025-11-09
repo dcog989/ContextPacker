@@ -111,7 +111,8 @@ def _clone_repo_worker(url, path, log_queue, cancel_event):
                     process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     process.kill()
-                break
+                log_queue.put({"type": "status", "status": "cancelled", "message": "Git clone cancelled."})
+                return
 
             try:
                 line = output_queue.get(timeout=0.1)
@@ -335,9 +336,17 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
                 ignored_dirs.add(d)
         dirnames[:] = [d for d in dirnames if d not in ignored_dirs]
 
+        # Check for cancellation before processing directories
+        if cancel_event and cancel_event.is_set():
+            return [], set()
+
         for d in dirnames:
             rel_path_str = (rel_root_path / d).as_posix()
             files_to_show.append({"name": rel_path_str + "/", "type": "Folder", "size": 0, "size_str": "", "rel_path": rel_path_str + "/"})
+
+        # Check for cancellation before processing files
+        if cancel_event and cancel_event.is_set():
+            return [], set()
 
         for f in filenames:
             rel_path = rel_root_path / f

@@ -197,6 +197,11 @@ def crawl_website(config, log_queue, cancel_event):
                 break
 
             current_url, depth = urls_to_visit.get()
+
+            # Check for cancellation immediately after getting URL but before processing
+            if cancel_event.is_set():
+                break
+
             log_queue.put({"type": "progress", "value": pages_saved, "max_value": config.max_pages})
             log_queue.put({"type": "log", "message": f"GET (Depth {depth}): {current_url}"})
 
