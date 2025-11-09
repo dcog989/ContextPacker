@@ -327,10 +327,15 @@ class App(QMainWindow):
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
+
     if platform.system() == "Windows":
         try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(1)
-        except Exception:
+            # Set the DPI awareness context to Per_Monitor_Aware_V2.
+            # This is the level Qt6 expects and prevents a conflict with the PyInstaller bootloader.
+            # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+            ctypes.windll.shcore.SetProcessDpiAwarenessContext(-4)
+        except (AttributeError, OSError):
+            # This function is not available on older versions of Windows.
             pass
 
     app_data_dir = get_app_data_dir()
