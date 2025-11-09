@@ -16,11 +16,10 @@ from PySide6.QtGui import QIcon
 from ui.main_window import MainWindow, AboutDialog
 from ui.styles import AppTheme
 import core.actions as actions
-from core.packager import resource_path
 from core.version import __version__
 from core.config_manager import get_config, save_config
 from core.task_handler import TaskHandler
-from core.utils import get_app_data_dir, cleanup_old_directories
+from core.utils import get_app_data_dir, cleanup_old_directories, resource_path
 
 config = get_config()
 BINARY_FILE_PATTERNS = config.get("binary_file_patterns", [])

@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QGro
 from PySide6.QtGui import QPixmap, QIcon, QFont, QCursor
 from PySide6.QtCore import Qt, QByteArray
 
-from core.packager import resource_path
+from core.utils import resource_path
 from core.config import CrawlerConfig
 from core.config_manager import get_config
 

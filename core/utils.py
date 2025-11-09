@@ -3,6 +3,27 @@ from pathlib import Path
 import ctypes
 import shutil
 from datetime import datetime, timedelta
+import sys
+
+
+def resource_path(relative_path):
+    """
+    Get absolute path to resource, works for dev and for PyInstaller.
+    """
+    if getattr(sys, "frozen", False):
+        # We are running in a bundle (frozen)
+        # For --onefile, PyInstaller extracts to a temp folder and sets _MEIPASS
+        # For --onedir, it's just the executable's directory
+        meipass_path = getattr(sys, "_MEIPASS", None)
+        if meipass_path:
+            base_path = Path(meipass_path)
+        else:
+            base_path = Path(sys.executable).parent
+    else:
+        # We are running in a normal Python environment (from source).
+        base_path = Path(__file__).parent.parent
+
+    return base_path / relative_path
 
 
 def get_app_data_dir():
