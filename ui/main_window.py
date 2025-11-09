@@ -121,6 +121,45 @@ class MainWindow(QWidget):
         self.copy_button.setToolTip("Copy final package contents to clipboard")
         self.copy_button.setEnabled(False)
 
+    def _create_crawler_numerical_layout(self):
+        numerical_layout = QHBoxLayout()
+        self.max_pages_ctrl = QLineEdit("5")
+        self.max_pages_ctrl.setFixedWidth(60)
+        self.crawl_depth_ctrl = QSpinBox()
+        self.crawl_depth_ctrl.setValue(1)
+        self.crawl_depth_ctrl.setRange(0, 99)
+        self.min_pause_ctrl = QLineEdit("212")
+        self.min_pause_ctrl.setFixedWidth(60)
+        self.max_pause_ctrl = QLineEdit("2200")
+        self.max_pause_ctrl.setFixedWidth(60)
+
+        numerical_layout.addWidget(self.max_pages_ctrl)
+        numerical_layout.addSpacing(15)
+        numerical_layout.addWidget(QLabel("Crawl Depth:"))
+        numerical_layout.addWidget(self.crawl_depth_ctrl)
+        numerical_layout.addStretch()
+
+        pause_layout = QHBoxLayout()
+        pause_layout.addWidget(self.min_pause_ctrl)
+        pause_layout.addWidget(QLabel(" to "))
+        pause_layout.addWidget(self.max_pause_ctrl)
+        pause_layout.addStretch()
+
+        return numerical_layout, pause_layout
+
+    def _create_crawler_options_layout(self):
+        self.stay_on_subdomain_check = QCheckBox("Stay on start URL's subdomain")
+        self.stay_on_subdomain_check.setChecked(True)
+        self.ignore_queries_check = QCheckBox("Ignore URL query parameters (?...)")
+        self.ignore_queries_check.setChecked(True)
+        self.download_button = QPushButton("Download & Convert")
+
+        options_layout = QVBoxLayout()
+        options_layout.addWidget(self.stay_on_subdomain_check)
+        options_layout.addWidget(self.ignore_queries_check)
+
+        return options_layout
+
     def _create_crawler_panel(self):
         panel = QWidget()
         main_layout = QVBoxLayout(panel)
@@ -136,39 +175,15 @@ class MainWindow(QWidget):
         self.user_agent_combo.addItems(user_agents)
         self.user_agent_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.user_agent_combo.setMinimumContentsLength(20)
-        self.max_pages_ctrl = QLineEdit("5")
-        self.max_pages_ctrl.setFixedWidth(60)
-        self.crawl_depth_ctrl = QSpinBox()
-        self.crawl_depth_ctrl.setValue(1)
-        self.crawl_depth_ctrl.setRange(0, 99)
-        self.min_pause_ctrl = QLineEdit("212")
-        self.min_pause_ctrl.setFixedWidth(60)
-        self.max_pause_ctrl = QLineEdit("2200")
-        self.max_pause_ctrl.setFixedWidth(60)
 
-        numerical_layout = QHBoxLayout()
-        numerical_layout.addWidget(self.max_pages_ctrl)
-        numerical_layout.addSpacing(15)
-        numerical_layout.addWidget(QLabel("Crawl Depth:"))
-        numerical_layout.addWidget(self.crawl_depth_ctrl)
-        numerical_layout.addStretch()
-
-        pause_layout = QHBoxLayout()
-        pause_layout.addWidget(self.min_pause_ctrl)
-        pause_layout.addWidget(QLabel(" to "))
-        pause_layout.addWidget(self.max_pause_ctrl)
-        pause_layout.addStretch()
+        numerical_layout, pause_layout = self._create_crawler_numerical_layout()
 
         self.include_paths_ctrl = QTextEdit()
         self.exclude_paths_ctrl = QTextEdit()
         self.include_paths_ctrl.setFixedHeight(80)
         self.exclude_paths_ctrl.setFixedHeight(80)
 
-        self.stay_on_subdomain_check = QCheckBox("Stay on start URL's subdomain")
-        self.stay_on_subdomain_check.setChecked(True)
-        self.ignore_queries_check = QCheckBox("Ignore URL query parameters (?...)")
-        self.ignore_queries_check.setChecked(True)
-        self.download_button = QPushButton("Download & Convert")
+        options_layout = self._create_crawler_options_layout()
 
         form_layout.addRow("Start URL:", self.start_url_ctrl)
         form_layout.addRow("User-Agent:", self.user_agent_combo)
@@ -177,9 +192,6 @@ class MainWindow(QWidget):
         form_layout.addRow("Include Paths:", self.include_paths_ctrl)
         form_layout.addRow("Exclude Paths:", self.exclude_paths_ctrl)
 
-        options_layout = QVBoxLayout()
-        options_layout.addWidget(self.stay_on_subdomain_check)
-        options_layout.addWidget(self.ignore_queries_check)
         form_layout.addRow("", options_layout)
         form_layout.addRow("", self.download_button)
 
