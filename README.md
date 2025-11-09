@@ -60,7 +60,7 @@ The web crawler needs a matching browser driver. You can either:
     # For Edge: First, get your Edge version
     $ver = (Get-Item "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe").VersionInfo.FileVersion
     Write-Host "Edge version: $ver"
-    $major = $ver.Split('.')[0]
+    $major = $ver.Split('.')
     Write-Host "Major version: $major"
     
     # Download and extract Edge driver for your version
@@ -158,21 +158,3 @@ There is a small environment checker that validates Python, git, browsers, and k
 poetry run python scripts/check_env.py
 # or (Windows) use the helper:
 .\scripts\check_env.ps1
-```
-
-Enable automatic webdriver downloads
-
-The env-checker can automatically download matching webdriver binaries if `webdriver-manager` is installed. To enable this in your development environment, add it as a dev dependency:
-
-```pwsh
-poetry add --dev webdriver-manager
-# or install system-wide with pipx:
-pipx install webdriver-manager
-```
-
-Once installed, `scripts/check_env.py` will try to download missing drivers (chromedriver, msedgedriver, geckodriver) and report their installed paths.
-
-* **UI**: Python with [wxPython](https://wxpython.org/)
-* **Web Scraping**: [Selenium](https://www.selenium.dev/) + [Beautiful Soup](https://pypi.org/project/beautifulsoup4/)
-* **HTML to Markdown**: [markdownify](https://pypi.org/project/markdownify/)
-* **File Packaging**: [repomix](https://pypi.org/project/repomix/)

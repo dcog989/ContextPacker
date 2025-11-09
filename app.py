@@ -1,5 +1,3 @@
-import wx
-import winreg
 import os
 from datetime import datetime
 from pathlib import Path
@@ -9,88 +7,86 @@ import platform
 import threading
 import queue
 import multiprocessing
+import sys
 
-from ui.main_frame import MainFrame
-from ui.widgets.dialogs import AboutDialog
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog
+from PySide6.QtCore import QObject, Signal, QTimer, Qt
+from PySide6.QtGui import QIcon
+
+from ui.main_window import MainWindow, AboutDialog
 import core.actions as actions
 from core.packager import resource_path
 from core.version import __version__
 from core.config_manager import get_config, save_config
 from core.task_handler import TaskHandler
-from core.utils import get_downloads_folder, set_title_bar_theme, get_app_data_dir, cleanup_old_directories
+from core.utils import get_app_data_dir, cleanup_old_directories
 
 config = get_config()
 BINARY_FILE_PATTERNS = config.get("binary_file_patterns", [])
 
 
-class App(wx.Frame):
+class WorkerSignals(QObject):
+    message = Signal(dict)
+
+
+class App(QMainWindow):
     def __init__(self):
+        super().__init__()
         w, h = config.get("window_size", [-1, -1])
-        size = wx.Size(w, h) if w > 0 and h > 0 else wx.Size(1600, 950)
-        super(App, self).__init__(None, title="ContextPacker", size=size)
+        if w > 0 and h > 0:
+            self.resize(w, h)
+        else:
+            self.resize(1600, 950)
+        self.setWindowTitle("ContextPacker")
 
         self._setup_app_dirs_and_cleanup()
-
-        # Add local drivers to PATH at startup
-        drivers_dir = Path(__file__).parent / ".drivers"
-        if drivers_dir.exists():
-            for browser in ["edge", "chrome", "firefox"]:
-                browser_dir = drivers_dir / browser
-                if browser_dir.exists():
-                    # Look for driver in most recent version folder
-                    versions = [d for d in browser_dir.iterdir() if d.is_dir()]
-                    if versions:
-                        latest = max(versions)
-                        path = os.environ.get("PATH", "")
-                        os.environ["PATH"] = str(latest.absolute()) + os.pathsep + path
 
         self.version = __version__
         self.task_handler = TaskHandler(self)
         self.temp_dir = None
         self.final_output_path = None
-        self.filename_prefix = ""
         self.log_queue = queue.Queue()
         self.cancel_event = None
         self.worker_thread = None
         self.is_shutting_down = False
         self.is_task_running = False
-        self.is_dark = False
         self.local_files_to_exclude = set()
         self.local_depth_excludes = set()
         self.gitignore_cache = {}
-        self.exclude_list_last_line = 0
         self.local_scan_worker = None
         self.local_scan_cancel_event = None
-        self.exclude_update_timer = wx.Timer(self)
-        self.queue_listener_thread = None
-        self.scraped_files_batch = []
-        self.batch_update_timer = wx.Timer(self)
 
-        self._set_theme_palette()
-        self.main_panel = MainFrame(self)
-        self._apply_theme_to_widgets()
-        self._setup_timer()
+        self.signals = WorkerSignals()
+        self.signals.message.connect(self._process_log_queue_message)
+
+        self.main_panel = MainWindow(self)
+        self.setCentralWidget(self.main_panel)
         self._set_icon()
 
+        self.queue_listener_thread = None
+        self.scraped_files_batch = []
+        self.batch_update_timer = QTimer(self)
+        self.batch_update_timer.setInterval(250)
+        self.batch_update_timer.setSingleShot(True)
+        self.batch_update_timer.timeout.connect(self.on_batch_update_timer)
+
+        self.exclude_update_timer = QTimer(self)
+        self.exclude_update_timer.setInterval(500)
+        self.exclude_update_timer.setSingleShot(True)
+        self.exclude_update_timer.timeout.connect(self.start_local_file_scan)
+
+        self.ui_update_timer = QTimer(self)
+        self.ui_update_timer.setInterval(1000)
+        self.ui_update_timer.timeout.connect(self._update_timestamp_label)
+        self.ui_update_timer.start()
+
         self.toggle_input_mode()
-        self.Center()
-        self.Show()
-
-        self.Bind(wx.EVT_CLOSE, self.on_close)
-        self.Bind(wx.EVT_TIMER, self.on_exclude_timer, self.exclude_update_timer)
-        self.Bind(wx.EVT_TIMER, self.on_batch_update_timer, self.batch_update_timer)
-
-        threading.Thread(target=self._detect_and_apply_theme, daemon=True).start()
+        self.show()
 
     def _setup_app_dirs_and_cleanup(self):
-        """Creates app directories and cleans up old cache files."""
         app_data_dir = get_app_data_dir()
         cache_dir = app_data_dir / "Cache"
-
-        # Create directories if they don't exist
         cache_dir.mkdir(parents=True, exist_ok=True)
-
-        # Clean up old cache directories
         try:
             cleanup_old_directories(cache_dir, 21)
         except Exception as e:
@@ -103,7 +99,7 @@ class App(wx.Frame):
 
     def stop_queue_listener(self):
         if self.queue_listener_thread is not None:
-            self.log_queue.put(None)  # Sentinel to stop the thread
+            self.log_queue.put(None)
             self.queue_listener_thread.join(timeout=1)
             self.queue_listener_thread = None
 
@@ -111,160 +107,57 @@ class App(wx.Frame):
         while True:
             try:
                 msg_obj = self.log_queue.get()
-                if msg_obj is None:  # Sentinel value
+                if msg_obj is None:
                     break
-                wx.CallAfter(self._process_log_queue_message, msg_obj)
-            except (EOFError, BrokenPipeError):
-                break  # Exit if the queue is broken (e.g., child process crashed)
+                self.signals.message.emit(msg_obj)
             except Exception:
-                # Log other potential exceptions without crashing the listener
                 continue
 
     def _process_log_queue_message(self, msg_obj):
         msg_type = msg_obj.get("type")
-        message = msg_obj.get("message", "")
-
         if msg_type == "log":
-            self.log_verbose(message)
+            self.log_verbose(msg_obj.get("message", ""))
         elif msg_type == "file_saved":
             self.scraped_files_batch.append(msg_obj)
-            if not self.batch_update_timer.IsRunning():
-                self.batch_update_timer.StartOnce(250)
-
-            queue_size = msg_obj.get("queue_size", 0)
-            self.main_panel.list_panel.update_discovered_count(queue_size)
+            if not self.batch_update_timer.isActive():
+                self.batch_update_timer.start()
+            self.main_panel.update_discovered_count(msg_obj.get("queue_size", 0))
             verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
             self.log_verbose(verbose_msg)
         elif msg_type == "progress":
-            self.main_panel.list_panel.progress_gauge.SetValue(msg_obj["value"])
-            self.main_panel.list_panel.progress_gauge.SetRange(msg_obj["max_value"])
+            self.main_panel.progress_gauge.setValue(msg_obj["value"])
+            self.main_panel.progress_gauge.setMaximum(msg_obj["max_value"])
         elif msg_type == "status":
             self.task_handler.handle_status(msg_obj.get("status"), msg_obj)
+        elif msg_type == "local_scan_complete":
+            QApplication.restoreOverrideCursor()
+            self.main_panel.local_panel.setEnabled(True)
+            self.local_scan_worker = None
+            results = msg_obj.get("results")
+            if results is not None:
+                files, depth_excludes = results
+                self.main_panel.populate_local_file_list(files)
+                self.local_depth_excludes = depth_excludes
         else:
-            self.log_verbose(str(message))
+            self.log_verbose(str(msg_obj.get("message", "")))
 
-    def on_batch_update_timer(self, event):
+    def on_batch_update_timer(self):
         if self.scraped_files_batch:
-            self.main_panel.list_panel.add_scraped_files_batch(self.scraped_files_batch)
+            self.main_panel.add_scraped_files_batch(self.scraped_files_batch)
             self.scraped_files_batch.clear()
             self._update_button_states()
 
-    def _detect_and_apply_theme(self):
-        """Worker function to detect dark mode and apply the theme."""
-        is_dark = self._is_dark_mode()
-        wx.CallAfter(self._update_theme, is_dark)
-
-    def _update_theme(self, is_dark):
-        """Updates the application theme. Must be called on the main thread."""
-        if self.is_dark == is_dark:
-            self._set_title_bar_theme()
-            return
-
-        self.is_dark = is_dark
-        if hasattr(self, "main_panel") and self.main_panel:
-            self.main_panel.list_panel.is_dark = is_dark
-        self._set_theme_palette()
-        self._apply_theme_to_widgets()
-        self._set_title_bar_theme()
-
-    def _is_dark_mode(self):
-        system = platform.system()
-        if system == "Windows":
-            try:
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
-                value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-                winreg.CloseKey(key)
-                return value == 0
-            except Exception:
-                return False
-        elif system == "Darwin":
-            try:
-                cmd = "defaults read -g AppleInterfaceStyle"
-                p = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
-                return "Dark" in p.stdout
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                return False
-        else:
-            bg_color = wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW)
-            return bg_color.GetLuminance() < 0.5
-
-    def _set_theme_palette(self):
-        self.accent_color = wx.Colour("#3CB371")
-        self.accent_hover_color = wx.Colour("#2E8B57")
-        danger_color = wx.Colour("#B22222")
-
-        dark_colors = {"bg": wx.Colour(46, 46, 46), "fg": wx.Colour(224, 224, 224), "field": wx.Colour(60, 60, 60), "hover": wx.Colour(80, 80, 80), "secondary_bg": wx.Colour(80, 80, 80), "focus_field": wx.Colour(70, 70, 70)}
-        light_colors = {"bg": wx.SystemSettings.GetColour(wx.SYS_COLOUR_FRAMEBK), "fg": wx.SystemSettings.GetColour(wx.SYS_COLOUR_BTNTEXT), "field": wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW), "hover": wx.Colour(212, 212, 212), "secondary_bg": wx.Colour(225, 225, 225), "focus_field": wx.Colour(230, 245, 230)}
-
-        self.palette = dark_colors if self.is_dark else light_colors
-        self.hover_color = self.palette["hover"]
-        self.SetBackgroundColour(self.palette["bg"])
-
-        self.theme = {
-            "palette": self.palette,
-            "accent_color": self.accent_color,
-            "accent_hover_color": self.accent_hover_color,
-            "hover_color": self.hover_color,
-            "danger_color": danger_color,
-        }
-
-    def _apply_theme_to_widgets(self):
-        def set_colors_recursive(widget):
-            if hasattr(widget, "is_custom_themed") and widget.is_custom_themed:
-                widget.UpdateTheme(self.theme)
-                return
-
-            widget.SetBackgroundColour(self.palette["bg"])
-            widget.SetForegroundColour(self.palette["fg"])
-
-            if isinstance(widget, (wx.TextCtrl, wx.Choice, wx.SpinCtrl, wx.ListCtrl)):
-                widget.SetBackgroundColour(self.palette["field"])
-                widget.SetForegroundColour(self.palette["fg"])
-            if isinstance(widget, wx.StaticBox):
-                widget.SetForegroundColour(self.palette["fg"])
-
-            for child in widget.GetChildren():
-                set_colors_recursive(child)
-
-        set_colors_recursive(self.main_panel)
-        self.main_panel.list_panel.verbose_log_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
-        self.main_panel.list_panel.verbose_log_ctrl.text_ctrl.SetForegroundColour(self.palette["fg"])
-        self.main_panel.list_panel.standard_log_list.SetBackgroundColour(self.palette["field"])
-        self.main_panel.list_panel.standard_log_list.SetForegroundColour(self.palette["fg"])
-        self.main_panel.list_panel.local_file_list.SetBackgroundColour(self.palette["field"])
-        self.main_panel.list_panel.local_file_list.SetForegroundColour(self.palette["fg"])
-        self.main_panel.crawler_panel.include_paths_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
-        self.main_panel.crawler_panel.exclude_paths_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
-        self.main_panel.local_panel.local_exclude_ctrl.text_ctrl.SetBackgroundColour(self.palette["field"])
-        self.main_panel.crawler_panel.about_text.SetForegroundColour(self.theme["accent_color"])
-        self.main_panel.crawler_panel.version_text.SetForegroundColour(self.palette["fg"])
-        self.Refresh()
-
-    def _set_title_bar_theme(self):
-        set_title_bar_theme(self, self.is_dark)
-
-    def _setup_timer(self):
-        self.timer = wx.Timer(self)
-        self.Bind(wx.EVT_TIMER, self.on_update_ui_timer, self.timer)
-        self.timer.Start(1000)
-
     def _set_icon(self):
-        try:
-            icon_path = resource_path("assets/icons/ContextPacker.ico")
-            if icon_path.exists():
-                self.SetIcon(wx.Icon(str(icon_path), wx.BITMAP_TYPE_ICO))
-        except Exception as e:
-            print(f"Warning: Failed to set icon: {e}")
+        icon_path = resource_path("assets/icons/ContextPacker.ico")
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
 
-    def on_close(self, event):
-        # Save window size and sash position
-        current_size = self.GetSize()
-        config["window_size"] = [current_size.width, current_size.height]
-        config["sash_position"] = self.main_panel.splitter.GetSashPosition()
+    def closeEvent(self, event):
+        config["window_size"] = [self.width(), self.height()]
+        sash_qba = self.main_panel.splitter.saveState().toBase64()
+        config["sash_state"] = str(sash_qba, "utf-8")  # type: ignore
         save_config(config)
 
-        self.timer.Stop()
-        self.batch_update_timer.Stop()
         self.stop_queue_listener()
 
         if self.local_scan_worker and self.local_scan_worker.is_alive():
@@ -278,163 +171,107 @@ class App(wx.Frame):
                 self.log_verbose("Shutdown requested. Waiting for task to terminate...")
                 if self.cancel_event:
                     self.cancel_event.set()
-                self.main_panel.crawler_panel.download_button.Disable()
-                self.main_panel.package_button.Disable()
-            event.Veto()
+                self._toggle_ui_controls(False)
+            event.ignore()
             return
-        else:
-            self.Destroy()
+        event.accept()
 
     def _toggle_ui_controls(self, enable=True, widget_to_keep_enabled=None):
-        """Enable or disable all input controls, optionally keeping one enabled."""
-        crawler_panel = self.main_panel.crawler_panel
-        crawler_controls = [
-            crawler_panel.start_url_ctrl,
-            crawler_panel.user_agent_combo,
-            crawler_panel.max_pages_ctrl,
-            crawler_panel.crawl_depth_ctrl,
-            crawler_panel.min_pause_ctrl,
-            crawler_panel.max_pause_ctrl,
-            crawler_panel.include_paths_ctrl,
-            crawler_panel.exclude_paths_ctrl,
-            crawler_panel.stay_on_subdomain_check,
-            crawler_panel.ignore_queries_check,
-            crawler_panel.download_button,
-        ]
-
         widgets_to_toggle = [
             self.main_panel.web_crawl_radio,
             self.main_panel.local_dir_radio,
+            self.main_panel.crawler_panel,
             self.main_panel.local_panel,
             self.main_panel.output_filename_ctrl,
             self.main_panel.output_format_choice,
             self.main_panel.package_button,
+            self.main_panel.download_button,
+            self.main_panel.delete_button,
         ]
-
-        widgets_to_toggle.extend(crawler_controls)
-
         for widget in widgets_to_toggle:
-            if widget != widget_to_keep_enabled:
-                if widget:
-                    widget.Enable(enable)
-
+            if widget is not widget_to_keep_enabled:
+                widget.setEnabled(enable)
         if not enable and widget_to_keep_enabled:
-            if widget_to_keep_enabled:
-                widget_to_keep_enabled.Enable(True)
+            widget_to_keep_enabled.setEnabled(True)
 
-    def on_toggle_input_mode(self, event):
+    def on_toggle_input_mode(self):
         self.toggle_input_mode()
 
     def toggle_input_mode(self):
-        is_url_mode = self.main_panel.web_crawl_radio.GetValue()
-        self.main_panel.crawler_panel.Show(is_url_mode)
-        self.main_panel.local_panel.Show(not is_url_mode)
-        self.main_panel.list_panel.toggle_output_view(is_web_mode=is_url_mode)
-        self.main_panel.left_panel.Layout()
+        is_url_mode = self.main_panel.web_crawl_radio.isChecked()
+        self.main_panel.crawler_panel.setVisible(is_url_mode)
+        self.main_panel.local_panel.setVisible(not is_url_mode)
+        self.main_panel.toggle_output_view(is_web_mode=is_url_mode)
         if not is_url_mode:
             self.start_local_file_scan()
         self._update_button_states()
 
-    def on_browse(self, event):
-        with wx.DirDialog(self, "Choose a directory:", style=wx.DD_DEFAULT_STYLE) as dlg:
-            if dlg.ShowModal() == wx.ID_OK:
-                path = dlg.GetPath()
-                self.main_panel.local_panel.local_dir_ctrl.SetValue(path)
-                self.start_local_file_scan()
+    def on_browse(self):
+        path = QFileDialog.getExistingDirectory(self, "Choose a directory:")
+        if path:
+            self.main_panel.local_dir_ctrl.setText(path)
+            self.start_local_file_scan()
         self._update_button_states()
-        wx.CallAfter(self.main_panel.local_panel.local_dir_ctrl.SetFocus)
 
-    def on_local_filters_changed(self, event):
-        self.exclude_update_timer.Stop()
+    def on_local_filters_changed(self):
         self.start_local_file_scan()
-        event.Skip()
 
-    def on_exclude_text_update(self, event):
-        self.exclude_update_timer.StartOnce(500)
-        event.Skip()
+    def on_exclude_text_update(self):
+        self.exclude_update_timer.start()
 
-    def on_download_button_click(self, event):
+    def on_download_button_click(self):
         if self.is_task_running:
-            self.on_stop_process()
+            self.task_handler.stop_current_task()
         else:
             self.task_handler.start_download_task()
 
-    def on_package_button_click(self, event):
+    def on_package_button_click(self):
         if self.is_task_running:
-            self.on_stop_process()
+            self.task_handler.stop_current_task()
         else:
-            file_list_for_count = []
-            if self.main_panel.web_crawl_radio.GetValue():
-                file_list_for_count = self.main_panel.list_panel.scraped_files
-            else:
-                file_list_for_count = self.main_panel.list_panel.local_files
-            self.task_handler.start_package_task(file_list_for_count)
+            file_list = self.main_panel.scraped_files if self.main_panel.web_crawl_radio.isChecked() else self.main_panel.local_files
+            self.task_handler.start_package_task(file_list)
 
-    def on_stop_process(self):
-        self.task_handler.stop_current_task()
-
-    def on_copy_to_clipboard(self, event):
+    def on_copy_to_clipboard(self):
         if not self.final_output_path or not Path(self.final_output_path).exists():
             self.log_verbose("ERROR: No output file found to copy.")
             return
-
         try:
             with open(self.final_output_path, "r", encoding="utf-8") as f:
                 content = f.read()
-
-            if wx.TheClipboard.Open():
-                wx.TheClipboard.SetData(wx.TextDataObject(content))
-                wx.TheClipboard.Close()
-                self.log_verbose(f"Copied {len(content):,} characters to clipboard.")
-                self.main_panel.copy_button.SetSuccessState(True)
-            else:
-                self.log_verbose("ERROR: Could not open clipboard.")
+            QApplication.clipboard().setText(content)
+            self.log_verbose(f"Copied {len(content):,} characters to clipboard.")
         except Exception as e:
             self.log_verbose(f"ERROR: Failed to copy to clipboard: {e}")
 
-    def on_exclude_timer(self, event):
-        """Called when the debounce timer for the exclude list fires."""
-        self.start_local_file_scan()
-
     def _update_timestamp_label(self):
-        if self.main_panel and self.main_panel.output_timestamp_label:
-            timestamp_str = datetime.now().strftime("-%y%m%d-%H%M%S")
-            if self.main_panel.output_timestamp_label.GetLabel() != timestamp_str:
-                self.main_panel.output_timestamp_label.SetLabel(timestamp_str)
-                self.main_panel.right_panel_container.Layout()
-
-    def on_update_ui_timer(self, event):
-        if not (self.worker_thread and self.worker_thread.is_alive()):
-            self._update_timestamp_label()
+        if not self.is_task_running:
+            ts = datetime.now().strftime("-%y%m%d-%H%M%S")
+            self.main_panel.output_timestamp_label.setText(ts)
 
     def _update_button_states(self):
-        is_web_mode = self.main_panel.web_crawl_radio.GetValue()
+        is_web_mode = self.main_panel.web_crawl_radio.isChecked()
         package_ready = False
         copy_ready = bool(self.final_output_path and Path(self.final_output_path).exists())
 
         if is_web_mode:
-            if self.main_panel.list_panel.scraped_files:
-                package_ready = True
+            package_ready = bool(self.main_panel.scraped_files)
         else:
-            if self.main_panel.local_panel.local_dir_ctrl.GetValue():
-                package_ready = True
-
-        self.main_panel.package_button.Enable(package_ready)
-        self.main_panel.copy_button.Enable(copy_ready)
-        self.main_panel.copy_button.SetSuccessState(copy_ready)
+            package_ready = bool(self.main_panel.local_dir_ctrl.text() and Path(self.main_panel.local_dir_ctrl.text()).is_dir())
+        self.main_panel.package_button.setEnabled(package_ready)
+        self.main_panel.copy_button.setEnabled(copy_ready)
 
     def log_verbose(self, message):
-        self.main_panel.list_panel.log_verbose(message)
+        self.main_panel.verbose_log_ctrl.append(message)
 
     def _open_output_folder(self):
         if not self.final_output_path:
             return
         self.log_verbose("Opening output folder...")
-        system = platform.system()
         try:
-            if system == "Windows":
+            if platform.system() == "Windows":
                 subprocess.run(["explorer", "/select,", self.final_output_path], creationflags=0x08000000)
-            elif system == "Darwin":
+            elif platform.system() == "Darwin":
                 subprocess.run(["open", "-R", self.final_output_path], check=True)
             else:
                 subprocess.run(["xdg-open", str(Path(self.final_output_path).parent)], check=True)
@@ -445,7 +282,6 @@ class App(wx.Frame):
         try:
             os.remove(filepath)
             self.log_verbose(f"Deleted file: {filepath}")
-            self._update_button_states()
         except Exception as e:
             self.log_verbose(f"ERROR: Could not delete file {filepath}: {e}")
 
@@ -457,86 +293,50 @@ class App(wx.Frame):
         if self.local_scan_worker and self.local_scan_worker.is_alive():
             if self.local_scan_cancel_event:
                 self.local_scan_cancel_event.set()
-
         self.local_scan_cancel_event = threading.Event()
-
-        input_dir = self.main_panel.local_panel.local_dir_ctrl.GetValue()
+        input_dir = self.main_panel.local_dir_ctrl.text()
         if not input_dir or not Path(input_dir).is_dir():
-            self.main_panel.list_panel.populate_local_file_list([])
+            self.main_panel.populate_local_file_list([])
             return
-
-        wx.BeginBusyCursor()
-        self.main_panel.local_panel.browse_button.Enable(False)
-        self.main_panel.local_panel.use_gitignore_check.Enable(False)
-        self.main_panel.local_panel.dir_level_ctrl.Enable(False)
-        self.main_panel.local_panel.hide_binaries_check.Enable(False)
-
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self.main_panel.local_panel.setEnabled(False)
         self.local_files_to_exclude.clear()
         self.local_depth_excludes.clear()
-        custom_excludes = [p.strip() for p in self.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
-        binary_excludes = BINARY_FILE_PATTERNS if self.main_panel.local_panel.hide_binaries_check.GetValue() else []
-        args = (
-            input_dir,
-            self.main_panel.local_panel.dir_level_ctrl.GetValue(),
-            self.main_panel.local_panel.use_gitignore_check.GetValue(),
-            custom_excludes,
-            binary_excludes,
-            self.local_scan_cancel_event,
-            self.gitignore_cache,
-        )
+        custom_excludes = [p.strip() for p in self.main_panel.local_exclude_ctrl.toPlainText().splitlines() if p.strip()]
+        binary_excludes = BINARY_FILE_PATTERNS if self.main_panel.hide_binaries_check.isChecked() else []
+        args = (input_dir, self.main_panel.dir_level_ctrl.value(), self.main_panel.use_gitignore_check.isChecked(), custom_excludes, binary_excludes, self.local_scan_cancel_event, self.gitignore_cache)
         self.local_scan_worker = threading.Thread(target=self._local_scan_worker, args=args, daemon=True)
         self.local_scan_worker.start()
 
-    def _local_scan_worker(self, input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event, gitignore_cache):
+    def _local_scan_worker(self, *args):
+        cancel_event = args[5]  # The cancel_event is the 6th argument
         try:
-            results = actions.get_local_files(input_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event, gitignore_cache)
+            results = actions.get_local_files(*args)
             if not cancel_event.is_set():
-                wx.CallAfter(self._on_local_scan_complete, results)
-            else:
-                wx.CallAfter(self._on_local_scan_complete, None)
+                self.signals.message.emit({"type": "local_scan_complete", "results": results})
         except Exception as e:
-            wx.CallAfter(self.log_verbose, f"ERROR scanning directory: {e}")
-            wx.CallAfter(self._on_local_scan_complete, None)
-
-    def _on_local_scan_complete(self, results):
-        if results is not None:
-            files, depth_excludes = results
-            self.main_panel.list_panel.populate_local_file_list(files)
-            self.local_depth_excludes = depth_excludes
-
-        if self.main_panel.local_panel:
-            self.main_panel.local_panel.browse_button.Enable(True)
-            self.main_panel.local_panel.use_gitignore_check.Enable(True)
-            self.main_panel.local_panel.dir_level_ctrl.Enable(True)
-            self.main_panel.local_panel.hide_binaries_check.Enable(True)
-        wx.EndBusyCursor()
-        self.local_scan_worker = None
-
-    def populate_local_file_list(self, include_subdirs=None):
-        self.start_local_file_scan()
-
-    def _get_downloads_folder(self):
-        return get_downloads_folder()
+            self.signals.message.emit({"type": "log", "message": f"ERROR scanning directory: {e}"})
+        finally:
+            if cancel_event.is_set():  # If cancelled, still unlock UI
+                self.signals.message.emit({"type": "local_scan_complete", "results": None})
 
     def on_show_about_dialog(self, event):
-        font_path = resource_path("assets/fonts/SourceCodePro-Regular.ttf")
-        with AboutDialog(self, self.theme, self.version, font_path, self.log_verbose) as dlg:
-            dlg.ShowModal()
+        dialog = AboutDialog(self, self.version)
+        dialog.exec()
 
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
-    try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(1)
-    except Exception:
-        pass
+    if platform.system() == "Windows":
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            pass
 
-    # Set up logging to a file in the app data directory
     app_data_dir = get_app_data_dir()
     log_dir = app_data_dir / "Logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "contextpacker-wx.log"
 
-    app = wx.App(redirect=True, filename=str(log_path))
+    app = QApplication(sys.argv)
     frame = App()
-    app.MainLoop()
+    sys.exit(app.exec())

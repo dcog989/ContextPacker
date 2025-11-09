@@ -2,7 +2,6 @@ import threading
 import shutil
 from pathlib import Path
 from datetime import datetime
-import wx
 import logging
 import os
 import fnmatch
@@ -12,7 +11,7 @@ import sys
 
 from .packager import run_repomix
 from .crawler import crawl_website
-from .utils import get_app_data_dir
+from .utils import get_app_data_dir, get_downloads_folder
 
 
 def _create_session_dir():
@@ -29,15 +28,15 @@ def _create_session_dir():
 
 def start_download(app, cancel_event):
     """Initializes and starts the web crawling process in a new thread."""
-    app.main_panel.list_panel.clear_logs()
-    app.main_panel.list_panel.progress_gauge.SetValue(0)
+    app.main_panel.clear_logs()
+    app.main_panel.progress_gauge.setValue(0)
 
     if app.temp_dir and Path(app.temp_dir).is_dir():
         shutil.rmtree(app.temp_dir)
 
     app.temp_dir = _create_session_dir()
     app.log_verbose(f"Created temporary directory: {app.temp_dir}")
-    crawler_config = app.main_panel.crawler_panel.get_crawler_config(app.temp_dir)
+    crawler_config = app.main_panel.get_crawler_config(app.temp_dir)
 
     app.log_verbose("Starting url conversion...")
     app.worker_thread = threading.Thread(target=crawl_website, args=(crawler_config, app.log_queue, cancel_event), daemon=True)
@@ -53,14 +52,14 @@ def _enqueue_output(stream, q):
 
 def start_git_clone(app, cancel_event):
     """Initializes and starts a git clone process in a new thread."""
-    app.main_panel.list_panel.clear_logs()
+    app.main_panel.clear_logs()
 
     if app.temp_dir and Path(app.temp_dir).is_dir():
         shutil.rmtree(app.temp_dir)
 
     app.temp_dir = _create_session_dir()
     app.log_verbose(f"Created temporary directory for git clone: {app.temp_dir}")
-    url = app.main_panel.crawler_panel.start_url_ctrl.GetValue()
+    url = app.main_panel.start_url_ctrl.text()
 
     app.log_verbose(f"Starting git clone for {url}...")
     app.worker_thread = threading.Thread(target=_clone_repo_worker, args=(url, app.temp_dir, app.log_queue, cancel_event), daemon=True)
@@ -129,8 +128,8 @@ def _clone_repo_worker(url, path, log_queue, cancel_event):
 
 def start_packaging(app, cancel_event, file_list=None):
     """Initializes and starts the packaging process in a new thread."""
-    is_web_mode = app.main_panel.web_crawl_radio.GetValue()
-    app.filename_prefix = app.main_panel.output_filename_ctrl.GetValue().strip() or "ContextPacker-package"
+    is_web_mode = app.main_panel.web_crawl_radio.isChecked()
+    app.filename_prefix = app.main_panel.output_filename_ctrl.text().strip() or "ContextPacker-package"
     source_dir = ""
     effective_excludes = []
 
@@ -141,15 +140,15 @@ def start_packaging(app, cancel_event, file_list=None):
         source_dir = app.temp_dir
         effective_excludes = []
     else:
-        source_dir = app.main_panel.local_panel.local_dir_ctrl.GetValue()
-        default_excludes = [p.strip() for p in app.main_panel.local_panel.local_exclude_ctrl.GetValue().splitlines() if p.strip()]
+        source_dir = app.main_panel.local_dir_ctrl.text()
+        default_excludes = [p.strip() for p in app.main_panel.local_exclude_ctrl.toPlainText().splitlines() if p.strip()]
         effective_excludes = list(set(default_excludes) | app.local_files_to_exclude | app.local_depth_excludes)
 
-    extension = app.main_panel.output_format_choice.GetStringSelection()
+    extension = app.main_panel.output_format_choice.currentText()
     style_map = {".md": "markdown", ".txt": "plain", ".xml": "xml"}
     repomix_style = style_map.get(extension, "markdown")
 
-    app.main_panel.list_panel.progress_gauge.SetValue(0)
+    app.main_panel.progress_gauge.setValue(0)
 
     _run_packaging_thread(app, source_dir, app.filename_prefix, effective_excludes, extension, repomix_style, cancel_event, file_list)
 
@@ -177,7 +176,7 @@ def _packaging_worker(source_dir, output_path, log_queue, cancel_event, repomix_
 def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, extension, repomix_style, cancel_event, file_list=None):
     """Configures and runs the repomix packager in a worker thread."""
     timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
-    downloads_path = app._get_downloads_folder()
+    downloads_path = get_downloads_folder()
     output_basename = f"{filename_prefix}-{timestamp}{extension}"
     app.final_output_path = str(Path(downloads_path) / output_basename)
 
@@ -196,12 +195,12 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
             if "Processing file:" in msg:
                 self.processed_count += 1
                 progress_value = int((self.processed_count / self.total_files) * 100) if self.total_files > 0 else 0
-                wx.CallAfter(self.log_queue.put, {"type": "progress", "value": progress_value, "max_value": 100})
+                self.log_queue.put({"type": "progress", "value": progress_value, "max_value": 100})
 
-            wx.CallAfter(self.log_queue.put, {"type": "log", "message": msg})
+            self.log_queue.put({"type": "log", "message": msg})
 
     total_files_for_progress = 0
-    is_web_mode = app.main_panel.web_crawl_radio.GetValue()
+    is_web_mode = app.main_panel.web_crawl_radio.isChecked()
     if file_list is not None:
         if is_web_mode:
             total_files_for_progress = len(file_list)
