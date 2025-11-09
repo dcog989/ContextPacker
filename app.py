@@ -249,21 +249,49 @@ class App(QMainWindow):
 
         self.stop_queue_listener()
 
-        if self.local_scan_worker and self.local_scan_worker.is_alive():
-            if self.local_scan_cancel_event:
-                self.local_scan_cancel_event.set()
-            self.local_scan_worker.join(timeout=1.0)
+        if self._cleanup_workers():
+            event.ignore()
+            return
+
+        event.accept()
+
+    def _cleanup_workers(self):
+        """
+        Sends cancel signal to any running worker threads (download/package and local scan)
+        and attempts to join them.
+
+        Returns:
+            bool: True if any worker is still running and the shutdown is deferred.
+        """
+        is_worker_running = False
 
         if self.worker_thread and self.worker_thread.is_alive():
             if not self.is_shutting_down:
                 self.is_shutting_down = True
-                self.log_verbose("Shutdown requested. Waiting for task to terminate...")
+                self.log_verbose("Shutdown requested. Waiting for main task to terminate...")
                 if self.cancel_event:
                     self.cancel_event.set()
                 self._toggle_ui_controls(False)
-            event.ignore()
-            return
-        event.accept()
+            is_worker_running = True
+
+        if self.local_scan_worker and self.local_scan_worker.is_alive():
+            if not is_worker_running:
+                self.is_shutting_down = True
+                self.log_verbose("Shutdown requested. Waiting for file scanner to terminate...")
+
+            if self.local_scan_cancel_event:
+                self.local_scan_cancel_event.set()
+                # Attempt to join briefly, but don't block main loop indefinitely
+                self.local_scan_worker.join(timeout=0.1)
+
+            if self.local_scan_worker.is_alive():
+                is_worker_running = True
+
+        if is_worker_running:
+            return True
+
+        self.is_shutting_down = False
+        return False
 
     def _toggle_ui_controls(self, enable=True, widget_to_keep_enabled=None):
         widgets_to_toggle = [
@@ -282,6 +310,9 @@ class App(QMainWindow):
                 widget.setEnabled(enable)
         if not enable and widget_to_keep_enabled:
             widget_to_keep_enabled.setEnabled(True)
+
+    def on_toggle_input_mode(self):
+        self.toggle_input_mode()
 
     def toggle_input_mode(self):
         is_url_mode = self.main_panel.web_crawl_radio.isChecked()
