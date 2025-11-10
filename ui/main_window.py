@@ -116,16 +116,15 @@ class MainWindow(QWidget):
         self.log_group = list_log_widgets["log_group"]
         self.output_group = output_widgets["output_group"]
 
+    # In the create_layout method of MainWindow class, replace the splitter initialization:
+
     def create_layout(self):
         main_layout = QHBoxLayout(self)
         self.h_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(self.h_splitter)
 
+        # Load saved horizontal splitter state or set default 50/50 split
         h_sash_state_b64 = config.get("h_sash_state")
-        if h_sash_state_b64:
-            self.h_splitter.restoreState(QByteArray.fromBase64(h_sash_state_b64.encode("utf-8")))
-        else:
-            self.h_splitter.setSizes([1, 1])
 
         # LEFT PANEL (Input + System)
         left_widget = QWidget()
@@ -151,11 +150,9 @@ class MainWindow(QWidget):
 
         # New Vertical Splitter for List/Log (50/50 initial split)
         self.v_splitter = QSplitter(Qt.Orientation.Vertical)
+
+        # Load saved vertical splitter state or set default 50/50 split
         v_sash_state_b64 = config.get("v_sash_state")
-        if v_sash_state_b64:
-            self.v_splitter.restoreState(QByteArray.fromBase64(v_sash_state_b64.encode("utf-8")))
-        else:
-            self.v_splitter.setSizes([1, 1])
 
         list_wrapper = QWidget()
         list_wrapper_layout = QVBoxLayout(list_wrapper)
@@ -167,6 +164,22 @@ class MainWindow(QWidget):
         right_layout.addWidget(self.v_splitter)
         right_layout.addWidget(self.output_group)
         self.h_splitter.addWidget(right_widget)
+
+        # Apply splitter states AFTER all widgets are added
+        if h_sash_state_b64:
+            self.h_splitter.restoreState(QByteArray.fromBase64(h_sash_state_b64.encode("utf-8")))
+        else:
+            # Set equal widths for left and right panels (50/50)
+            # Use actual window width for proper sizing
+            total_width = self.width()
+            self.h_splitter.setSizes([total_width // 2, total_width // 2])
+
+        if v_sash_state_b64:
+            self.v_splitter.restoreState(QByteArray.fromBase64(v_sash_state_b64.encode("utf-8")))
+        else:
+            # Set equal heights for list and log panels (50/50)
+            total_height = self.height()
+            self.v_splitter.setSizes([total_height // 2, total_height // 2])
 
     def create_connections(self):
         self.web_crawl_radio.toggled.connect(self.app.ui_controller.on_toggle_input_mode)

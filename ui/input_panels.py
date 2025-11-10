@@ -66,9 +66,13 @@ class InputPanelFactory:
         panel = QWidget()
         main_layout = QVBoxLayout(panel)
         main_layout.setContentsMargins(10, 15, 10, 10)
+        main_layout.setSpacing(0)  # Remove extra spacing from main layout
         form_layout = QFormLayout()
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        # Fix row spacing to be consistent
+        form_layout.setVerticalSpacing(8)
+        form_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins from form
         widgets = {"crawler_panel": panel}
 
         start_url_widget = QLineEdit()
@@ -149,7 +153,8 @@ class InputPanelFactory:
         button_layout.addWidget(download_button)
 
         main_layout.addLayout(form_layout)
-        main_layout.addStretch()
+        # Keep minimal stretch for button alignment but don't let it expand rows
+        main_layout.addStretch(1)
         main_layout.addLayout(button_layout)
 
         widgets["start_url_widget"] = start_url_widget
@@ -171,9 +176,13 @@ class InputPanelFactory:
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(10, 15, 10, 10)
+        layout.setSpacing(0)  # Remove extra spacing from main layout
         form_layout = QFormLayout()
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        # Fix row spacing to match crawler panel exactly
+        form_layout.setVerticalSpacing(8)
+        form_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins from form
         widgets = {"local_panel": panel}
 
         dir_layout = QHBoxLayout()
@@ -182,21 +191,27 @@ class InputPanelFactory:
         dir_layout.addWidget(local_dir_ctrl)
         dir_layout.addWidget(browse_button)
         dir_layout.setContentsMargins(0, 0, 0, 0)
+        dir_layout.setSpacing(6)
         form_layout.addRow("Input Directory:", dir_layout)
 
-        local_exclude_ctrl = QTextEdit("\n".join(config.get("default_local_excludes", [])))
-        local_exclude_ctrl.setFixedHeight(120)
+        # Fix: Ensure excludes are displayed on separate lines
+        default_excludes = config.get("default_local_excludes", [])
+        local_exclude_ctrl = QTextEdit()
+        local_exclude_ctrl.setPlainText("\n".join(default_excludes))  # Use setPlainText instead of constructor
+        local_exclude_ctrl.setMinimumHeight(80)  # Minimum height, but allow it to grow
+        local_exclude_ctrl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         form_layout.addRow("Excludes:", local_exclude_ctrl)
 
         use_gitignore_check = QCheckBox("Use .gitignore")
         use_gitignore_check.setChecked(True)
         hide_binaries_check = QCheckBox("Hide Images + Binaries")
         hide_binaries_check.setChecked(True)
-        checkbox_layout = QVBoxLayout()
+        checkbox_layout = QHBoxLayout()  # Changed to horizontal layout
         checkbox_layout.addWidget(use_gitignore_check)
         checkbox_layout.addWidget(hide_binaries_check)
+        checkbox_layout.addStretch()
         checkbox_layout.setContentsMargins(0, 0, 0, 0)
-        checkbox_layout.setSpacing(5)
+        checkbox_layout.setSpacing(15)
         form_layout.addRow("", checkbox_layout)
 
         dir_level_ctrl = QSpinBox()
@@ -209,10 +224,12 @@ class InputPanelFactory:
         dir_level_layout.addWidget(dir_level_ctrl)
         dir_level_layout.addStretch()
         dir_level_layout.setContentsMargins(0, 0, 0, 0)
+        dir_level_layout.setSpacing(6)
         form_layout.addRow("Directory Depth:", dir_level_layout)
 
         layout.addLayout(form_layout)
-        layout.addStretch()
+        # Don't add stretch to prevent pushing form layout content apart
+        # layout.addStretch()  # REMOVED
 
         widgets.update(
             {

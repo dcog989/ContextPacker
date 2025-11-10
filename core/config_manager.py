@@ -56,6 +56,8 @@ DEFAULT_CONFIG = {
     "max_build_logs": 21,
     "max_age_logs": 21,
     "window_size": [-1, -1],
+    "h_sash_state": None,  # Add horizontal splitter state
+    "v_sash_state": None,  # Add vertical splitter state
 }
 
 _config = None
