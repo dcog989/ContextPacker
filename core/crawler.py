@@ -18,7 +18,13 @@ import traceback
 from .platform_utils import get_browser_binary_path
 
 
-def sanitize_filename(url):
+def sanitize_filename(url, filename_cache=None):
+    if filename_cache is None:
+        filename_cache = {}
+
+    if url in filename_cache:
+        return filename_cache[url]
+
     parsed_url = urlparse(url)
     path_segment = parsed_url.path
     if not path_segment or path_segment.endswith("/"):
@@ -30,7 +36,9 @@ def sanitize_filename(url):
     if not filename:
         filename = "index"
 
-    return re.sub(r'[<>:"/\\|?*]', "_", filename)
+    sanitized = re.sub(r'[<>:"/\\|?*]', "_", filename)
+    filename_cache[url] = sanitized
+    return sanitized
 
 
 def _normalize_url(url):
@@ -114,7 +122,7 @@ def _initialize_driver(config, log_queue, shutdown_event):
     return None
 
 
-def _process_page(driver, config, current_url):
+def _process_page(driver, config, current_url, filename_cache=None):
     """Fetches, processes, and saves a single web page."""
     driver.get(current_url)
     pause_duration = random.uniform(config.min_pause, config.max_pause)
@@ -134,7 +142,7 @@ def _process_page(driver, config, current_url):
         tag.decompose()
     cleaned_html = str(soup)
 
-    filename = sanitize_filename(final_url) + ".md"
+    filename = sanitize_filename(final_url, filename_cache) + ".md"
     md_content = md(cleaned_html)
 
     output_path = Path(config.output_dir) / filename
@@ -144,8 +152,11 @@ def _process_page(driver, config, current_url):
     return (soup, final_url, output_path, filename), None
 
 
-def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visit, depth):
+def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visit, depth, url_cache=None):
     """Finds, filters, and queues new links from a parsed page."""
+    if url_cache is None:
+        url_cache = {}
+
     start_domain = urlparse(config.start_url).netloc
     links = soup.find_all("a", href=True)
 
@@ -158,9 +169,15 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
             continue
 
         abs_link = urljoin(base_url, href_attr)
-        normalized_abs_link = _normalize_url(abs_link)
 
-        parsed_link_domain = urlparse(abs_link).netloc
+        # Use cache for normalized URLs
+        if abs_link in url_cache:
+            normalized_abs_link, parsed_link_domain = url_cache[abs_link]
+        else:
+            normalized_abs_link = _normalize_url(abs_link)
+            parsed_link_domain = urlparse(abs_link).netloc
+            url_cache[abs_link] = (normalized_abs_link, parsed_link_domain)
+
         if config.stay_on_subdomain and parsed_link_domain != start_domain:
             continue
 
@@ -189,6 +206,10 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
     driver.set_page_load_timeout(15)
     log_queue.put({"type": "log", "message": "Starting web crawl..."})
 
+    # Initialize caches to avoid redundant operations
+    url_cache = {}  # Cache for normalized URLs and parsed domains
+    filename_cache = {}  # Cache for sanitized filenames
+
     urls_to_visit = queue.Queue()
     normalized_start_url = _normalize_url(config.start_url)
     urls_to_visit.put((config.start_url, 0))
@@ -211,7 +232,7 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
                 log_queue.put({"type": "log", "message": f"GET (Depth {depth}): {current_url}"})
 
             try:
-                page_data, error_msg = _process_page(driver, config, current_url)
+                page_data, error_msg = _process_page(driver, config, current_url, filename_cache)
 
                 if cancel_event.is_set():
                     break
@@ -241,7 +262,7 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
                         )
 
                     if depth < config.crawl_depth:
-                        _filter_and_queue_links(soup, final_url, config, processed_urls, urls_to_visit, depth)
+                        _filter_and_queue_links(soup, final_url, config, processed_urls, urls_to_visit, depth, url_cache)
 
             except TimeoutException:
                 if not shutdown_event.is_set():
