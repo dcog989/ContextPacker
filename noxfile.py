@@ -57,12 +57,8 @@ def build_run(session):
     """Build the app in debug mode and run it."""
     session.log("--- Building and Running (Debug) ---")
 
-    # Ensure dependencies are installed
-    session.run("poetry", "install", external=True)
-
-    # Clean and build
-    clean(session)
-    build(session, debug=True)
+    # Build in debug mode, skipping full clean for faster iteration
+    build(session, debug=True, skip_clean=True)
 
     # Find and run the executable
     exe_path = next(DIST_DIR.rglob(f"{APP_NAME}.exe"), None)
@@ -74,7 +70,7 @@ def build_run(session):
 
 
 @nox.session(python=False)
-def build(session, debug=False):
+def build(session, debug=False, skip_clean=False):
     """Build the standalone executable."""
     build_type = "Debug" if debug else "Production"
     session.log(f"--- Building Executable ({build_type}) ---")
@@ -82,7 +78,8 @@ def build(session, debug=False):
     session.log("Installing/updating dependencies with Poetry...")
     session.run("poetry", "install", external=True)
 
-    clean(session)
+    if not skip_clean:
+        clean(session)
 
     original_spec = SPEC_FILE.read_text()
     try:
