@@ -1,12 +1,9 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QGroupBox, QLabel, QLineEdit, QRadioButton, QComboBox, QSpinBox, QTextEdit, QCheckBox, QPushButton, QTableWidget, QFormLayout, QProgressBar, QTableWidgetItem, QHeaderView, QDialog, QSizePolicy
-from PySide6.QtGui import QPixmap, QIcon, QFont, QCursor, QIntValidator
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QGroupBox, QLabel, QLineEdit, QRadioButton, QComboBox, QSpinBox, QTextEdit, QCheckBox, QPushButton, QTableWidget, QProgressBar, QTableWidgetItem
 from PySide6.QtCore import Qt, QByteArray
 
-from core.utils import resource_path
 from core.config import CrawlerConfig
 from core.config_manager import get_config
 from core.constants import MAX_LOG_LINES
-from ui.about_dialog import AboutDialog
 from ui.input_panels import InputPanelFactory
 from ui.output_panels import OutputPanelFactory
 
@@ -169,19 +166,19 @@ class MainWindow(QWidget):
         self.h_splitter.addWidget(right_widget)
 
     def create_connections(self):
-        self.web_crawl_radio.toggled.connect(self.app.on_toggle_input_mode)
-        self.browse_button.clicked.connect(self.app.on_browse)
-        self.download_button.clicked.connect(self.app.on_download_button_click)
-        self.package_button.clicked.connect(self.app.on_package_button_click)
-        self.copy_button.clicked.connect(self.app.on_copy_to_clipboard)
+        self.web_crawl_radio.toggled.connect(self.app.ui_controller.on_toggle_input_mode)
+        self.browse_button.clicked.connect(self.app.ui_controller.on_browse)
+        self.download_button.clicked.connect(self.app.ui_controller.on_download_button_click)
+        self.package_button.clicked.connect(self.app.ui_controller.on_package_button_click)
+        self.copy_button.clicked.connect(self.app.ui_controller.on_copy_to_clipboard)
         self.delete_button.clicked.connect(self.on_delete_selected_item)
-        self.about_logo.mousePressEvent = self.app.on_show_about_dialog
-        self.about_text.mousePressEvent = self.app.on_show_about_dialog
-        self.theme_switch_button.clicked.connect(self.app.on_toggle_theme)
-        self.use_gitignore_check.stateChanged.connect(self.app.on_local_filters_changed)
-        self.hide_binaries_check.stateChanged.connect(self.app.on_local_filters_changed)
-        self.dir_level_ctrl.valueChanged.connect(self.app.on_exclude_text_update)
-        self.local_exclude_ctrl.textChanged.connect(self.app.on_exclude_text_update)
+        self.about_logo.mousePressEvent = self.app.ui_controller.on_show_about_dialog_wrapper
+        self.about_text.mousePressEvent = self.app.ui_controller.on_show_about_dialog_wrapper
+        self.theme_switch_button.clicked.connect(self.app.ui_controller.on_toggle_theme)
+        self.use_gitignore_check.stateChanged.connect(self.app.ui_controller.on_local_filters_changed)
+        self.hide_binaries_check.stateChanged.connect(self.app.ui_controller.on_local_filters_changed)
+        self.dir_level_ctrl.valueChanged.connect(self.app.ui_controller.on_exclude_text_update)
+        self.local_exclude_ctrl.textChanged.connect(self.app.ui_controller.on_exclude_text_update)
         self.standard_log_list.itemSelectionChanged.connect(self.update_delete_button_state)
         self.local_file_list.itemSelectionChanged.connect(self.update_delete_button_state)
 
@@ -363,4 +360,4 @@ class MainWindow(QWidget):
             count = len(self.local_files)
             if count > 0:
                 label = f"{count} item(s)"
-        self.file_count_label.setText(label)
+        self

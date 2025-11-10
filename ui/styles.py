@@ -5,9 +5,6 @@ class AppTheme:
         self.accent_color_lighter = "#3CB371"  # Lighter green from logo
         self.accent_color_darker = "#153E27"  # Darker green
 
-        # Use neutral colors that blend with Qt's default palette for components
-        # We rely on Qt's palette for background/text/base color.
-        # These styles target specific visual elements only.
         self.color_gray_active = "#808080"
         self.color_gray_highlight = "#D0D0D0"
         self.color_gray_light = "#A0A0A0"
@@ -16,8 +13,6 @@ class AppTheme:
         self.group_box_bg = "transparent"  # Rely on Qt's QPalette.Base or QPalette.Window
 
     def get_stylesheet(self):
-        # Removed all specific color assignments for QWidget, QLineEdit, etc.
-        # to allow Qt's palette to take over for light/dark mode.
         return f"""
             QGroupBox {{
                 /* Removing custom background color to rely on system theme */
