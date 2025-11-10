@@ -20,7 +20,7 @@ import core.actions as actions
 from core.version import __version__
 from core.config_manager import get_config, save_config
 from core.task_handler import TaskHandler
-from core.utils import get_app_data_dir, cleanup_old_directories, resource_path
+from core.utils import get_app_data_dir, cleanup_old_directories, resource_path, set_title_bar_theme
 from core.constants import (
     BATCH_UPDATE_INTERVAL_MS,
     EXCLUDE_UPDATE_INTERVAL_MS,
@@ -47,6 +47,9 @@ class App(QMainWindow):
         else:
             self.resize(1600, 950)
         self.setWindowTitle("ContextPacker")
+
+        # Theme Initialization
+        self.current_theme_mode = config.get("theme_mode", "system")
 
         self._setup_app_dirs_and_cleanup()
 
@@ -79,10 +82,10 @@ class App(QMainWindow):
         self._load_custom_font()
 
         # Apply the application theme
-        theme = AppTheme()
-        self.setStyleSheet(theme.get_stylesheet())
+        self._apply_theme()
 
         self._set_icon()
+        self._update_theme_icon()
 
         self.queue_listener_thread = None
         self.scraped_files_batch = []
@@ -111,6 +114,73 @@ class App(QMainWindow):
 
         self.toggle_input_mode()
         self.show()
+
+    def _apply_theme(self):
+        """Applies the current theme mode to the application."""
+        theme_mode = self.current_theme_mode
+        effective_mode = theme_mode
+
+        if theme_mode == "system":
+            effective_mode = "dark"  # Default fallback
+
+        # Attempt to detect system theme on Windows for 'system' mode
+        if platform.system() == "Windows":
+            try:
+                # DwmGetColorizationColor is often used as a proxy for dark mode status
+                # If it fails, we default to the theme_mode setting
+                is_dark_system = ctypes.c_bool()
+                if ctypes.windll.dwmapi.DwmGetColorizationColor(0, ctypes.byref(is_dark_system)) == 0 and is_dark_system:
+                    is_dark_system = True
+                else:
+                    # Fallback on newer windows 10/11: check for dark mode setting
+                    # This check is more complex and less reliable, so we stick to the simpler one
+                    pass
+
+                if theme_mode == "system":
+                    effective_mode = "dark" if is_dark_system else "light"
+            except (AttributeError, OSError):
+                # DwmGetColorizationColor not available, stick to default
+                pass
+
+        theme = AppTheme(effective_mode)
+        self.setStyleSheet(theme.get_stylesheet())
+
+        # Set Windows title bar theme based on effective mode
+        set_title_bar_theme(self, effective_mode == "dark")
+
+    def _update_theme_icon(self):
+        """Updates the icon of the theme switch button based on the current mode."""
+        if not hasattr(self, "main_panel") or not self.main_panel:
+            return
+
+        mode_cycle = ["system", "dark", "light"]
+        current_mode = self.current_theme_mode
+        current_index = mode_cycle.index(current_mode)
+        next_mode = mode_cycle[(current_index + 1) % len(mode_cycle)]
+
+        # Use simple icons for now (ContextPacker-x64, ContextPacker-x128, copy.png)
+        # These are placeholders until dedicated sun/moon/gear icons are added
+        if current_mode == "system":
+            icon_path = resource_path("assets/icons/ContextPacker-x64.png")
+        elif current_mode == "dark":
+            icon_path = resource_path("assets/icons/ContextPacker-x128.png")
+        else:  # light
+            icon_path = resource_path("assets/icons/copy.png")
+
+        tooltip = f"Current: {current_mode.capitalize()} (Click to switch to {next_mode.capitalize()})"
+
+        self.main_panel.theme_switch_button.setIcon(QIcon(str(icon_path)))
+        self.main_panel.theme_switch_button.setToolTip(tooltip)
+
+    def on_toggle_theme(self):
+        """Cycles through the theme modes: System -> Dark -> Light -> System."""
+        mode_cycle = ["system", "dark", "light"]
+        current_index = mode_cycle.index(self.current_theme_mode)
+        next_index = (current_index + 1) % len(mode_cycle)
+        self.current_theme_mode = mode_cycle[next_index]
+        self._apply_theme()
+        self._update_theme_icon()
+        self.log_verbose(f"Theme set to: {self.current_theme_mode.capitalize()}")
 
     def _load_custom_font(self):
         font_path = resource_path("assets/fonts/SourceCodePro-Regular.ttf")
@@ -368,8 +438,11 @@ class App(QMainWindow):
 
     def closeEvent(self, event):
         config["window_size"] = [self.width(), self.height()]
-        sash_qba = self.main_panel.splitter.saveState().toBase64()
-        config["sash_state"] = bytes(sash_qba.data()).decode("utf-8")
+        h_sash_qba = self.main_panel.h_splitter.saveState().toBase64()
+        v_sash_qba = self.main_panel.v_splitter.saveState().toBase64()
+        config["sash_state"] = bytes(h_sash_qba.data()).decode("utf-8")
+        config["v_sash_state"] = bytes(v_sash_qba.data()).decode("utf-8")
+        config["theme_mode"] = self.current_theme_mode
         save_config(config)
 
         # Set shutdown event first to prevent new signal processing
@@ -432,6 +505,7 @@ class App(QMainWindow):
 
     def _toggle_ui_controls(self, enable=True, widget_to_keep_enabled=None):
         widgets_to_toggle = [
+            self.main_panel.system_panel,
             self.main_panel.web_crawl_radio,
             self.main_panel.local_dir_radio,
             self.main_panel.crawler_panel,
