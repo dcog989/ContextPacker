@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import ctypes
+import subprocess
 import platform
 import multiprocessing
 import sys
@@ -254,6 +255,22 @@ class App(QMainWindow):
     def remove_local_file_from_package(self, rel_path):
         self.local_files_to_exclude.add(rel_path)
         self.log_verbose(f"Will exclude from package: {rel_path}")
+
+    def _open_output_folder(self):
+        """Opens the folder containing the final output file."""
+        if self.final_output_path and self.Path(self.final_output_path).exists():
+            output_dir = self.Path(self.final_output_path).parent
+            try:
+                if platform.system() == "Windows":
+                    os.startfile(output_dir)
+                elif platform.system() == "Darwin":  # macOS
+                    subprocess.run(["open", str(output_dir)])
+                else:  # Linux and other Unix-like
+                    subprocess.run(["xdg-open", str(output_dir)])
+            except Exception as e:
+                self.log_verbose(f"ERROR: Could not open output folder: {e}")
+        else:
+            self.log_verbose("ERROR: No output file found to locate.")
 
     # --- Shutdown/Cleanup Methods ---
 

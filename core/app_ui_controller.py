@@ -3,7 +3,6 @@ from PySide6.QtWidgets import QFileDialog, QApplication
 from PySide6.QtCore import Qt
 
 import core.actions as actions
-from core.config_manager import save_config
 from core.types import LocalScanCompleteMessage, message_to_dict, LogMessage
 from core.app_message_handler import MessageHandler
 from ui.about_dialog import AboutDialog
@@ -64,7 +63,7 @@ class UiController:
             self.app.task_handler.start_package_task(file_list)
 
     def on_copy_to_clipboard(self):
-        if not self.app.final_output_path or not self.app.final_output_path.exists():
+        if not self.app.final_output_path or not self.app.Path(self.app.final_output_path).exists():
             self.app.log_verbose("ERROR: No output file found to copy.")
             return
         try:
@@ -89,7 +88,7 @@ class UiController:
     def _update_button_states(self):
         is_web_mode = self.app.main_panel.web_crawl_radio.isChecked()
         package_ready = False
-        copy_ready = bool(self.app.final_output_path and self.app.final_output_path.exists())
+        copy_ready = bool(self.app.final_output_path and self.app.Path(self.app.final_output_path).exists())
 
         if is_web_mode:
             package_ready = bool(self.app.main_panel.scraped_files)

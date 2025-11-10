@@ -1,7 +1,6 @@
 import threading
 import queue
 import concurrent.futures
-from PySide6.QtWidgets import QApplication
 
 
 class WorkerManager:
