@@ -3,15 +3,14 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 import logging
-import os
 import fnmatch
-import subprocess
 import queue
 import sys
 
 from .packager import run_repomix
 from .crawler import crawl_website
 from .utils import get_app_data_dir, get_downloads_folder
+from .error_handling import WorkerErrorHandler, create_process_with_flags, safe_stream_enqueue, validate_tool_availability, create_tool_missing_error
 
 
 def _create_session_dir():
@@ -43,27 +42,6 @@ def start_download(app, cancel_event):
     app.worker_thread.start()
 
 
-def _enqueue_output(stream, q):
-    """Reads lines from a binary stream and puts them into a queue."""
-    try:
-        for line in iter(stream.readline, b""):
-            # Decode binary line to text for logging
-            try:
-                decoded_line = line.decode("utf-8", errors="replace").rstrip()
-                q.put(decoded_line)
-            except (UnicodeDecodeError, AttributeError):
-                # Fallback for problematic binary data
-                q.put(f"[Binary data: {len(line)} bytes]")
-    finally:
-        # Ensure stream is always closed, even if an exception occurs
-        try:
-            stream.close()
-        except Exception:
-            # Log the error but don't let it propagate
-            # The stream might already be closed or invalid
-            pass
-
-
 def start_git_clone(app, cancel_event):
     """Initializes and starts a git clone process in a new thread."""
     app.main_panel.clear_logs()
@@ -82,34 +60,20 @@ def start_git_clone(app, cancel_event):
 
 def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
     """Worker function to perform a git clone and stream output."""
-    if not shutil.which("git"):
-        error_msg = "ERROR: Git is not installed or not found in your system's PATH. Please install Git to use this feature."
-        log_queue.put({"type": "status", "status": "error", "message": error_msg})
+    # Validate git availability using centralized utility
+    if not validate_tool_availability("git"):
+        log_queue.put(create_tool_missing_error("git"))
         return
 
+    # Initialize centralized error handler
+    error_handler = WorkerErrorHandler(log_queue, shutdown_event)
     process = None
     output_queue = None
     reader_thread = None
 
     try:
-        # Optimize Windows process creation to reduce overhead
-        if os.name == "nt":
-            # Combine flags to minimize process creation overhead on Windows
-            creation_flags = (
-                subprocess.CREATE_NO_WINDOW  # 0x08000000 - No console window
-                | 0x02000000  # DETACHED_PROCESS - Run in separate process group
-                | 0x00000008  # CREATE_UNICODE_ENVIRONMENT - Unicode environment
-            )
-        else:
-            creation_flags = 0
-
-        process = subprocess.Popen(
-            ["git", "clone", "--depth", "1", url, path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=False,  # Remove text encoding for binary-heavy repos
-            creationflags=creation_flags,
-        )
+        # Create process with centralized utility
+        process = create_process_with_flags(["git", "clone", "--depth", "1", url, path])
 
         if not process.stdout:
             process.wait()
@@ -117,16 +81,12 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
             return
 
         output_queue = queue.Queue()
-        reader_thread = threading.Thread(target=_enqueue_output, args=(process.stdout, output_queue), daemon=True)
+        reader_thread = threading.Thread(target=safe_stream_enqueue, args=(process.stdout, output_queue, shutdown_event), daemon=True)
         reader_thread.start()
 
         while process.poll() is None:
             if cancel_event.is_set():
-                process.terminate()
-                try:
-                    process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    process.kill()
+                error_handler.handle_process_cleanup(process)
                 log_queue.put({"type": "status", "status": "cancelled", "message": "Git clone cancelled."})
                 return
 
@@ -152,45 +112,19 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
             log_queue.put({"type": "status", "status": "error", "message": "Git clone failed. Check the log for details."})
 
     except Exception as e:
-        log_queue.put({"type": "status", "status": "error", "message": f"An error occurred while cloning the repository: {e}"})
+        error_handler.handle_worker_exception(e, "git clone")
     finally:
-        # Ensure proper cleanup of process resources
+        # Ensure proper cleanup of process resources using centralized utilities
         if process is not None:
             # Wait for reader thread to finish processing the stream
             if reader_thread is not None and reader_thread.is_alive():
                 reader_thread.join(timeout=1.0)
 
-            # Ensure the process is properly terminated
-            if process.poll() is None:
-                try:
-                    process.terminate()
-                    process.wait(timeout=2)
-                except (subprocess.TimeoutExpired, OSError):
-                    try:
-                        process.kill()
-                        process.wait(timeout=1)
-                    except (subprocess.TimeoutExpired, OSError):
-                        # Process couldn't be killed, but we've done our best
-                        pass
+            # Use centralized process cleanup
+            error_handler.handle_process_cleanup(process)
 
-            # Close any remaining file descriptors
-            try:
-                if process.stdout:
-                    process.stdout.close()
-            except Exception:
-                pass  # Stream might already be closed
-
-            try:
-                if process.stderr:
-                    process.stderr.close()
-            except Exception:
-                pass  # Stream might already be closed
-
-            try:
-                if process.stdin:
-                    process.stdin.close()
-            except Exception:
-                pass  # Stream might already be closed
+            # Use centralized stream cleanup
+            error_handler.handle_stream_cleanup(process)
 
 
 def start_packaging(app, cancel_event, file_list=None):

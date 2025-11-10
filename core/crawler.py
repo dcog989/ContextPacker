@@ -1,8 +1,4 @@
-from selenium import webdriver
-from selenium.common.exceptions import WebDriverException, TimeoutException
-from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.edge.service import Service as EdgeService
-from selenium.webdriver.firefox.service import Service as FirefoxService
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from bs4 import BeautifulSoup, Tag
 from urllib.parse import urlparse, urljoin
 from pathlib import Path
@@ -11,11 +7,8 @@ import time
 import random
 import re
 from markdownify import markdownify as md
-import platform
-import subprocess
-import traceback
 
-from .platform_utils import get_browser_binary_path
+from .browser_utils import initialize_driver, cleanup_driver
 
 
 def sanitize_filename(url, filename_cache=None):
@@ -57,69 +50,6 @@ def _url_matches_any_pattern(url, patterns):
         elif pattern in parsed_url_path:
             return True
     return False
-
-
-def _initialize_driver(config, log_queue, shutdown_event):
-    """Initializes and returns a Selenium WebDriver instance."""
-    if not shutdown_event.is_set():
-        log_queue.put({"type": "log", "message": "Searching for a compatible web browser..."})
-
-    chrome_options = webdriver.ChromeOptions()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--log-level=3")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-logging", "enable-automation"])
-    chrome_options.page_load_strategy = "eager"
-    chrome_options.add_argument(f"user-agent={config.user_agent}")
-    chrome_binary_path = get_browser_binary_path("chrome")
-    if chrome_binary_path:
-        chrome_options.binary_location = chrome_binary_path
-
-    edge_options = webdriver.EdgeOptions()
-    edge_options.add_argument("--headless")
-    edge_options.add_argument("--log-level=3")
-    edge_options.add_experimental_option("excludeSwitches", ["enable-logging", "enable-automation"])
-    edge_options.page_load_strategy = "eager"
-    edge_options.add_argument(f"user-agent={config.user_agent}")
-    edge_binary_path = get_browser_binary_path("msedge")
-    if edge_binary_path:
-        edge_options.binary_location = edge_binary_path
-
-    firefox_options = webdriver.FirefoxOptions()
-    firefox_options.add_argument("--headless")
-    firefox_options.add_argument("--log-level=3")
-    firefox_options.page_load_strategy = "eager"
-    firefox_options.add_argument(f"user-agent={config.user_agent}")
-    firefox_binary_path = get_browser_binary_path("firefox")
-    if firefox_binary_path:
-        firefox_options.binary_location = firefox_binary_path
-
-    creation_flags = 0
-    if platform.system() == "Windows":
-        creation_flags = subprocess.CREATE_NO_WINDOW
-
-    browsers_to_try = [
-        ("msedge", webdriver.Edge, edge_options, EdgeService),
-        ("chrome", webdriver.Chrome, chrome_options, ChromeService),
-        ("firefox", webdriver.Firefox, firefox_options, FirefoxService),
-    ]
-
-    for name_key, driver_class, options, service_class in browsers_to_try:
-        try:
-            if not shutdown_event.is_set():
-                log_queue.put({"type": "log", "message": f"  -> Attempting to initialize {name_key}..."})
-            service = service_class(creationflags=creation_flags)
-            driver = driver_class(service=service, options=options)
-            if not shutdown_event.is_set():
-                log_queue.put({"type": "log", "message": f"✔ Success: Using {name_key} for web crawling."})
-            return driver
-        except WebDriverException as e:
-            if not shutdown_event.is_set():
-                log_queue.put({"type": "log", "message": f"  -> {name_key} not found or failed to start. Details: {e.msg}"})
-        except Exception as e:
-            if not shutdown_event.is_set():
-                tb_str = traceback.format_exc()
-                log_queue.put({"type": "log", "message": f"  -> An unexpected error occurred with {name_key}: {e}\n{tb_str}"})
-    return None
 
 
 def _process_page(driver, config, current_url, filename_cache=None):
@@ -215,7 +145,7 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
     Crawls a website based on provided configuration.
     This function orchestrates crawling process.
     """
-    driver = _initialize_driver(config, log_queue, shutdown_event)
+    driver = initialize_driver(config, log_queue, shutdown_event)
     if not driver:
         error_msg = "ERROR: Could not find a compatible web browser or its driver.\nPlease ensure a supported browser (Edge, Chrome, or Firefox) is installed."
         log_queue.put({"type": "status", "status": "error", "message": error_msg})
@@ -298,24 +228,9 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
 
     finally:
         if driver:
-            _cleanup_driver(driver, timeout=10, log_queue=log_queue)
+            cleanup_driver(driver, timeout=10, log_queue=log_queue)
 
     status_key = "cancelled" if cancel_event.is_set() else "source_complete"
     message = "Process cancelled by user." if cancel_event.is_set() else f"\nWeb scrape finished. Saved {pages_saved} pages."
     if not shutdown_event.is_set():
         log_queue.put({"type": "status", "status": status_key, "message": message})
-
-
-def _cleanup_driver(driver, timeout=10, log_queue=None):
-    """Clean up driver with timeout and error handling."""
-    if log_queue:
-        log_queue.put({"type": "log", "message": "Cleaning up browser driver..."})
-
-    try:
-        # Try graceful quit first
-        driver.quit()
-        if log_queue:
-            log_queue.put({"type": "log", "message": "Browser driver cleaned up successfully."})
-    except Exception as e:
-        if log_queue:
-            log_queue.put({"type": "log", "message": f"Warning during driver cleanup: {e}"})
