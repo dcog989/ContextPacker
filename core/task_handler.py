@@ -27,7 +27,8 @@ class TaskHandler:
                 return
 
             self.app.cancel_event = threading.Event()
-            actions.start_git_clone(self.app, self.app.cancel_event)
+            # Submit git clone to executor
+            self.app.worker_future = self.app.executor.submit(actions._clone_repo_worker, start_url, self.app.temp_dir, self.app.log_queue, self.app.cancel_event, self.app.shutdown_event)
             return
 
         try:
@@ -41,7 +42,9 @@ class TaskHandler:
 
         self.app.cancel_event = threading.Event()
         self.app.start_queue_listener()
-        actions.start_download(self.app, self.app.cancel_event)
+        # Submit download task to executor
+        crawler_config = self.app.main_panel.get_crawler_config(self.app.temp_dir)
+        self.app.worker_future = self.app.executor.submit(actions.crawl_website, crawler_config, self.app.log_queue, self.app.cancel_event, self.app.shutdown_event)
 
     def start_package_task(self, file_list_for_count):
         msg = UITaskMessage(task=TaskType.PACKAGE)
@@ -59,7 +62,8 @@ class TaskHandler:
 
         self.app.cancel_event = threading.Event()
         self.app.start_queue_listener()
-        actions.start_packaging(self.app, self.app.cancel_event, file_list_for_count)
+        # Submit packaging task to executor
+        self.app.worker_future = self.app.executor.submit(actions.start_packaging, self.app, self.app.cancel_event, file_list_for_count)
 
     def stop_current_task(self):
         if self.app.cancel_event:

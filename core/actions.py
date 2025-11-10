@@ -27,7 +27,7 @@ def _create_session_dir():
 
 
 def start_download(app, cancel_event):
-    """Initializes and starts the web crawling process in a new thread."""
+    """Initializes the temporary directory and is called before the web crawling process."""
     app.main_panel.clear_logs()
     app.main_panel.progress_gauge.setValue(0)
 
@@ -36,15 +36,17 @@ def start_download(app, cancel_event):
 
     app.temp_dir = _create_session_dir()
     app.log_verbose(f"Created temporary directory: {app.temp_dir}")
-    crawler_config = app.main_panel.get_crawler_config(app.temp_dir)
-
     app.log_verbose("Starting url conversion...")
-    app.worker_thread = threading.Thread(target=crawl_website, args=(crawler_config, app.log_queue, cancel_event, app.shutdown_event), daemon=True)
-    app.worker_thread.start()
+
+    # The actual crawl_website call is submitted by task_handler.py to the executor.
 
 
-def start_git_clone(app, cancel_event):
-    """Initializes and starts a git clone process in a new thread."""
+def start_git_clone(app, url, cancel_event):
+    """Initializes the temporary directory for git clone.
+
+    Returns:
+        str: The path to the created temporary directory.
+    """
     app.main_panel.clear_logs()
 
     if app.temp_dir and Path(app.temp_dir).is_dir():
@@ -52,11 +54,8 @@ def start_git_clone(app, cancel_event):
 
     app.temp_dir = _create_session_dir()
     app.log_verbose(f"Created temporary directory for git clone: {app.temp_dir}")
-    url = app.main_panel.start_url_widget.text()
-
     app.log_verbose(f"Starting git clone for {url}...")
-    app.worker_thread = threading.Thread(target=_clone_repo_worker, args=(url, app.temp_dir, app.log_queue, cancel_event, app.shutdown_event), daemon=True)
-    app.worker_thread.start()
+    return app.temp_dir
 
 
 def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
@@ -241,8 +240,7 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
         exclude_paths,
         progress_handler,
     )
-    app.worker_thread = threading.Thread(target=_packaging_worker, args=args, daemon=True)
-    app.worker_thread.start()
+    app.worker_future = app.executor.submit(_packaging_worker, *args)
 
 
 def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event=None, gitignore_cache=None):

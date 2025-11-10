@@ -8,6 +8,7 @@ import threading
 import queue
 import multiprocessing
 import sys
+import concurrent.futures
 
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog
 from PySide6.QtCore import QObject, Signal, QTimer, Qt
@@ -55,14 +56,18 @@ class App(QMainWindow):
         self.final_output_path = None
         self.log_queue = queue.Queue()
         self.cancel_event = None
-        self.worker_thread = None
+        self.worker_future = None  # Replaces self.worker_thread
         self.queue_listener_shutdown = threading.Event()
         self.shutdown_event = threading.Event()
         self.is_task_running = False
         self.local_files_to_exclude = set()
         self.local_depth_excludes = set()
         self.gitignore_cache = {}
-        self.local_scan_worker = None
+
+        # Use ThreadPoolExecutor to manage all worker tasks
+        # Max workers set low as most tasks are singular (download, package)
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        self.local_scan_future = None
         self.local_scan_cancel_event = None
 
         self.signals = WorkerSignals()
@@ -251,7 +256,7 @@ class App(QMainWindow):
         elif isinstance(typed_msg, LocalScanCompleteMessage):
             QApplication.restoreOverrideCursor()
             self.main_panel.local_panel.setEnabled(True)
-            self.local_scan_worker = None
+            self.local_scan_future = None
             if typed_msg.results is not None:
                 files, depth_excludes = typed_msg.results
                 self.main_panel.populate_local_file_list(files)
@@ -301,10 +306,10 @@ class App(QMainWindow):
             QApplication.restoreOverrideCursor()
             self.is_task_running = False
 
-        self.stop_queue_listener(timeout=2.0)  # <-- CHANGED (shorter timeout for UI responsiveness)
+        self.stop_queue_listener(timeout=2.0)
         self._toggle_ui_controls(True)
 
-        self.worker_thread = None
+        self.worker_future = None
         self.cancel_event = None
 
         if self.shutdown_event.is_set():
@@ -351,11 +356,12 @@ class App(QMainWindow):
     def closeEvent(self, event):
         config["window_size"] = [self.width(), self.height()]
         sash_qba = self.main_panel.splitter.saveState().toBase64()
-        config["sash_state"] = str(sash_qba, "utf-8")  # type: ignore
+        config["sash_state"] = bytes(sash_qba.data()).decode("utf-8")
         save_config(config)
 
         # Set shutdown event first to prevent new signal processing
         self.shutdown_event.set()
+        self.executor.shutdown(wait=False)  # Shutdown executor non-blocking
 
         # Disconnect signals to prevent race conditions during shutdown
         try:
@@ -375,15 +381,15 @@ class App(QMainWindow):
 
     def _cleanup_workers(self):
         """
-        Sends cancel signal to any running worker threads (download/package and local scan)
-        and attempts to join them.
+        Sends cancel signal to any running worker tasks (download/package and local scan)
+        and attempts to check their status.
 
         Returns:
             bool: True if any worker is still running and the shutdown is deferred.
         """
         is_worker_running = False
 
-        if self.worker_thread and self.worker_thread.is_alive():
+        if self.worker_future and not self.worker_future.done():
             if not self.shutdown_event.is_set():
                 self.shutdown_event.set()
                 self.log_verbose("Shutdown requested. Waiting for main task to terminate...")
@@ -392,18 +398,18 @@ class App(QMainWindow):
                 self._toggle_ui_controls(False)
             is_worker_running = True
 
-        if self.local_scan_worker and self.local_scan_worker.is_alive():
+        if self.local_scan_future and not self.local_scan_future.done():
             if not self.shutdown_event.is_set():
                 self.shutdown_event.set()
                 self.log_verbose("Shutdown requested. Waiting for file scanner to terminate...")
 
             if self.local_scan_cancel_event:
                 self.local_scan_cancel_event.set()
-                # Attempt to join briefly, but don't block main loop indefinitely
-                self.local_scan_worker.join(timeout=0.1)
 
-            if self.local_scan_worker.is_alive():
-                is_worker_running = True
+            # Since ThreadPoolExecutor threads cannot be forcefully terminated,
+            # we rely on the internal logic of the task (get_local_files) to check the cancel event.
+            # We don't join here as it will block the main thread.
+            is_worker_running = True
 
         if is_worker_running:
             return True
@@ -532,7 +538,7 @@ class App(QMainWindow):
         self.log_verbose(f"Will exclude from package: {rel_path}")
 
     def start_local_file_scan(self):
-        if self.local_scan_worker and self.local_scan_worker.is_alive():
+        if self.local_scan_future and not self.local_scan_future.done():
             if self.local_scan_cancel_event:
                 self.local_scan_cancel_event.set()
         self.local_scan_cancel_event = threading.Event()
@@ -547,8 +553,9 @@ class App(QMainWindow):
         custom_excludes = [p.strip() for p in self.main_panel.local_exclude_ctrl.toPlainText().splitlines() if p.strip()]
         binary_excludes = BINARY_FILE_PATTERNS if self.main_panel.hide_binaries_check.isChecked() else []
         args = (input_dir, self.main_panel.dir_level_ctrl.value(), self.main_panel.use_gitignore_check.isChecked(), custom_excludes, binary_excludes, self.local_scan_cancel_event, self.gitignore_cache)
-        self.local_scan_worker = threading.Thread(target=self._local_scan_worker, args=args, daemon=True)
-        self.local_scan_worker.start()
+
+        # Submit task to ThreadPoolExecutor
+        self.local_scan_future = self.executor.submit(self._local_scan_worker, *args)
 
     def _local_scan_worker(self, *args):
         cancel_event = args[5]  # The cancel_event is the 6th argument
