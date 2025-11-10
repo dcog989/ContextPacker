@@ -7,7 +7,6 @@ import fnmatch
 import queue
 
 from .packager import run_repomix
-from .crawler import crawl_website
 from .utils import get_app_data_dir, get_downloads_folder
 from .error_handling import WorkerErrorHandler, create_process_with_flags, safe_stream_enqueue, validate_tool_availability, create_tool_missing_error
 from .constants import UNLIMITED_DEPTH_VALUE, UNLIMITED_DEPTH_REPLACEMENT, LARGE_DIRECTORY_THRESHOLD

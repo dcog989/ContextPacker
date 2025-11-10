@@ -3,6 +3,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QMessageBox
 
 import core.actions as actions
+from core.crawler import crawl_website
 from .types import UITaskMessage, UITaskStopMessage, UITaskStoppingMessage, LogMessage, GitCloneDoneMessage, TaskType, message_to_dict
 
 
@@ -27,8 +28,9 @@ class TaskHandler:
                 return
 
             self.app.cancel_event = threading.Event()
-            # Submit git clone to executor
-            self.app.worker_future = self.app.executor.submit(actions._clone_repo_worker, start_url, self.app.temp_dir, self.app.log_queue, self.app.cancel_event, self.app.shutdown_event)
+            # The git clone is a blocking process, so we submit the worker directly
+            path = actions.start_git_clone(self.app, start_url, self.app.cancel_event)
+            self.app.worker_future = self.app.executor.submit(actions._clone_repo_worker, start_url, path, self.app.log_queue, self.app.cancel_event, self.app.shutdown_event)
             return
 
         try:
@@ -42,9 +44,13 @@ class TaskHandler:
 
         self.app.cancel_event = threading.Event()
         self.app.start_queue_listener()
-        # Submit download task to executor
+
+        # 1. Prepare/Cleanup temp directory
+        actions.start_download(self.app, self.app.cancel_event)
+        # 2. Get the config using the newly set temp_dir
         crawler_config = self.app.main_panel.get_crawler_config(self.app.temp_dir)
-        self.app.worker_future = self.app.executor.submit(actions.crawl_website, crawler_config, self.app.log_queue, self.app.cancel_event, self.app.shutdown_event)
+        # 3. Submit the crawling logic to the executor
+        self.app.worker_future = self.app.executor.submit(crawl_website, crawler_config, self.app.log_queue, self.app.cancel_event, self.app.shutdown_event)
 
     def start_package_task(self, file_list_for_count):
         msg = UITaskMessage(task=TaskType.PACKAGE)
