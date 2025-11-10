@@ -76,8 +76,8 @@ class App(QMainWindow):
         self.discovered_count_batch = 0
         self.batch_update_timer = QTimer(self)
         self.batch_update_timer.setInterval(250)
-        self.batch_update_timer.setSingleShot(True)
         self.batch_update_timer.timeout.connect(self.on_batch_update_timer)
+        self.batch_update_timer.start()  # Start persistent timer immediately
 
         # UI update batching counters
         self.ui_update_counter = 0
@@ -204,8 +204,6 @@ class App(QMainWindow):
             self.log_verbose(msg_obj.get("message", ""))
         elif msg_type == "file_saved":
             self.scraped_files_batch.append(msg_obj)
-            if not self.batch_update_timer.isActive():
-                self.batch_update_timer.start()
 
             # Batch UI updates to reduce frame drops
             self.ui_update_counter += 1
