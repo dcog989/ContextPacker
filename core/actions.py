@@ -44,10 +44,16 @@ def start_download(app, cancel_event):
 
 
 def _enqueue_output(stream, q):
-    """Reads lines from a stream and puts them into a queue."""
+    """Reads lines from a binary stream and puts them into a queue."""
     try:
-        for line in iter(stream.readline, ""):
-            q.put(line)
+        for line in iter(stream.readline, b""):
+            # Decode binary line to text for logging
+            try:
+                decoded_line = line.decode("utf-8", errors="replace").rstrip()
+                q.put(decoded_line)
+            except (UnicodeDecodeError, AttributeError):
+                # Fallback for problematic binary data
+                q.put(f"[Binary data: {len(line)} bytes]")
     finally:
         # Ensure stream is always closed, even if an exception occurs
         try:
@@ -86,13 +92,23 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
     reader_thread = None
 
     try:
+        # Optimize Windows process creation to reduce overhead
+        if os.name == "nt":
+            # Combine flags to minimize process creation overhead on Windows
+            creation_flags = (
+                subprocess.CREATE_NO_WINDOW  # 0x08000000 - No console window
+                | 0x02000000  # DETACHED_PROCESS - Run in separate process group
+                | 0x00000008  # CREATE_UNICODE_ENVIRONMENT - Unicode environment
+            )
+        else:
+            creation_flags = 0
+
         process = subprocess.Popen(
             ["git", "clone", "--depth", "1", url, path],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            text=False,  # Remove text encoding for binary-heavy repos
+            creationflags=creation_flags,
         )
 
         if not process.stdout:
