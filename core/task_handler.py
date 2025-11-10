@@ -1,3 +1,4 @@
+import os
 import threading
 from pathlib import Path
 from PySide6.QtWidgets import QMessageBox
@@ -15,7 +16,27 @@ class TaskHandler:
         msg = UITaskMessage(task=TaskType.DOWNLOAD)
         self.app.signals.message.emit(message_to_dict(msg))
 
-        start_url = self.app.main_panel.start_url_widget.text()
+        start_url = self.app.main_panel.start_url_widget.text().strip()
+
+        # Security: Validate URL input to prevent injection attacks
+        import re
+
+        if not start_url:
+            msg_text = "Start URL is required."
+            QMessageBox.critical(self.app, "Input Error", msg_text)
+            stop_msg = UITaskStopMessage(was_cancelled=False)
+            self.app.signals.message.emit(message_to_dict(stop_msg))
+            return
+
+        # Basic URL validation - allow http, https, and common git protocols
+        url_pattern = r"^(https?://|git@|ssh://|file://)[a-zA-Z0-9._/-]+(:[0-9]+)?(/.*)?$"
+        if not re.match(url_pattern, start_url):
+            msg_text = "Invalid URL format. Please use a valid HTTP, HTTPS, or Git URL."
+            QMessageBox.critical(self.app, "Input Error", msg_text)
+            stop_msg = UITaskStopMessage(was_cancelled=False)
+            self.app.signals.message.emit(message_to_dict(stop_msg))
+            return
+
         git_pattern = r"(\.git$)|(github\.com)|(gitlab\.com)|(bitbucket\.org)"
         if __import__("re").search(git_pattern, start_url):
             try:
@@ -58,9 +79,46 @@ class TaskHandler:
 
         is_web_mode = self.app.main_panel.web_crawl_radio.isChecked()
         if not is_web_mode:
-            source_dir = self.app.main_panel.local_dir_ctrl.text()
-            if not source_dir or not Path(source_dir).is_dir():
-                msg_text = f"The specified input directory is not valid:\n{source_dir}"
+            source_dir = self.app.main_panel.local_dir_ctrl.text().strip()
+
+            # Security: Validate directory path to prevent traversal attacks
+            if not source_dir:
+                msg_text = "Input directory is required."
+                QMessageBox.critical(self.app, "Input Error", msg_text)
+                stop_msg = UITaskStopMessage(was_cancelled=False)
+                self.app.signals.message.emit(message_to_dict(stop_msg))
+                return
+
+            try:
+                # Resolve path and check for suspicious patterns
+                resolved_path = Path(source_dir).resolve()
+
+                # Check for path traversal attempts
+                if ".." in source_dir or source_dir.startswith("~"):
+                    msg_text = "Invalid directory path. Absolute paths and parent directory references are not allowed."
+                    QMessageBox.critical(self.app, "Input Error", msg_text)
+                    stop_msg = UITaskStopMessage(was_cancelled=False)
+                    self.app.signals.message.emit(message_to_dict(stop_msg))
+                    return
+
+                # Verify directory exists and is accessible
+                if not resolved_path.is_dir():
+                    msg_text = f"The specified input directory is not valid:\n{source_dir}"
+                    QMessageBox.critical(self.app, "Input Error", msg_text)
+                    stop_msg = UITaskStopMessage(was_cancelled=False)
+                    self.app.signals.message.emit(message_to_dict(stop_msg))
+                    return
+
+                # Additional security: ensure we can read the directory
+                if not os.access(resolved_path, os.R_OK):
+                    msg_text = f"The specified directory is not readable:\n{source_dir}"
+                    QMessageBox.critical(self.app, "Input Error", msg_text)
+                    stop_msg = UITaskStopMessage(was_cancelled=False)
+                    self.app.signals.message.emit(message_to_dict(stop_msg))
+                    return
+
+            except (OSError, ValueError) as e:
+                msg_text = f"Invalid directory path specified:\n{str(e)}"
                 QMessageBox.critical(self.app, "Input Error", msg_text)
                 stop_msg = UITaskStopMessage(was_cancelled=False)
                 self.app.signals.message.emit(message_to_dict(stop_msg))

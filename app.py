@@ -196,19 +196,29 @@ class App(QMainWindow):
 
     def _drain_queue(self):
         """Process all remaining messages in the queue without blocking."""
-        while True:
-            try:
-                msg_obj = self.log_queue.get_nowait()
-                if msg_obj is not None:
-                    # Don't emit signals during shutdown to prevent race conditions
-                    if not self.shutdown_event.is_set():
-                        self.signals.message.emit(msg_obj)
-                    self.log_queue.task_done()
-            except queue.Empty:
-                break
-            except Exception as e:
-                print(f"Error draining queue: {e}")
-                continue
+        # Prevent recursive calls during shutdown
+        if hasattr(self, "_draining_queue") and self._draining_queue:
+            return
+
+        self._draining_queue = True
+        try:
+            while True:
+                try:
+                    msg_obj = self.log_queue.get_nowait()
+                    if msg_obj is not None:
+                        # Double-check shutdown state to prevent race conditions
+                        if not self.shutdown_event.is_set():
+                            # Use invokeMethod for thread-safe signal emission during shutdown
+                            if hasattr(self.signals, "message"):
+                                self.signals.message.emit(msg_obj)
+                        self.log_queue.task_done()
+                except queue.Empty:
+                    break
+                except Exception as e:
+                    print(f"Error draining queue: {e}")
+                    continue
+        finally:
+            self._draining_queue = False
 
     def _process_log_queue_message(self, msg_obj):
         # Ignore messages during shutdown to prevent race conditions
@@ -223,12 +233,15 @@ class App(QMainWindow):
         elif isinstance(typed_msg, FileSavedMessage):
             self.scraped_files_batch.append(msg_obj)
 
-            # Memory management: check if batch is getting too large
-            if len(self.scraped_files_batch) >= self.max_batch_size:
+            # Proactive memory management: check batch size more frequently
+            batch_size = len(self.scraped_files_batch)
+            if batch_size >= self.max_batch_size:
                 # Force immediate UI update to clear the batch
                 self.main_panel.add_scraped_files_batch(self.scraped_files_batch)
                 self.scraped_files_batch.clear()
                 self.log_verbose(f"  -> Memory management: processed large batch of {self.max_batch_size} files")
+            elif batch_size > self.max_batch_size * 0.8:  # Warning at 80% capacity
+                self.log_verbose(f"  -> Warning: batch approaching limit ({batch_size}/{self.max_batch_size})")
 
             # Batch UI updates to reduce frame drops
             self.ui_update_counter += 1

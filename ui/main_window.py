@@ -412,14 +412,32 @@ class MainWindow(QWidget):
         self.update_file_count()
 
     def add_scraped_files_batch(self, files_data):
+        """Optimized batch file addition to prevent UI blocking."""
+        if not files_data:
+            return
+
+        # Disable sorting temporarily for better performance
         self.standard_log_list.setSortingEnabled(False)
-        for file_data in files_data:
-            self.scraped_files.append(file_data)
-            row = self.standard_log_list.rowCount()
-            self.standard_log_list.insertRow(row)
-            self.standard_log_list.setItem(row, 0, QTableWidgetItem(file_data["url"]))
-            self.standard_log_list.setItem(row, 1, QTableWidgetItem(file_data["filename"]))
-        self.standard_log_list.setSortingEnabled(True)
+
+        # Block signals during bulk operations to prevent excessive updates
+        self.standard_log_list.blockSignals(True)
+
+        try:
+            # Pre-allocate rows for better performance
+            start_row = self.standard_log_list.rowCount()
+            self.standard_log_list.setRowCount(start_row + len(files_data))
+
+            # Bulk add files
+            for i, file_data in enumerate(files_data):
+                row = start_row + i
+                self.scraped_files.append(file_data)
+                self.standard_log_list.setItem(row, 0, QTableWidgetItem(file_data["url"]))
+                self.standard_log_list.setItem(row, 1, QTableWidgetItem(file_data["filename"]))
+        finally:
+            # Re-enable signals and sorting
+            self.standard_log_list.blockSignals(False)
+            self.standard_log_list.setSortingEnabled(True)
+
         self.update_file_count()
 
     def populate_local_file_list(self, files):

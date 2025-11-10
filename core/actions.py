@@ -64,6 +64,29 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
         log_queue.put(create_tool_missing_error("git"))
         return
 
+    # Security: Validate and sanitize git URL
+    import re
+
+    # Allow common git URL patterns but prevent command injection
+    git_url_pattern = r"^(https?://|git@|ssh://|file://)[a-zA-Z0-9._/-]+(:[0-9]+)?(/.*)?$"
+    if not re.match(git_url_pattern, url.strip()):
+        error_msg = StatusMessage(status=StatusType.ERROR, message="Invalid or potentially malicious git URL provided.")
+        log_queue.put(message_to_dict(error_msg))
+        return
+
+    # Security: Validate path to prevent directory traversal
+    try:
+        resolved_path = Path(path).resolve()
+        # Ensure path is within expected temp directory structure
+        if not any(parent.name == "Cache" for parent in resolved_path.parents):
+            error_msg = StatusMessage(status=StatusType.ERROR, message="Invalid clone path detected.")
+            log_queue.put(message_to_dict(error_msg))
+            return
+    except Exception:
+        error_msg = StatusMessage(status=StatusType.ERROR, message="Invalid path provided.")
+        log_queue.put(message_to_dict(error_msg))
+        return
+
     # Initialize centralized error handler
     error_handler = WorkerErrorHandler(log_queue, shutdown_event)
     process = None
@@ -337,64 +360,98 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
     # Use iterative approach for better control and early termination
     def scan_directory_iterative(start_path, max_depth_limit):
         """Iteratively scan directory with depth control and early termination."""
-        # Stack holds tuples: (current_path, relative_path, current_depth)
-        stack = [(start_path, Path("."), 0)]
+        # Use deque for better performance with large directories
+        from collections import deque
 
-        while stack:
+        queue = deque([(start_path, Path("."), 0)])
+
+        # Performance counters for monitoring
+        processed_dirs = 0
+        processed_files = 0
+        max_items_per_batch = 1000  # Process in batches to prevent memory spikes
+
+        while queue:
             if cancel_event and cancel_event.is_set():
                 return
 
-            current_path, rel_path, current_depth = stack.pop()
+            # Process in batches to control memory usage
+            batch_size = min(len(queue), max_items_per_batch)
+            for _ in range(batch_size):
+                current_path, rel_path, current_depth = queue.popleft()
+                processed_dirs += 1
 
-            # Check depth limit
-            if current_depth >= max_depth_limit:
-                # Add to depth excludes if we hit the limit
-                if current_path.is_dir():
-                    depth_excludes.add(rel_path.as_posix() + "/")
-                continue
-
-            # Process directory contents
-            try:
-                entries = list(current_path.iterdir())
-            except (OSError, PermissionError):
-                continue
-
-            # Separate files and directories for processing
-            dirs = []
-            files = []
-
-            for entry in entries:
-                entry_rel_path = rel_path / entry.name
-
-                # Skip if ignored
-                if should_ignore_path(entry_rel_path, entry.is_dir()):
+                # Check depth limit
+                if current_depth >= max_depth_limit:
+                    # Add to depth excludes if we hit the limit
+                    if current_path.is_dir():
+                        depth_excludes.add(rel_path.as_posix() + "/")
                     continue
 
-                if entry.is_dir():
-                    dirs.append((entry, entry_rel_path))
-                else:
-                    files.append((entry, entry_rel_path))
-
-            # Add directories to stack (reverse order for natural processing)
-            for dir_entry, dir_rel_path in reversed(dirs):
-                stack.append((dir_entry, dir_rel_path, current_depth + 1))
-
-                # Add directory to results
-                rel_path_str = dir_rel_path.as_posix()
-                folder_info = FileInfo(name=rel_path_str + "/", type=FileType.FOLDER, size=0, size_str="", rel_path=rel_path_str + "/")
-                files_to_show.append(file_info_to_dict(folder_info))
-
-            # Process files
-            for file_entry, file_rel_path in files:
+                # Process directory contents with better error handling
                 try:
-                    size = file_entry.stat().st_size
-                    size_str = f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
-                    rel_path_str = file_rel_path.as_posix()
-
-                    file_info = FileInfo(name=rel_path_str, type=FileType.FILE, size=size, size_str=size_str, rel_path=rel_path_str)
-                    files_to_show.append(file_info_to_dict(file_info))
-                except (OSError, ValueError):
+                    entries = list(current_path.iterdir())
+                except (OSError, PermissionError) as e:
+                    # Log permission errors but continue scanning
+                    if not cancel_event or not cancel_event.is_set():
+                        print(f"Warning: Cannot access {current_path}: {e}")
                     continue
+                except Exception as e:
+                    # Handle unexpected errors gracefully
+                    if not cancel_event or not cancel_event.is_set():
+                        print(f"Error scanning {current_path}: {e}")
+                    continue
+
+                # Separate files and directories for optimized processing
+                dirs = []
+                files = []
+
+                for entry in entries:
+                    try:
+                        entry_rel_path = rel_path / entry.name
+
+                        # Skip if ignored
+                        if should_ignore_path(entry_rel_path, entry.is_dir()):
+                            continue
+
+                        if entry.is_dir():
+                            dirs.append((entry, entry_rel_path))
+                        else:
+                            files.append((entry, entry_rel_path))
+                    except Exception:
+                        # Skip problematic entries but continue processing
+                        continue
+
+                # Add directories to queue (depth-first for better memory locality)
+                for dir_entry, dir_rel_path in dirs:
+                    queue.appendleft((dir_entry, dir_rel_path, current_depth + 1))
+
+                    # Add directory to results
+                    rel_path_str = dir_rel_path.as_posix()
+                    folder_info = FileInfo(name=rel_path_str + "/", type=FileType.FOLDER, size=0, size_str="", rel_path=rel_path_str + "/")
+                    files_to_show.append(file_info_to_dict(folder_info))
+
+                # Process files with optimized stat calls
+                for file_entry, file_rel_path in files:
+                    try:
+                        stat_info = file_entry.stat()
+                        size = stat_info.st_size
+                        size_str = f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
+                        rel_path_str = file_rel_path.as_posix()
+
+                        file_info = FileInfo(name=rel_path_str, type=FileType.FILE, size=size, size_str=size_str, rel_path=rel_path_str)
+                        files_to_show.append(file_info_to_dict(file_info))
+                        processed_files += 1
+                    except (OSError, ValueError):
+                        # Skip files that can't be accessed
+                        continue
+
+            # Periodic cancellation check and progress feedback
+            if cancel_event and cancel_event.is_set():
+                return
+
+            # Optional: Add progress logging for very large scans
+            if processed_dirs % 1000 == 0 and processed_dirs > 0:
+                print(f"Scanned {processed_dirs} directories, {processed_files} files...")
 
     # Start the scan
     scan_directory_iterative(base_path, max_depth)
