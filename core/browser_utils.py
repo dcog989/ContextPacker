@@ -10,7 +10,6 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.edge.service import Service as EdgeService
 from selenium.webdriver.firefox.service import Service as FirefoxService
 
-from .platform_utils import get_browser_binary_path
 from .platform_detection import get_process_creation_flags
 
 
@@ -28,18 +27,12 @@ def _create_base_options(user_agent):
 def _create_chrome_options(user_agent):
     """Create Chrome-specific options."""
     options = _create_base_options(user_agent)
-    chrome_binary_path = get_browser_binary_path("chrome")
-    if chrome_binary_path:
-        options.binary_location = chrome_binary_path
     return options
 
 
 def _create_edge_options(user_agent):
     """Create Edge-specific options."""
     options = _create_base_options(user_agent)
-    edge_binary_path = get_browser_binary_path("msedge")
-    if edge_binary_path:
-        options.binary_location = edge_binary_path
     return options
 
 
@@ -50,9 +43,6 @@ def _create_firefox_options(user_agent):
     options.add_argument("--log-level=3")
     options.page_load_strategy = "eager"
     options.add_argument(f"user-agent={user_agent}")
-    firefox_binary_path = get_browser_binary_path("firefox")
-    if firefox_binary_path:
-        options.binary_location = firefox_binary_path
     return options
 
 
