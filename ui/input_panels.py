@@ -62,14 +62,13 @@ class InputPanelFactory:
         return widgets
 
     def create_crawler_panel(self):
-        """Creates and configures the Web Crawl input panel, returning the panel and its controls."""
+        """Creates and infigures the Web Crawl input panel, returning the panel and its controls."""
         panel = QWidget()
         main_layout = QVBoxLayout(panel)
         main_layout.setContentsMargins(10, 15, 10, 10)
         form_layout = QFormLayout()
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        form_layout.setVerticalSpacing(10)
         widgets = {"crawler_panel": panel}
 
         start_url_widget = QLineEdit()
@@ -175,7 +174,6 @@ class InputPanelFactory:
         form_layout = QFormLayout()
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        form_layout.setVerticalSpacing(10)
         widgets = {"local_panel": panel}
 
         dir_layout = QHBoxLayout()

@@ -148,7 +148,8 @@ class MessageHandler:
         pkg_button.setText("Package")
         pkg_button.setEnabled(True)
 
-        self.app.main_panel.progress_gauge.setValue(0)
+        if was_cancelled:
+            self.app.main_panel.progress_gauge.setValue(0)
         self.app._update_button_states()
 
         self.app.ui_update_timer.start()

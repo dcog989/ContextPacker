@@ -11,4 +11,11 @@ class AppTheme:
         self.color_gray_inactive = "#888888"
 
     def get_stylesheet(self):
-        return ""
+        return """
+            QSplitter::handle {
+                background-color: #999999;
+            }
+            QSplitter::handle:hover {
+                background-color: #A9A9A9;
+            }
+        """

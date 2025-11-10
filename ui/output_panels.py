@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QTextEdit, QPushButton, QTableWidget, QProgressBar, QHeaderView
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QTextEdit, QPushButton, QTableWidget, QProgressBar, QHeaderView, QSizePolicy
 from PySide6.QtGui import QFont
 from core.config_manager import get_config
 
@@ -49,13 +49,13 @@ class OutputPanelFactory:
 
         # Bottom Bar: Count, Progress, and Delete Button
         progress_gauge = QProgressBar()
+        progress_gauge.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         file_count_label = QLabel("")
         delete_button = QPushButton("Delete Selected")
         delete_button.setObjectName("PrimaryButton")
 
         bottom_bar_layout = QHBoxLayout()
         bottom_bar_layout.addWidget(file_count_label)
-        bottom_bar_layout.addStretch()
         bottom_bar_layout.addWidget(progress_gauge)
         bottom_bar_layout.addWidget(delete_button)
         list_panel_layout.addLayout(bottom_bar_layout)

@@ -76,6 +76,7 @@ class MainWindow(QWidget):
         self.create_widgets()
         self.create_layout()
         self.create_connections()
+        self.create_context_menus()
         self.toggle_output_view(is_web_mode=True)
 
         # Memory management: limit verbose log size to prevent unbounded growth
@@ -165,8 +166,8 @@ class MainWindow(QWidget):
         self.package_button.clicked.connect(self.app.ui_controller.on_package_button_click)
         self.copy_button.clicked.connect(self.app.ui_controller.on_copy_to_clipboard)
         self.delete_button.clicked.connect(self.on_delete_selected_item)
-        self.about_logo.mousePressEvent = self.app.ui_controller.on_show_about_dialog_wrapper
-        self.about_text.mousePressEvent = self.app.ui_controller.on_show_about_dialog_wrapper
+        self.about_logo.mousePressEvent = lambda event: self.app.ui_controller.on_show_about_dialog()
+        self.about_text.mousePressEvent = lambda event: self.app.ui_controller.on_show_about_dialog()
         self.theme_switch_button.clicked.connect(self.app.ui_controller.on_toggle_theme)
         self.use_gitignore_check.stateChanged.connect(self.app.ui_controller.on_local_filters_changed)
         self.hide_binaries_check.stateChanged.connect(self.app.ui_controller.on_local_filters_changed)
@@ -174,6 +175,22 @@ class MainWindow(QWidget):
         self.local_exclude_ctrl.textChanged.connect(self.app.ui_controller.on_exclude_text_update)
         self.standard_log_list.itemSelectionChanged.connect(self.update_delete_button_state)
         self.local_file_list.itemSelectionChanged.connect(self.update_delete_button_state)
+
+    def create_context_menus(self):
+        """Creates custom context menus for widgets."""
+        self.verbose_log_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.verbose_log_widget.customContextMenuRequested.connect(self.show_log_context_menu)
+
+    def show_log_context_menu(self, position):
+        """Shows the context menu for the verbose log."""
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QAction
+
+        context_menu = QMenu(self)
+        clear_action = QAction("Clear Log", self)
+        clear_action.triggered.connect(self.clear_logs)
+        context_menu.addAction(clear_action)
+        context_menu.exec(self.verbose_log_widget.mapToGlobal(position))
 
     def get_crawler_config(self, output_dir):
         """Validate and create crawler configuration. Raises ValueError on invalid input."""

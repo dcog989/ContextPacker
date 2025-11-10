@@ -7,7 +7,7 @@ import multiprocessing
 import sys
 
 from PySide6.QtWidgets import QApplication, QMainWindow
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QIcon, QFontDatabase, QPalette, QColor
 
 from ui.main_window import MainWindow
@@ -145,6 +145,19 @@ class App(QMainWindow):
         else:
             # Light Mode Palette (Reset to default system/light palette)
             palette = QPalette()
+            palette.setColor(QPalette.ColorRole.Window, QColor(240, 240, 240))
+            palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.black)
+            palette.setColor(QPalette.ColorRole.Base, Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorRole.AlternateBase, QColor(240, 240, 240))
+            palette.setColor(QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorRole.ToolTipText, Qt.GlobalColor.black)
+            palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.black)
+            palette.setColor(QPalette.ColorRole.Button, QColor(240, 240, 240))
+            palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.black)
+            palette.setColor(QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
+            palette.setColor(QPalette.ColorRole.Link, QColor(0, 0, 255))
+            palette.setColor(QPalette.ColorRole.Highlight, QColor(46, 139, 87))
+            palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.white)
 
         app.setPalette(palette)
 
