@@ -141,7 +141,7 @@ class UiController:
                 scan_msg = LocalScanCompleteMessage(results=None)
                 self.app.signals.message.emit(message_to_dict(scan_msg))
 
-    def on_show_about_dialog():
+    def on_show_about_dialog(self):
         """Displays the About Dialog."""
         # Note: This version is the actual logic, called internally.
         dialog = AboutDialog(self.app, self.app.version)
@@ -149,4 +149,3 @@ class UiController:
 
     def on_show_about_dialog_wrapper(self, event):
         """Wrapper to call the about dialog method from a mousePressEvent (with event arg)."""
-        self.on_show_about_dialog()

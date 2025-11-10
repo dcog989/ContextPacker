@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
-from PySide6.QtGui import QPixmap, QFont, QCursor
+from PySide6.QtGui import QPixmap, QFont
 from PySide6.QtCore import Qt
 from core.utils import resource_path
 
@@ -31,7 +31,7 @@ class AboutDialog(QDialog):
         layout.addSpacing(15)
 
         milkshake = QLabel('"I drink your milkshake! I drink it up!"')
-        milkshake_font = QFont("Source Code Pro", 12, QFont.Weight.Normal, italic=True)
+        milkshake_font = QFont("Source Code Pro", 11, QFont.Weight.Normal, italic=True)
         milkshake.setFont(milkshake_font)
         layout.addWidget(milkshake, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addSpacing(20)

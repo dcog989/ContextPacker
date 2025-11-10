@@ -120,17 +120,10 @@ class MainWindow(QWidget):
         self.h_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(self.h_splitter)
 
-        sash_state_b64 = config.get("sash_state")
-        if sash_state_b64:
-            self.h_splitter.restoreState(QByteArray.fromBase64(sash_state_b64.encode("utf-8")))
-        else:
-            # New requirement: start at 50/50 split for input/output
-            self.h_splitter.setSizes([1, 1])
+        self.h_splitter.setSizes([1, 1])
 
-        # LEFT PANEL (Input + System)
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
-        # New requirement: Input above System
         left_layout.addWidget(self.input_group)
         left_layout.addWidget(self.system_panel)
         self.h_splitter.addWidget(left_widget)
@@ -360,4 +353,4 @@ class MainWindow(QWidget):
             count = len(self.local_files)
             if count > 0:
                 label = f"{count} item(s)"
-        self
+        self.file_count_label.setText(label)

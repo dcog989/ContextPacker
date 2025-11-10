@@ -1,14 +1,12 @@
 import os
-from datetime import datetime
 from pathlib import Path
 import ctypes
-import subprocess
 import platform
 import multiprocessing
 import sys
 
 from PySide6.QtWidgets import QApplication, QMainWindow
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon, QFontDatabase, QPalette, QColor
 
 from ui.main_window import MainWindow
@@ -25,8 +23,6 @@ from core.constants import (
     UI_UPDATE_BATCH_SIZE,
 )
 
-# New imports for refactored concerns
-from PySide6.QtCore import QObject  # ADDED IMPORT
 from core.app_signals import WorkerSignals
 from core.app_worker_manager import WorkerManager
 from core.app_message_handler import MessageHandler
@@ -59,6 +55,8 @@ class App(QMainWindow):
         self.gitignore_cache = {}
         self.worker_future = None
         self.cancel_event = None
+        self.local_scan_future = None
+        self.local_scan_cancel_event = None
 
         # Constants used by MessageHandler (moved here for central definition)
         self.max_batch_size = MAX_BATCH_SIZE
@@ -67,6 +65,9 @@ class App(QMainWindow):
 
         # Initialize Services
         self.worker_manager = WorkerManager(self)
+        self.shutdown_event = self.worker_manager.shutdown_event  # Alias for easier access
+        self.log_queue = self.worker_manager.log_queue
+        self.executor = self.worker_manager.executor
         self.signals = WorkerSignals()
         self.message_handler = MessageHandler(self)
         self.task_handler = TaskHandler(self)  # Still uses a mix of internal App logic and external TaskHandler
@@ -116,26 +117,30 @@ class App(QMainWindow):
     def _check_if_system_is_dark(self):
         """Checks if the system/Qt palette is currently in a dark mode."""
         app = QApplication.instance()
+        if not app or not isinstance(app, QApplication):
+            return False
         # A simple check: if the window background is closer to black than white
-        return app.palette().color(QPalette.Window).lightnessF() < 0.5
+        return app.palette().color(QPalette.ColorRole.Window).lightnessF() < 0.5
 
     def _apply_theme(self):
         """Applies the base stylesheet and platform-specific hints, relying on Qt's built-in palette."""
         is_dark = self.is_dark_mode_visual_state
         app = QApplication.instance()
+        if not app or not isinstance(app, QApplication):
+            return
 
         # 1. Force the PySide6 palette to switch using the saved visual state
         palette = app.palette()
         if is_dark:
             # Dark Mode Palette (Setting basic dark colors)
-            palette.setColor(QPalette.Window, QColor(43, 43, 43))
-            palette.setColor(QPalette.WindowText, QColor(224, 224, 224))
-            palette.setColor(QPalette.Base, QColor(43, 43, 43))
-            palette.setColor(QPalette.Text, QColor(224, 224, 224))
-            palette.setColor(QPalette.Button, QColor(50, 50, 50))
-            palette.setColor(QPalette.ButtonText, QColor(224, 224, 224))
-            palette.setColor(QPalette.Highlight, QColor(46, 139, 87))
-            palette.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
+            palette.setColor(QPalette.ColorRole.Window, QColor(43, 43, 43))
+            palette.setColor(QPalette.ColorRole.WindowText, QColor(224, 224, 224))
+            palette.setColor(QPalette.ColorRole.Base, QColor(43, 43, 43))
+            palette.setColor(QPalette.ColorRole.Text, QColor(224, 224, 224))
+            palette.setColor(QPalette.ColorRole.Button, QColor(50, 50, 50))
+            palette.setColor(QPalette.ColorRole.ButtonText, QColor(224, 224, 224))
+            palette.setColor(QPalette.ColorRole.Highlight, QColor(46, 139, 87))
+            palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
         else:
             # Light Mode Palette (Reset to default system/light palette)
             palette = QPalette()
@@ -254,9 +259,7 @@ class App(QMainWindow):
 
     def closeEvent(self, event):
         config["window_size"] = [self.width(), self.height()]
-        h_sash_qba = self.main_panel.h_splitter.saveState().toBase64()
         v_sash_qba = self.main_panel.v_splitter.saveState().toBase64()
-        config["sash_state"] = bytes(h_sash_qba.data()).decode("utf-8")
         config["v_sash_state"] = bytes(v_sash_qba.data()).decode("utf-8")
         save_config(config)
 

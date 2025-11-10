@@ -64,7 +64,7 @@ class TaskHandler:
             return
 
         self.app.cancel_event = threading.Event()
-        self.app.start_queue_listener()
+        self.app.worker_manager.start_queue_listener()
 
         # 1. Prepare/Cleanup temp directory
         actions.start_download(self.app, self.app.cancel_event)
@@ -125,7 +125,7 @@ class TaskHandler:
                 return
 
         self.app.cancel_event = threading.Event()
-        self.app.start_queue_listener()
+        self.app.worker_manager.start_queue_listener()
         # Submit packaging task to executor
         self.app.worker_future = self.app.executor.submit(actions.start_packaging, self.app, self.app.cancel_event, file_list_for_count)
 

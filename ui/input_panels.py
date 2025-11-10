@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QRadioButton, QComboBox, QSpinBox, QTextEdit, QCheckBox, QPushButton, QFormLayout, QSizePolicy
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QSpinBox, QTextEdit, QCheckBox, QPushButton, QFormLayout, QSizePolicy
 from PySide6.QtGui import QPixmap, QFont, QCursor, QIntValidator
 from PySide6.QtCore import Qt
 from core.utils import resource_path
@@ -23,7 +23,6 @@ class InputPanelFactory:
         system_group = QGroupBox("System")
         layout = QHBoxLayout(system_group)
         layout.setContentsMargins(10, 15, 10, 10)
-        widgets = {"system_panel": system_group}
 
         # Logo and Title
         logo_path = resource_path("assets/icons/ContextPacker-x64.png")
@@ -54,15 +53,12 @@ class InputPanelFactory:
         theme_switch_button.setFixedSize(32, 32)
         layout.addWidget(theme_switch_button)
 
-        widgets.update(
-            {
-                "about_logo": about_logo,
-                "about_text": about_text,
-                "theme_switch_button": theme_switch_button,
-                # We don't need to assign version_text as it's not accessed elsewhere
-            }
-        )
-
+        widgets = {
+            "system_panel": system_group,
+            "about_logo": about_logo,
+            "about_text": about_text,
+            "theme_switch_button": theme_switch_button,
+        }
         return widgets
 
     def create_crawler_panel(self):
@@ -71,7 +67,6 @@ class InputPanelFactory:
         main_layout = QVBoxLayout(panel)
         main_layout.setContentsMargins(10, 15, 10, 10)
         form_layout = QFormLayout()
-        form_layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         form_layout.setVerticalSpacing(10)
@@ -136,7 +131,7 @@ class InputPanelFactory:
         checkbox_layout.setContentsMargins(0, 0, 0, 0)
         checkbox_layout.setSpacing(5)
 
-        download_button = QPushButton("Download & Convert")
+        download_button = QPushButton("Download && Convert")
         download_button.setObjectName("PrimaryButton")
 
         form_layout.addRow("Start URL:", start_url_widget)
@@ -158,21 +153,17 @@ class InputPanelFactory:
         main_layout.addStretch()
         main_layout.addLayout(button_layout)
 
-        widgets.update(
-            {
-                "start_url_widget": start_url_widget,
-                "user_agent_widget": user_agent_widget,
-                "max_pages_ctrl": max_pages_ctrl,
-                "crawl_depth_ctrl": crawl_depth_ctrl,
-                "min_pause_ctrl": min_pause_ctrl,
-                "max_pause_ctrl": max_pause_ctrl,
-                "include_paths_widget": include_paths_widget,
-                "exclude_paths_widget": exclude_paths_widget,
-                "stay_on_subdomain_check": stay_on_subdomain_check,
-                "ignore_queries_check": ignore_queries_check,
-                "download_button": download_button,
-            }
-        )
+        widgets["start_url_widget"] = start_url_widget
+        widgets["user_agent_widget"] = user_agent_widget
+        widgets["max_pages_ctrl"] = max_pages_ctrl
+        widgets["crawl_depth_ctrl"] = crawl_depth_ctrl
+        widgets["min_pause_ctrl"] = min_pause_ctrl
+        widgets["max_pause_ctrl"] = max_pause_ctrl
+        widgets["include_paths_widget"] = include_paths_widget
+        widgets["exclude_paths_widget"] = exclude_paths_widget
+        widgets["stay_on_subdomain_check"] = stay_on_subdomain_check
+        widgets["ignore_queries_check"] = ignore_queries_check
+        widgets["download_button"] = download_button
 
         return widgets
 

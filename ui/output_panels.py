@@ -1,7 +1,5 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QTextEdit, QPushButton, QTableWidget, QProgressBar, QHeaderView
-from PySide6.QtGui import QIcon, QFont
-from PySide6.QtCore import Qt
-from core.utils import resource_path
+from PySide6.QtGui import QFont
 from core.config_manager import get_config
 
 config = get_config()
@@ -21,16 +19,14 @@ class OutputPanelFactory:
         Creates the List and Log QGroupBoxes and initializes their internal widgets.
         Returns a dictionary containing the two groups and all control widgets.
         """
-        widgets = {}
-
         # --- List Group (Top Half of Right Panel) ---
         list_group = QGroupBox("List")
         list_panel_layout = QVBoxLayout(list_group)
         list_panel_layout.setContentsMargins(10, 20, 10, 10)
-        widgets["list_group"] = list_group
 
         standard_log_list = QTableWidget(0, 2)
         standard_log_list.setHorizontalHeaderLabels(["URL", "Saved Filename"])
+        standard_log_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         standard_log_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         standard_log_list.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         standard_log_list.verticalHeader().setVisible(False)
@@ -50,7 +46,6 @@ class OutputPanelFactory:
         list_stack_layout.addWidget(standard_log_list)
         list_stack_layout.addWidget(local_file_list)
         list_panel_layout.addWidget(list_stack)
-        widgets["list_stack_layout"] = list_stack_layout  # Needed for toggle_output_view
 
         # Bottom Bar: Count, Progress, and Delete Button
         progress_gauge = QProgressBar()
@@ -64,29 +59,29 @@ class OutputPanelFactory:
         bottom_bar_layout.addWidget(progress_gauge)
         bottom_bar_layout.addWidget(delete_button)
         list_panel_layout.addLayout(bottom_bar_layout)
-
-        widgets.update(
-            {
-                "standard_log_list": standard_log_list,
-                "local_file_list": local_file_list,
-                "progress_gauge": progress_gauge,
-                "file_count_label": file_count_label,
-                "delete_button": delete_button,
-            }
-        )
+        list_panel_layout.addSpacing(5)
 
         # --- Log Group (Bottom Half of Right Panel) ---
         log_group = QGroupBox("Log")
         log_layout = QVBoxLayout(log_group)
         log_layout.setContentsMargins(10, 20, 10, 10)
-        widgets["log_group"] = log_group
 
         verbose_log_widget = QTextEdit()
         verbose_log_widget.setReadOnly(True)
-        verbose_log_widget.setFont(QFont("Consolas", 11))
+        verbose_log_widget.setFont(QFont("Source Code Pro", 10))
         log_layout.addWidget(verbose_log_widget)
-        widgets["verbose_log_widget"] = verbose_log_widget
 
+        widgets = {
+            "list_group": list_group,
+            "list_stack_layout": list_stack_layout,
+            "standard_log_list": standard_log_list,
+            "local_file_list": local_file_list,
+            "progress_gauge": progress_gauge,
+            "file_count_label": file_count_label,
+            "delete_button": delete_button,
+            "log_group": log_group,
+            "verbose_log_widget": verbose_log_widget,
+        }
         return widgets
 
     def create_output_group(self):
@@ -94,7 +89,6 @@ class OutputPanelFactory:
         output_group = QGroupBox("Output")
         output_layout = QVBoxLayout(output_group)
         output_layout.setContentsMargins(10, 20, 10, 10)
-        widgets = {"output_group": output_group}
 
         output_filename_ctrl = QLineEdit("ContextPacker-package")
         output_timestamp_label = QLabel("")
@@ -120,14 +114,13 @@ class OutputPanelFactory:
         filename_layout.addWidget(copy_button)
         output_layout.addLayout(filename_layout)
 
-        widgets.update(
-            {
-                "output_filename_ctrl": output_filename_ctrl,
-                "output_timestamp_label": output_timestamp_label,
-                "output_format_choice": output_format_choice,
-                "package_button": package_button,
-                "copy_button": copy_button,
-            }
-        )
+        widgets = {
+            "output_group": output_group,
+            "output_filename_ctrl": output_filename_ctrl,
+            "output_timestamp_label": output_timestamp_label,
+            "output_format_choice": output_format_choice,
+            "package_button": package_button,
+            "copy_button": copy_button,
+        }
 
         return widgets
