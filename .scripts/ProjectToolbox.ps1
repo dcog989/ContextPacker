@@ -8,7 +8,7 @@ function Show-Menu {
     Write-Host
     Write-Host " 1 > Clean Build Artifacts"
     Write-Host " 2 > Check for Package Updates"
-    Write-Host " 3 > Run from Source (Quick Run)"
+    Write-Host " 3 > Quick Run (from Source)"
     Write-Host " 4 > Build and Run (Debug Executable)"
     Write-Host " 5 > Build for Production"
     Write-Host " 6 > Open Log File"
