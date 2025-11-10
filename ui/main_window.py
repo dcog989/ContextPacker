@@ -452,7 +452,6 @@ class MainWindow(QWidget):
         """Manage verbose log size to prevent memory bloat."""
         if self.log_line_count > self.max_log_lines:
             # Remove oldest lines to stay within limit
-            document = self.verbose_log_ctrl.document()
             cursor = self.verbose_log_ctrl.textCursor()
 
             # Calculate how many lines to remove (remove 25% when limit exceeded)
