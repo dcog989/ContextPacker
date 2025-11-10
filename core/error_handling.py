@@ -8,6 +8,8 @@ import subprocess
 import traceback
 from typing import Optional, Dict, Any
 
+from .types import StatusMessage, LogMessage, StatusType, message_to_dict
+
 
 class WorkerErrorHandler:
     """Centralized error handling for worker functions."""
@@ -19,7 +21,11 @@ class WorkerErrorHandler:
     def log_message(self, message: str, message_type: str = "log"):
         """Safely log a message if not shutting down."""
         if not self.shutdown_event.is_set():
-            self.log_queue.put({"type": message_type, "message": message})
+            if message_type == "log":
+                msg = LogMessage(message=message)
+            else:
+                msg = StatusMessage(status=StatusType.ERROR, message=message)
+            self.log_queue.put(message_to_dict(msg))
 
     def handle_worker_exception(self, exception: Exception, context: str) -> Dict[str, Any]:
         """
@@ -38,7 +44,8 @@ class WorkerErrorHandler:
         self.log_message(f"  -> ERROR in {context}: {str(exception)}")
         self.log_message(f"  -> Traceback: {tb_str}")
 
-        return {"type": "status", "status": "error", "message": error_msg}
+        status_msg = StatusMessage(status=StatusType.ERROR, message=error_msg)
+        return message_to_dict(status_msg)
 
     def handle_process_cleanup(self, process, timeout: int = 2) -> bool:
         """
@@ -163,4 +170,5 @@ def create_tool_missing_error(tool_name: str) -> Dict[str, Any]:
         Dictionary with error status and message
     """
     error_msg = f"ERROR: {tool_name} is not installed or not found in your system's PATH. Please install {tool_name} to use this feature."
-    return {"type": "status", "status": "error", "message": error_msg}
+    status_msg = StatusMessage(status=StatusType.ERROR, message=error_msg)
+    return message_to_dict(status_msg)

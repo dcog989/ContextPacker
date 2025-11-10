@@ -11,6 +11,7 @@ from .crawler import crawl_website
 from .utils import get_app_data_dir, get_downloads_folder
 from .error_handling import WorkerErrorHandler, create_process_with_flags, safe_stream_enqueue, validate_tool_availability, create_tool_missing_error
 from .constants import UNLIMITED_DEPTH_VALUE, UNLIMITED_DEPTH_REPLACEMENT, LARGE_DIRECTORY_THRESHOLD
+from .types import StatusMessage, ProgressMessage, LogMessage, StatusType, FileType, FileInfo, message_to_dict, file_info_to_dict, dict_to_file_info
 
 
 def _create_session_dir():
@@ -77,7 +78,8 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
 
         if not process.stdout:
             process.wait()
-            log_queue.put({"type": "status", "status": "error", "message": "Failed to capture git clone output stream."})
+            error_msg = StatusMessage(status=StatusType.ERROR, message="Failed to capture git clone output stream.")
+            log_queue.put(message_to_dict(error_msg))
             return
 
         output_queue = queue.Queue()
@@ -87,29 +89,35 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
         while process.poll() is None:
             if cancel_event.is_set():
                 error_handler.handle_process_cleanup(process)
-                log_queue.put({"type": "status", "status": "cancelled", "message": "Git clone cancelled."})
+                cancel_msg = StatusMessage(status=StatusType.CANCELLED, message="Git clone cancelled.")
+                log_queue.put(message_to_dict(cancel_msg))
                 return
 
             try:
                 line = output_queue.get(timeout=0.1)
                 if line and not shutdown_event.is_set():
-                    log_queue.put({"type": "log", "message": line.strip()})
+                    log_msg = LogMessage(message=line.strip())
+                    log_queue.put(message_to_dict(log_msg))
             except queue.Empty:
                 continue
 
         while not output_queue.empty():
             line = output_queue.get_nowait()
             if line and not shutdown_event.is_set():
-                log_queue.put({"type": "log", "message": line.strip()})
+                log_msg = LogMessage(message=line.strip())
+                log_queue.put(message_to_dict(log_msg))
 
         if cancel_event.is_set():
-            log_queue.put({"type": "status", "status": "cancelled", "message": "Git clone cancelled."})
+            cancel_msg = StatusMessage(status=StatusType.CANCELLED, message="Git clone cancelled.")
+            log_queue.put(message_to_dict(cancel_msg))
             return
 
         if process.returncode == 0:
-            log_queue.put({"type": "status", "status": "clone_complete", "path": path})
+            complete_msg = StatusMessage(status=StatusType.CLONE_COMPLETE, message="", path=path)
+            log_queue.put(message_to_dict(complete_msg))
         else:
-            log_queue.put({"type": "status", "status": "error", "message": "Git clone failed. Check the log for details."})
+            error_msg = StatusMessage(status=StatusType.ERROR, message="Git clone failed. Check the log for details.")
+            log_queue.put(message_to_dict(error_msg))
 
     except Exception as e:
         error_handler.handle_worker_exception(e, "git clone")
@@ -206,10 +214,12 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
 
                 # Only send progress updates if progress changed significantly or every batch_size files
                 if progress_value != self.last_progress_value or self.processed_count % self.batch_size == 0 or self.processed_count == self.total_files:
-                    self.log_queue.put({"type": "progress", "value": progress_value, "max_value": 100})
+                    progress_msg = ProgressMessage(value=progress_value, max_value=100)
+                    self.log_queue.put(message_to_dict(progress_msg))
                     self.last_progress_value = progress_value
 
-            self.log_queue.put({"type": "log", "message": msg})
+            log_msg = LogMessage(message=msg)
+            self.log_queue.put(message_to_dict(log_msg))
 
     total_files_for_progress = 0
     is_web_mode = app.main_panel.web_crawl_radio.isChecked()
@@ -217,7 +227,7 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
         if is_web_mode:
             total_files_for_progress = len(file_list)
         else:
-            total_files_for_progress = len([f for f in file_list if f.get("type") == "File"])
+            total_files_for_progress = len([f for f in file_list if dict_to_file_info(f).type == FileType.FILE])
 
     progress_handler = RepomixProgressHandler(app.log_queue, total_files_for_progress, app.shutdown_event)
     progress_handler.setLevel(logging.INFO)
@@ -374,7 +384,8 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
 
                 # Add directory to results
                 rel_path_str = dir_rel_path.as_posix()
-                files_to_show.append({"name": rel_path_str + "/", "type": "Folder", "size": 0, "size_str": "", "rel_path": rel_path_str + "/"})
+                folder_info = FileInfo(name=rel_path_str + "/", type=FileType.FOLDER, size=0, size_str="", rel_path=rel_path_str + "/")
+                files_to_show.append(file_info_to_dict(folder_info))
 
             # Process files
             for file_entry, file_rel_path in files:
@@ -383,7 +394,8 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
                     size_str = f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
                     rel_path_str = file_rel_path.as_posix()
 
-                    files_to_show.append({"name": rel_path_str, "type": "File", "size": size, "size_str": size_str, "rel_path": rel_path_str})
+                    file_info = FileInfo(name=rel_path_str, type=FileType.FILE, size=size, size_str=size_str, rel_path=rel_path_str)
+                    files_to_show.append(file_info_to_dict(file_info))
                 except (OSError, ValueError):
                     continue
 

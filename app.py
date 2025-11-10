@@ -27,6 +27,7 @@ from core.constants import (
     MAX_BATCH_SIZE,
     UI_UPDATE_BATCH_SIZE,
 )
+from core.types import LogMessage, StatusMessage, ProgressMessage, FileSavedMessage, UITaskMessage, UITaskStopMessage, UITaskStoppingMessage, GitCloneDoneMessage, LocalScanCompleteMessage, TaskType, dict_to_message, message_to_dict
 
 config = get_config()
 BINARY_FILE_PATTERNS = config.get("binary_file_patterns", [])
@@ -209,10 +210,12 @@ class App(QMainWindow):
         if self.shutdown_event.is_set():
             return
 
-        msg_type = msg_obj.get("type")
-        if msg_type == "log":
-            self.log_verbose(msg_obj.get("message", ""))
-        elif msg_type == "file_saved":
+        # Convert dictionary to typed message for better type safety
+        typed_msg = dict_to_message(msg_obj)
+
+        if isinstance(typed_msg, LogMessage):
+            self.log_verbose(typed_msg.message)
+        elif isinstance(typed_msg, FileSavedMessage):
             self.scraped_files_batch.append(msg_obj)
 
             # Memory management: check if batch is getting too large
@@ -224,44 +227,44 @@ class App(QMainWindow):
 
             # Batch UI updates to reduce frame drops
             self.ui_update_counter += 1
-            self.discovered_count_batch = max(self.discovered_count_batch, msg_obj.get("queue_size", 0))
+            self.discovered_count_batch = max(self.discovered_count_batch, typed_msg.queue_size)
 
             # Only update UI every ui_update_batch_size files or on timer
             if self.ui_update_counter >= self.ui_update_batch_size:
                 self.main_panel.update_discovered_count(self.discovered_count_batch)
-                verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
+                verbose_msg = f"  -> Saved: {typed_msg.filename} [{typed_msg.pages_saved}/{typed_msg.max_pages}]"
                 self.log_verbose(verbose_msg)
                 self.ui_update_counter = 0
-        elif msg_type == "progress":
-            self.main_panel.progress_gauge.setValue(msg_obj["value"])
-            self.main_panel.progress_gauge.setMaximum(msg_obj["max_value"])
-        elif msg_type == "status":
-            self.task_handler.handle_status(msg_obj.get("status"), msg_obj)
-        elif msg_type == "ui_task_start":
-            self._handle_ui_task_start(msg_obj["task"])
-        elif msg_type == "ui_task_stopping":
+        elif isinstance(typed_msg, ProgressMessage):
+            self.main_panel.progress_gauge.setValue(typed_msg.value)
+            self.main_panel.progress_gauge.setMaximum(typed_msg.max_value)
+        elif isinstance(typed_msg, StatusMessage):
+            self.task_handler.handle_status(typed_msg.status.value, msg_obj)
+        elif isinstance(typed_msg, UITaskMessage):
+            self._handle_ui_task_start(typed_msg.task.value)
+        elif isinstance(typed_msg, UITaskStoppingMessage):
             self._handle_ui_task_stopping()
-        elif msg_type == "ui_task_stop":
-            self._handle_ui_task_stop(msg_obj.get("was_cancelled", False))
-        elif msg_type == "git_clone_done":
-            self._handle_git_clone_done(msg_obj["path"])
-        elif msg_type == "local_scan_complete":
+        elif isinstance(typed_msg, UITaskStopMessage):
+            self._handle_ui_task_stop(typed_msg.was_cancelled)
+        elif isinstance(typed_msg, GitCloneDoneMessage):
+            self._handle_git_clone_done(typed_msg.path)
+        elif isinstance(typed_msg, LocalScanCompleteMessage):
             QApplication.restoreOverrideCursor()
             self.main_panel.local_panel.setEnabled(True)
             self.local_scan_worker = None
-            results = msg_obj.get("results")
-            if results is not None:
-                files, depth_excludes = results
+            if typed_msg.results is not None:
+                files, depth_excludes = typed_msg.results
                 self.main_panel.populate_local_file_list(files)
                 self.local_depth_excludes = depth_excludes
         else:
+            # Fallback for unknown message types
             self.log_verbose(str(msg_obj.get("message", "")))
 
     def _handle_ui_task_start(self, task):
         dl_button = self.main_panel.download_button
         pkg_button = self.main_panel.package_button
 
-        widget_to_keep_enabled = dl_button if task == "download" else pkg_button
+        widget_to_keep_enabled = dl_button if task == TaskType.DOWNLOAD.value else pkg_button
         self._toggle_ui_controls(False, widget_to_keep_enabled=widget_to_keep_enabled)
 
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -272,10 +275,10 @@ class App(QMainWindow):
         self.ui_update_counter = 0
         self.discovered_count_batch = 0
 
-        if task == "download":
+        if task == TaskType.DOWNLOAD.value:
             dl_button.setText("Stop!")
             pkg_button.setEnabled(False)
-        elif task == "package":
+        elif task == TaskType.PACKAGE.value:
             pkg_button.setText("Stop!")
             dl_button.setEnabled(False)
 
@@ -552,13 +555,16 @@ class App(QMainWindow):
         try:
             results = actions.get_local_files(*args)
             if not cancel_event.is_set() and not self.shutdown_event.is_set():
-                self.signals.message.emit({"type": "local_scan_complete", "results": results})
+                scan_msg = LocalScanCompleteMessage(results=results)
+                self.signals.message.emit(message_to_dict(scan_msg))
         except Exception as e:
             if not self.shutdown_event.is_set():
-                self.signals.message.emit({"type": "log", "message": f"ERROR scanning directory: {e}"})
+                error_msg = LogMessage(message=f"ERROR scanning directory: {e}")
+                self.signals.message.emit(message_to_dict(error_msg))
         finally:
             if cancel_event.is_set() and not self.shutdown_event.is_set():  # If cancelled, still unlock UI
-                self.signals.message.emit({"type": "local_scan_complete", "results": None})
+                scan_msg = LocalScanCompleteMessage(results=None)
+                self.signals.message.emit(message_to_dict(scan_msg))
 
     def on_show_about_dialog(self, event):
         dialog = AboutDialog(self, self.version)
