@@ -121,8 +121,13 @@ class MainWindow(QWidget):
         self.h_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(self.h_splitter)
 
-        self.h_splitter.setSizes([1, 1])
+        h_sash_state_b64 = config.get("h_sash_state")
+        if h_sash_state_b64:
+            self.h_splitter.restoreState(QByteArray.fromBase64(h_sash_state_b64.encode("utf-8")))
+        else:
+            self.h_splitter.setSizes([1, 1])
 
+        # LEFT PANEL (Input + System)
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
         left_layout.addWidget(self.input_group)
@@ -152,7 +157,11 @@ class MainWindow(QWidget):
         else:
             self.v_splitter.setSizes([1, 1])
 
-        self.v_splitter.addWidget(self.list_group)
+        list_wrapper = QWidget()
+        list_wrapper_layout = QVBoxLayout(list_wrapper)
+        list_wrapper_layout.setContentsMargins(0, 0, 0, 5)
+        list_wrapper_layout.addWidget(self.list_group)
+        self.v_splitter.addWidget(list_wrapper)
         self.v_splitter.addWidget(self.log_group)
 
         right_layout.addWidget(self.v_splitter)
@@ -291,6 +300,7 @@ class MainWindow(QWidget):
             size_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.local_file_list.setItem(row, 2, size_item)
         self.local_file_list.setSortingEnabled(True)
+        self.local_file_list.sortByColumn(1, Qt.SortOrder.DescendingOrder)
         self.update_file_count()
 
     def on_delete_selected_item(self):

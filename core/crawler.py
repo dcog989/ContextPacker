@@ -231,6 +231,9 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
         if driver:
             cleanup_driver(driver, timeout=10, log_queue=log_queue)
 
+    if not cancel_event.is_set() and not shutdown_event.is_set() and pages_saved >= config.max_pages:
+        log_queue.put({"type": "progress", "value": pages_saved, "max_value": config.max_pages})
+
     status_key = "cancelled" if cancel_event.is_set() else "source_complete"
     message = "Process cancelled by user." if cancel_event.is_set() else f"\nWeb scrape finished. Saved {pages_saved} pages."
     if not shutdown_event.is_set():

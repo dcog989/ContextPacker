@@ -11,7 +11,6 @@ class AboutDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(40, 20, 40, 20)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         logo_path = resource_path("assets/icons/ContextPacker-x128.png")
         pixmap = QPixmap(str(logo_path))
@@ -27,11 +26,11 @@ class AboutDialog(QDialog):
 
         desc = QLabel("Scrape websites or select local files, then package into a single file, optimized for LLMs.")
         desc.setWordWrap(True)
-        layout.addWidget(desc, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(desc)
         layout.addSpacing(15)
 
         milkshake = QLabel('"I drink your milkshake! I drink it up!"')
-        milkshake_font = QFont("Source Code Pro", 11, QFont.Weight.Normal, italic=True)
+        milkshake_font = QFont("Source Code Pro", 12, QFont.Weight.Normal, italic=True)
         milkshake.setFont(milkshake_font)
         layout.addWidget(milkshake, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addSpacing(20)
@@ -49,3 +48,5 @@ class AboutDialog(QDialog):
         ok_button.setObjectName("PrimaryButton")
         ok_button.clicked.connect(self.accept)
         layout.addWidget(ok_button, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        self.adjustSize()

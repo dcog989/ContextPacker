@@ -62,7 +62,7 @@ class InputPanelFactory:
         return widgets
 
     def create_crawler_panel(self):
-        """Creates and infigures the Web Crawl input panel, returning the panel and its controls."""
+        """Creates and configures the Web Crawl input panel, returning the panel and its controls."""
         panel = QWidget()
         main_layout = QVBoxLayout(panel)
         main_layout.setContentsMargins(10, 15, 10, 10)

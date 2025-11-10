@@ -59,7 +59,6 @@ class OutputPanelFactory:
         bottom_bar_layout.addWidget(progress_gauge)
         bottom_bar_layout.addWidget(delete_button)
         list_panel_layout.addLayout(bottom_bar_layout)
-        list_panel_layout.addSpacing(5)
 
         # --- Log Group (Bottom Half of Right Panel) ---
         log_group = QGroupBox("Log")

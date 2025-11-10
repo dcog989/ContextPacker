@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QMessageBox
 
 import core.actions as actions
 from core.crawler import crawl_website
-from .types import UITaskMessage, UITaskStopMessage, UITaskStoppingMessage, LogMessage, GitCloneDoneMessage, TaskType, message_to_dict
+from .types import UITaskMessage, UITaskStopMessage, UITaskStoppingMessage, LogMessage, GitCloneDoneMessage, TaskType, message_to_dict, ProgressMessage
 
 
 class TaskHandler:
@@ -152,6 +152,8 @@ class TaskHandler:
 
         if status in ["source_complete", "package_complete", "cancelled", "error", "clone_complete"]:
             if status == "package_complete":
+                progress_msg = ProgressMessage(value=100, max_value=100)
+                self.app.signals.message.emit(message_to_dict(progress_msg))
                 self.app._open_output_folder()
 
             stop_msg = UITaskStopMessage(was_cancelled=status == "cancelled")

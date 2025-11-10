@@ -289,7 +289,9 @@ class App(QMainWindow):
 
     def closeEvent(self, event):
         config["window_size"] = [self.width(), self.height()]
+        h_sash_qba = self.main_panel.h_splitter.saveState().toBase64()
         v_sash_qba = self.main_panel.v_splitter.saveState().toBase64()
+        config["h_sash_state"] = bytes(h_sash_qba.data()).decode("utf-8")
         config["v_sash_state"] = bytes(v_sash_qba.data()).decode("utf-8")
         save_config(config)
 
