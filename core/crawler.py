@@ -152,7 +152,7 @@ def _process_page(driver, config, current_url, filename_cache=None):
     return (soup, final_url, output_path, filename), None
 
 
-def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visit, depth, url_cache=None):
+def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visit, depth, url_cache=None, max_processed_urls=None, log_queue=None):
     """Finds, filters, and queues new links from a parsed page."""
     if url_cache is None:
         url_cache = {}
@@ -188,6 +188,16 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
             continue
 
         if normalized_abs_link not in processed_urls:
+            # Memory management: check if we're approaching the limit
+            if max_processed_urls and len(processed_urls) >= max_processed_urls:
+                # Remove oldest entries to prevent memory bloat
+                # Convert to list, keep only the most recent half
+                url_list = list(processed_urls)
+                processed_urls.clear()
+                processed_urls.update(url_list[-max_processed_urls // 2 :])
+                if log_queue:
+                    log_queue.put({"type": "log", "message": f"  -> Memory management: trimmed processed URLs from {len(url_list)} to {len(processed_urls)}"})
+
             processed_urls.add(normalized_abs_link)
             urls_to_visit.put((abs_link, depth + 1))
 
@@ -215,6 +225,10 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
     urls_to_visit.put((config.start_url, 0))
     processed_urls = {normalized_start_url}
     pages_saved = 0
+
+    # Memory management: limit processed_urls size to prevent unbounded growth
+    # Keep track of URLs but allow cleanup when we exceed reasonable limits
+    max_processed_urls = max(config.max_pages * 10, 1000)  # Allow 10x more URLs than pages, minimum 1000
 
     try:
         while not urls_to_visit.empty() and pages_saved < config.max_pages:
@@ -262,7 +276,7 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
                         )
 
                     if depth < config.crawl_depth:
-                        _filter_and_queue_links(soup, final_url, config, processed_urls, urls_to_visit, depth, url_cache)
+                        _filter_and_queue_links(soup, final_url, config, processed_urls, urls_to_visit, depth, url_cache, max_processed_urls, log_queue)
 
             except TimeoutException:
                 if not shutdown_event.is_set():

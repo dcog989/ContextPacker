@@ -68,6 +68,10 @@ class MainWindow(QWidget):
         self.create_connections()
         self.toggle_output_view(is_web_mode=True)
 
+        # Memory management: limit verbose log size to prevent unbounded growth
+        self.max_log_lines = 1000  # Keep maximum 1000 lines in verbose log
+        self.log_line_count = 0
+
     def create_widgets(self):
         self.input_group = QGroupBox("Input")
         self.web_crawl_radio = QRadioButton("Web Crawl")
@@ -437,11 +441,31 @@ class MainWindow(QWidget):
 
     def clear_logs(self):
         self.verbose_log_ctrl.clear()
+        self.log_line_count = 0  # Reset line counter
         self.standard_log_list.setRowCount(0)
         self.scraped_files.clear()
         self.discovered_url_count = 0
         self.update_delete_button_state()
         self.update_file_count()
+
+    def _manage_log_size(self):
+        """Manage verbose log size to prevent memory bloat."""
+        if self.log_line_count > self.max_log_lines:
+            # Remove oldest lines to stay within limit
+            document = self.verbose_log_ctrl.document()
+            cursor = self.verbose_log_ctrl.textCursor()
+
+            # Calculate how many lines to remove (remove 25% when limit exceeded)
+            lines_to_remove = self.log_line_count // 4
+
+            # Move to beginning and remove lines
+            cursor.movePosition(cursor.MoveOperation.Start)
+            for _ in range(lines_to_remove):
+                cursor.select(cursor.SelectionType.LineUnderCursor)
+                cursor.removeSelectedText()
+                cursor.deleteChar()  # Remove newline
+
+            self.log_line_count -= lines_to_remove
 
     def update_discovered_count(self, count):
         self.discovered_url_count = count

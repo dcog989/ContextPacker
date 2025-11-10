@@ -83,6 +83,9 @@ class App(QMainWindow):
         self.ui_update_counter = 0
         self.ui_update_batch_size = 50  # Batch UI updates every 50 files
 
+        # Memory management: limit batch size to prevent unbounded growth
+        self.max_batch_size = 500  # Maximum items in scraped_files_batch
+
         self.exclude_update_timer = QTimer(self)
         self.exclude_update_timer.setInterval(500)
         self.exclude_update_timer.setSingleShot(True)
@@ -204,6 +207,13 @@ class App(QMainWindow):
             self.log_verbose(msg_obj.get("message", ""))
         elif msg_type == "file_saved":
             self.scraped_files_batch.append(msg_obj)
+
+            # Memory management: check if batch is getting too large
+            if len(self.scraped_files_batch) >= self.max_batch_size:
+                # Force immediate UI update to clear the batch
+                self.main_panel.add_scraped_files_batch(self.scraped_files_batch)
+                self.scraped_files_batch.clear()
+                self.log_verbose(f"  -> Memory management: processed large batch of {self.max_batch_size} files")
 
             # Batch UI updates to reduce frame drops
             self.ui_update_counter += 1
@@ -477,6 +487,13 @@ class App(QMainWindow):
         self.main_panel.copy_button.setEnabled(copy_ready)
 
     def log_verbose(self, message):
+        # Count lines in the message (handle multi-line messages)
+        lines_in_message = message.count("\n") + 1
+        self.main_panel.log_line_count += lines_in_message
+
+        # Check if we need to trim the log before adding new content
+        self.main_panel._manage_log_size()
+
         self.main_panel.verbose_log_ctrl.append(message)
 
     def _open_output_folder(self):
