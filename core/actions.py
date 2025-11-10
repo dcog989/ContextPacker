@@ -39,7 +39,7 @@ def start_download(app, cancel_event):
     crawler_config = app.main_panel.get_crawler_config(app.temp_dir)
 
     app.log_verbose("Starting url conversion...")
-    app.worker_thread = threading.Thread(target=crawl_website, args=(crawler_config, app.log_queue, cancel_event), daemon=True)
+    app.worker_thread = threading.Thread(target=crawl_website, args=(crawler_config, app.log_queue, cancel_event, app.shutdown_event), daemon=True)
     app.worker_thread.start()
 
 
@@ -70,11 +70,11 @@ def start_git_clone(app, cancel_event):
     url = app.main_panel.start_url_ctrl.text()
 
     app.log_verbose(f"Starting git clone for {url}...")
-    app.worker_thread = threading.Thread(target=_clone_repo_worker, args=(url, app.temp_dir, app.log_queue, cancel_event), daemon=True)
+    app.worker_thread = threading.Thread(target=_clone_repo_worker, args=(url, app.temp_dir, app.log_queue, cancel_event, app.shutdown_event), daemon=True)
     app.worker_thread.start()
 
 
-def _clone_repo_worker(url, path, log_queue, cancel_event):
+def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
     """Worker function to perform a git clone and stream output."""
     if not shutil.which("git"):
         error_msg = "ERROR: Git is not installed or not found in your system's PATH. Please install Git to use this feature."
@@ -116,14 +116,14 @@ def _clone_repo_worker(url, path, log_queue, cancel_event):
 
             try:
                 line = output_queue.get(timeout=0.1)
-                if line:
+                if line and not shutdown_event.is_set():
                     log_queue.put({"type": "log", "message": line.strip()})
             except queue.Empty:
                 continue
 
         while not output_queue.empty():
             line = output_queue.get_nowait()
-            if line:
+            if line and not shutdown_event.is_set():
                 log_queue.put({"type": "log", "message": line.strip()})
 
         if cancel_event.is_set():
@@ -235,13 +235,18 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
     app.log_verbose(f"Output file will be saved to: {app.final_output_path}")
 
     class RepomixProgressHandler(logging.Handler):
-        def __init__(self, log_queue_ref, total_files_ref):
+        def __init__(self, log_queue_ref, total_files_ref, shutdown_event_ref):
             super(RepomixProgressHandler, self).__init__()
             self.log_queue = log_queue_ref
             self.processed_count = 0
             self.total_files = total_files_ref
+            self.shutdown_event = shutdown_event_ref
 
         def emit(self, record):
+            # Don't emit during shutdown to prevent race conditions
+            if self.shutdown_event.is_set():
+                return
+
             msg = self.format(record)
             if "Processing file:" in msg:
                 self.processed_count += 1
@@ -258,7 +263,7 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
         else:
             total_files_for_progress = len([f for f in file_list if f.get("type") == "File"])
 
-    progress_handler = RepomixProgressHandler(app.log_queue, total_files_for_progress)
+    progress_handler = RepomixProgressHandler(app.log_queue, total_files_for_progress, app.shutdown_event)
     progress_handler.setLevel(logging.INFO)
 
     args = (

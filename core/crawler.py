@@ -51,9 +51,10 @@ def _url_matches_any_pattern(url, patterns):
     return False
 
 
-def _initialize_driver(config, log_queue):
+def _initialize_driver(config, log_queue, shutdown_event):
     """Initializes and returns a Selenium WebDriver instance."""
-    log_queue.put({"type": "log", "message": "Searching for a compatible web browser..."})
+    if not shutdown_event.is_set():
+        log_queue.put({"type": "log", "message": "Searching for a compatible web browser..."})
 
     chrome_options = webdriver.ChromeOptions()
     chrome_options.add_argument("--headless")
@@ -96,16 +97,20 @@ def _initialize_driver(config, log_queue):
 
     for name_key, driver_class, options, service_class in browsers_to_try:
         try:
-            log_queue.put({"type": "log", "message": f"  -> Attempting to initialize {name_key}..."})
+            if not shutdown_event.is_set():
+                log_queue.put({"type": "log", "message": f"  -> Attempting to initialize {name_key}..."})
             service = service_class(creationflags=creation_flags)
             driver = driver_class(service=service, options=options)
-            log_queue.put({"type": "log", "message": f"✔ Success: Using {name_key} for web crawling."})
+            if not shutdown_event.is_set():
+                log_queue.put({"type": "log", "message": f"✔ Success: Using {name_key} for web crawling."})
             return driver
         except WebDriverException as e:
-            log_queue.put({"type": "log", "message": f"  -> {name_key} not found or failed to start. Details: {e.msg}"})
+            if not shutdown_event.is_set():
+                log_queue.put({"type": "log", "message": f"  -> {name_key} not found or failed to start. Details: {e.msg}"})
         except Exception as e:
-            tb_str = traceback.format_exc()
-            log_queue.put({"type": "log", "message": f"  -> An unexpected error occurred with {name_key}: {e}\n{tb_str}"})
+            if not shutdown_event.is_set():
+                tb_str = traceback.format_exc()
+                log_queue.put({"type": "log", "message": f"  -> An unexpected error occurred with {name_key}: {e}\n{tb_str}"})
     return None
 
 
@@ -170,12 +175,12 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
             urls_to_visit.put((abs_link, depth + 1))
 
 
-def crawl_website(config, log_queue, cancel_event):
+def crawl_website(config, log_queue, cancel_event, shutdown_event):
     """
-    Crawls a website based on the provided configuration.
-    This function orchestrates the crawling process.
+    Crawls a website based on provided configuration.
+    This function orchestrates crawling process.
     """
-    driver = _initialize_driver(config, log_queue)
+    driver = _initialize_driver(config, log_queue, shutdown_event)
     if not driver:
         error_msg = "ERROR: Could not find a compatible web browser or its driver.\nPlease ensure a supported browser (Edge, Chrome, or Firefox) is installed."
         log_queue.put({"type": "status", "status": "error", "message": error_msg})
@@ -198,11 +203,12 @@ def crawl_website(config, log_queue, cancel_event):
             current_url, depth = urls_to_visit.get()
 
             # Check for cancellation immediately after getting URL but before processing
-            if cancel_event.is_set():
+            if cancel_event.is_set() or shutdown_event.is_set():
                 break
 
-            log_queue.put({"type": "progress", "value": pages_saved, "max_value": config.max_pages})
-            log_queue.put({"type": "log", "message": f"GET (Depth {depth}): {current_url}"})
+            if not shutdown_event.is_set():
+                log_queue.put({"type": "progress", "value": pages_saved, "max_value": config.max_pages})
+                log_queue.put({"type": "log", "message": f"GET (Depth {depth}): {current_url}"})
 
             try:
                 page_data, error_msg = _process_page(driver, config, current_url)
@@ -211,7 +217,8 @@ def crawl_website(config, log_queue, cancel_event):
                     break
 
                 if error_msg:
-                    log_queue.put({"type": "log", "message": error_msg})
+                    if not shutdown_event.is_set():
+                        log_queue.put({"type": "log", "message": error_msg})
                     continue
 
                 if page_data:
@@ -220,27 +227,31 @@ def crawl_website(config, log_queue, cancel_event):
                     processed_urls.add(normalized_final_url)
 
                     pages_saved += 1
-                    log_queue.put(
-                        {
-                            "type": "file_saved",
-                            "url": final_url,
-                            "path": str(output_path),
-                            "filename": filename,
-                            "pages_saved": pages_saved,
-                            "max_pages": config.max_pages,
-                            "queue_size": urls_to_visit.qsize(),
-                        }
-                    )
+                    if not shutdown_event.is_set():
+                        log_queue.put(
+                            {
+                                "type": "file_saved",
+                                "url": final_url,
+                                "path": str(output_path),
+                                "filename": filename,
+                                "pages_saved": pages_saved,
+                                "max_pages": config.max_pages,
+                                "queue_size": urls_to_visit.qsize(),
+                            }
+                        )
 
                     if depth < config.crawl_depth:
                         _filter_and_queue_links(soup, final_url, config, processed_urls, urls_to_visit, depth)
 
             except TimeoutException:
-                log_queue.put({"type": "log", "message": f"  -> TIMEOUT after 15s on: {current_url}"})
+                if not shutdown_event.is_set():
+                    log_queue.put({"type": "log", "message": f"  -> TIMEOUT after 15s on: {current_url}"})
             except WebDriverException as e:
-                log_queue.put({"type": "log", "message": f"  -> SELENIUM ERROR on {current_url}: {e.msg}"})
+                if not shutdown_event.is_set():
+                    log_queue.put({"type": "log", "message": f"  -> SELENIUM ERROR on {current_url}: {e.msg}"})
             except Exception as e:
-                log_queue.put({"type": "log", "message": f"  -> PROCESSING ERROR on {current_url}: {e}"})
+                if not shutdown_event.is_set():
+                    log_queue.put({"type": "log", "message": f"  -> PROCESSING ERROR on {current_url}: {e}"})
 
     finally:
         if driver:
@@ -248,7 +259,8 @@ def crawl_website(config, log_queue, cancel_event):
 
     status_key = "cancelled" if cancel_event.is_set() else "source_complete"
     message = "Process cancelled by user." if cancel_event.is_set() else f"\nWeb scrape finished. Saved {pages_saved} pages."
-    log_queue.put({"type": "status", "status": status_key, "message": message})
+    if not shutdown_event.is_set():
+        log_queue.put({"type": "status", "status": status_key, "message": message})
 
 
 def _cleanup_driver(driver, timeout=10, log_queue=None):

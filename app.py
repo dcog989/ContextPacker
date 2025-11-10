@@ -49,7 +49,7 @@ class App(QMainWindow):
         self.cancel_event = None
         self.worker_thread = None
         self.queue_listener_shutdown = threading.Event()
-        self.is_shutting_down = False
+        self.shutdown_event = threading.Event()
         self.is_task_running = False
         self.local_files_to_exclude = set()
         self.local_depth_excludes = set()
@@ -179,7 +179,9 @@ class App(QMainWindow):
             try:
                 msg_obj = self.log_queue.get_nowait()
                 if msg_obj is not None:
-                    self.signals.message.emit(msg_obj)
+                    # Don't emit signals during shutdown to prevent race conditions
+                    if not self.shutdown_event.is_set():
+                        self.signals.message.emit(msg_obj)
                     self.log_queue.task_done()
             except queue.Empty:
                 break
@@ -188,6 +190,10 @@ class App(QMainWindow):
                 continue
 
     def _process_log_queue_message(self, msg_obj):
+        # Ignore messages during shutdown to prevent race conditions
+        if self.shutdown_event.is_set():
+            return
+
         msg_type = msg_obj.get("type")
         if msg_type == "log":
             self.log_verbose(msg_obj.get("message", ""))
@@ -266,7 +272,7 @@ class App(QMainWindow):
         self.worker_thread = None
         self.cancel_event = None
 
-        if self.is_shutting_down:
+        if self.shutdown_event.is_set():
             self.close()
             return
 
@@ -306,7 +312,16 @@ class App(QMainWindow):
         config["sash_state"] = str(sash_qba, "utf-8")  # type: ignore
         save_config(config)
 
-        queue_stopped = self.stop_queue_listener(timeout=5.0)  # <-- CHANGED
+        # Set shutdown event first to prevent new signal processing
+        self.shutdown_event.set()
+
+        # Disconnect signals to prevent race conditions during shutdown
+        try:
+            self.signals.message.disconnect()
+        except RuntimeError:
+            pass  # Signal already disconnected
+
+        queue_stopped = self.stop_queue_listener(timeout=5.0)
         if not queue_stopped:
             print("Warning: Queue listener did not stop cleanly")
 
@@ -327,8 +342,8 @@ class App(QMainWindow):
         is_worker_running = False
 
         if self.worker_thread and self.worker_thread.is_alive():
-            if not self.is_shutting_down:
-                self.is_shutting_down = True
+            if not self.shutdown_event.is_set():
+                self.shutdown_event.set()
                 self.log_verbose("Shutdown requested. Waiting for main task to terminate...")
                 if self.cancel_event:
                     self.cancel_event.set()
@@ -336,8 +351,8 @@ class App(QMainWindow):
             is_worker_running = True
 
         if self.local_scan_worker and self.local_scan_worker.is_alive():
-            if not is_worker_running:
-                self.is_shutting_down = True
+            if not self.shutdown_event.is_set():
+                self.shutdown_event.set()
                 self.log_verbose("Shutdown requested. Waiting for file scanner to terminate...")
 
             if self.local_scan_cancel_event:
@@ -351,7 +366,7 @@ class App(QMainWindow):
         if is_worker_running:
             return True
 
-        self.is_shutting_down = False
+        self.shutdown_event.clear()
         return False
 
     def _toggle_ui_controls(self, enable=True, widget_to_keep_enabled=None):
@@ -490,12 +505,13 @@ class App(QMainWindow):
         cancel_event = args[5]  # The cancel_event is the 6th argument
         try:
             results = actions.get_local_files(*args)
-            if not cancel_event.is_set():
+            if not cancel_event.is_set() and not self.shutdown_event.is_set():
                 self.signals.message.emit({"type": "local_scan_complete", "results": results})
         except Exception as e:
-            self.signals.message.emit({"type": "log", "message": f"ERROR scanning directory: {e}"})
+            if not self.shutdown_event.is_set():
+                self.signals.message.emit({"type": "log", "message": f"ERROR scanning directory: {e}"})
         finally:
-            if cancel_event.is_set():  # If cancelled, still unlock UI
+            if cancel_event.is_set() and not self.shutdown_event.is_set():  # If cancelled, still unlock UI
                 self.signals.message.emit({"type": "local_scan_complete", "results": None})
 
     def on_show_about_dialog(self, event):
