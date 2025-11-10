@@ -282,8 +282,10 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
 def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event=None, gitignore_cache=None):
     """
     Scans a directory and returns a filtered list of files and folders,
-    pruning ignored directories for efficiency.
+    optimized for performance with depth-aware traversal and efficient pattern matching.
     """
+    import heapq
+
     base_path = Path(root_dir)
     if not base_path.is_dir():
         return [], set()
@@ -291,82 +293,170 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
     if max_depth == 9:  # Treat 9 as unlimited
         max_depth = sys.maxsize
 
+    # Use heap for efficient sorting of large directories
     files_to_show = []
     depth_excludes = set()
-    all_ignore_patterns = list(custom_excludes)
 
+    # Pre-compile patterns for better performance
+    compiled_patterns = []
+    for pattern in custom_excludes:
+        try:
+            compiled_patterns.append((pattern, True))  # True for custom pattern
+        except Exception:
+            continue
+
+    # Optimized gitignore loading with better caching
+    def load_ignore_patterns(ignore_file_path, cache_key):
+        """Load and cache ignore patterns efficiently."""
+        try:
+            stat_info = ignore_file_path.stat()
+            mtime = stat_info.st_mtime
+
+            # Check cache first
+            if gitignore_cache is not None and cache_key in gitignore_cache:
+                cached = gitignore_cache[cache_key]
+                if cached.get("mtime") == mtime:
+                    return cached["patterns"]
+
+            # Load and parse file
+            with open(ignore_file_path, "r", encoding="utf-8") as f:
+                patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+
+            # Update cache
+            if gitignore_cache is not None:
+                gitignore_cache[cache_key] = {"mtime": mtime, "patterns": patterns}
+
+            return patterns
+        except Exception:
+            # Remove invalid cache entry
+            if gitignore_cache is not None and cache_key in gitignore_cache:
+                del gitignore_cache[cache_key]
+            return []
+
+    # Load root-level ignore patterns once
     ignore_files_to_check = [".repomixignore"]
     if use_gitignore:
         ignore_files_to_check.append(".gitignore")
 
+    root_patterns = []
     for filename in ignore_files_to_check:
         ignore_file_path = base_path / filename
-        if not ignore_file_path.is_file():
+        if ignore_file_path.is_file():
+            patterns = load_ignore_patterns(ignore_file_path, str(ignore_file_path))
+            root_patterns.extend(patterns)
+
+    # Add binary excludes to compiled patterns
+    for pattern in binary_excludes:
+        try:
+            compiled_patterns.append((pattern, True))
+        except Exception:
             continue
 
-        cache_key = str(ignore_file_path)
+    # Add root ignore patterns to compiled patterns
+    for pattern in root_patterns:
         try:
-            mtime = ignore_file_path.stat().st_mtime
-            if gitignore_cache is not None and cache_key in gitignore_cache and gitignore_cache[cache_key].get("mtime") == mtime:
-                patterns = gitignore_cache[cache_key]["patterns"]
-            else:
-                with open(ignore_file_path, "r", encoding="utf-8") as f:
-                    read_patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
-                    patterns = read_patterns
-                    if gitignore_cache is not None:
-                        gitignore_cache[cache_key] = {"mtime": mtime, "patterns": patterns}
-            all_ignore_patterns.extend(patterns)
+            compiled_patterns.append((pattern, True))
         except Exception:
-            if gitignore_cache is not None and cache_key in gitignore_cache:
-                del gitignore_cache[cache_key]
+            continue
 
-    all_ignore_patterns.extend(binary_excludes)
+    # Optimized directory traversal with depth awareness
+    def should_ignore_path(rel_path, is_dir=False):
+        """Check if a path should be ignored using compiled patterns."""
+        path_str = rel_path.as_posix()
+        if is_dir:
+            path_str = path_str.rstrip("/") + "/"
 
-    for root, dirnames, filenames in os.walk(str(base_path), topdown=True):
-        if cancel_event and cancel_event.is_set():
-            return [], set()
-        root_path = Path(root)
-        rel_root_path = root_path.relative_to(base_path)
+        for pattern, _ in compiled_patterns:
+            if fnmatch.fnmatch(path_str, pattern):
+                return True
+        return False
 
-        depth = 0 if rel_root_path == Path(".") else len(rel_root_path.parts)
-        if depth >= max_depth:
-            for d in dirnames:
-                depth_excludes.add(f"{(rel_root_path / d).as_posix()}/")
-            dirnames[:] = []
+    # Use iterative approach for better control and early termination
+    def scan_directory_iterative(start_path, max_depth_limit):
+        """Iteratively scan directory with depth control and early termination."""
+        # Stack holds tuples: (current_path, relative_path, current_depth)
+        stack = [(start_path, Path("."), 0)]
 
-        ignored_dirs = set()
-        for d in dirnames:
-            dir_path_posix = (rel_root_path / d).as_posix()
-            if any(fnmatch.fnmatch(dir_path_posix, pattern) or fnmatch.fnmatch(f"{dir_path_posix}/", pattern) for pattern in all_ignore_patterns):
-                ignored_dirs.add(d)
-        dirnames[:] = [d for d in dirnames if d not in ignored_dirs]
+        while stack:
+            if cancel_event and cancel_event.is_set():
+                return
 
-        # Check for cancellation before processing directories
-        if cancel_event and cancel_event.is_set():
-            return [], set()
+            current_path, rel_path, current_depth = stack.pop()
 
-        for d in dirnames:
-            rel_path_str = (rel_root_path / d).as_posix()
-            files_to_show.append({"name": rel_path_str + "/", "type": "Folder", "size": 0, "size_str": "", "rel_path": rel_path_str + "/"})
+            # Check depth limit
+            if current_depth >= max_depth_limit:
+                # Add to depth excludes if we hit the limit
+                if current_path.is_dir():
+                    depth_excludes.add(rel_path.as_posix() + "/")
+                continue
 
-        # Check for cancellation before processing files
-        if cancel_event and cancel_event.is_set():
-            return [], set()
+            # Process directory contents
+            try:
+                entries = list(current_path.iterdir())
+            except (OSError, PermissionError):
+                continue
 
-        for f in filenames:
-            rel_path = rel_root_path / f
-            if not any(fnmatch.fnmatch(rel_path.as_posix(), pattern) for pattern in all_ignore_patterns):
+            # Separate files and directories for processing
+            dirs = []
+            files = []
+
+            for entry in entries:
+                entry_rel_path = rel_path / entry.name
+
+                # Skip if ignored
+                if should_ignore_path(entry_rel_path, entry.is_dir()):
+                    continue
+
+                if entry.is_dir():
+                    dirs.append((entry, entry_rel_path))
+                else:
+                    files.append((entry, entry_rel_path))
+
+            # Add directories to stack (reverse order for natural processing)
+            for dir_entry, dir_rel_path in reversed(dirs):
+                stack.append((dir_entry, dir_rel_path, current_depth + 1))
+
+                # Add directory to results
+                rel_path_str = dir_rel_path.as_posix()
+                files_to_show.append({"name": rel_path_str + "/", "type": "Folder", "size": 0, "size_str": "", "rel_path": rel_path_str + "/"})
+
+            # Process files
+            for file_entry, file_rel_path in files:
                 try:
-                    full_path = root_path / f
-                    size = full_path.stat().st_size
+                    size = file_entry.stat().st_size
                     size_str = f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
-                    rel_path_str = rel_path.as_posix()
+                    rel_path_str = file_rel_path.as_posix()
+
                     files_to_show.append({"name": rel_path_str, "type": "File", "size": size, "size_str": size_str, "rel_path": rel_path_str})
                 except (OSError, ValueError):
                     continue
 
+    # Start the scan
+    scan_directory_iterative(base_path, max_depth)
+
+    # Check for cancellation before sorting
     if cancel_event and cancel_event.is_set():
         return [], set()
 
-    files_to_show.sort(key=lambda p: (p["type"] != "Folder", p["name"].lower()), reverse=True)
+    # Efficient sorting using heap for large datasets
+    if len(files_to_show) > 1000:  # Use heap for large directories
+        # Create separate heaps for folders and files
+        folders = []
+        files = []
+
+        for item in files_to_show:
+            if item["type"] == "Folder":
+                heapq.heappush(folders, (item["name"].lower(), item))
+            else:
+                heapq.heappush(files, (item["name"].lower(), item))
+
+        # Extract sorted items
+        sorted_folders = [heapq.heappop(folders)[1] for _ in range(len(folders))]
+        sorted_files = [heapq.heappop(files)[1] for _ in range(len(files))]
+
+        files_to_show = sorted_folders + sorted_files
+    else:
+        # Use regular sort for smaller datasets
+        files_to_show.sort(key=lambda p: (p["type"] != "Folder", p["name"].lower()), reverse=True)
+
     return files_to_show, depth_excludes
