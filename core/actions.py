@@ -5,12 +5,12 @@ from datetime import datetime
 import logging
 import fnmatch
 import queue
-import sys
 
 from .packager import run_repomix
 from .crawler import crawl_website
 from .utils import get_app_data_dir, get_downloads_folder
 from .error_handling import WorkerErrorHandler, create_process_with_flags, safe_stream_enqueue, validate_tool_availability, create_tool_missing_error
+from .constants import UNLIMITED_DEPTH_VALUE, UNLIMITED_DEPTH_REPLACEMENT, LARGE_DIRECTORY_THRESHOLD
 
 
 def _create_session_dir():
@@ -246,8 +246,8 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
     if not base_path.is_dir():
         return [], set()
 
-    if max_depth == 9:  # Treat 9 as unlimited
-        max_depth = sys.maxsize
+    if max_depth == UNLIMITED_DEPTH_VALUE:  # Treat specific value as unlimited
+        max_depth = UNLIMITED_DEPTH_REPLACEMENT
 
     # Use heap for efficient sorting of large directories
     files_to_show = []
@@ -395,7 +395,7 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
         return [], set()
 
     # Efficient sorting using heap for large datasets
-    if len(files_to_show) > 1000:  # Use heap for large directories
+    if len(files_to_show) > LARGE_DIRECTORY_THRESHOLD:  # Use heap for large directories
         # Create separate heaps for folders and files
         folders = []
         files = []

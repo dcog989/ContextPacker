@@ -9,6 +9,7 @@ import re
 from markdownify import markdownify as md
 
 from .browser_utils import initialize_driver, cleanup_driver
+from .constants import PAGE_LOAD_TIMEOUT_SECONDS, MEMORY_MANAGEMENT_URL_LIMIT
 
 
 def sanitize_filename(url, filename_cache=None):
@@ -151,7 +152,7 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
         log_queue.put({"type": "status", "status": "error", "message": error_msg})
         return
 
-    driver.set_page_load_timeout(15)
+    driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
     log_queue.put({"type": "log", "message": "Starting web crawl..."})
 
     # Initialize caches to avoid redundant operations
@@ -166,7 +167,7 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
 
     # Memory management: limit processed_urls size to prevent unbounded growth
     # Keep track of URLs but allow cleanup when we exceed reasonable limits
-    max_processed_urls = max(config.max_pages * 10, 1000)  # Allow 10x more URLs than pages, minimum 1000
+    max_processed_urls = max(config.max_pages * 10, MEMORY_MANAGEMENT_URL_LIMIT)  # Allow 10x more URLs than pages, minimum limit
 
     try:
         while not urls_to_visit.empty() and pages_saved < config.max_pages:
@@ -218,7 +219,7 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
 
             except TimeoutException:
                 if not shutdown_event.is_set():
-                    log_queue.put({"type": "log", "message": f"  -> TIMEOUT after 15s on: {current_url}"})
+                    log_queue.put({"type": "log", "message": f"  -> TIMEOUT after {PAGE_LOAD_TIMEOUT_SECONDS}s on: {current_url}"})
             except WebDriverException as e:
                 if not shutdown_event.is_set():
                     log_queue.put({"type": "log", "message": f"  -> SELENIUM ERROR on {current_url}: {e.msg}"})

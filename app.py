@@ -20,6 +20,13 @@ from core.version import __version__
 from core.config_manager import get_config, save_config
 from core.task_handler import TaskHandler
 from core.utils import get_app_data_dir, cleanup_old_directories, resource_path
+from core.constants import (
+    BATCH_UPDATE_INTERVAL_MS,
+    EXCLUDE_UPDATE_INTERVAL_MS,
+    UI_UPDATE_INTERVAL_MS,
+    MAX_BATCH_SIZE,
+    UI_UPDATE_BATCH_SIZE,
+)
 
 config = get_config()
 BINARY_FILE_PATTERNS = config.get("binary_file_patterns", [])
@@ -75,24 +82,24 @@ class App(QMainWindow):
         self.scraped_files_batch = []
         self.discovered_count_batch = 0
         self.batch_update_timer = QTimer(self)
-        self.batch_update_timer.setInterval(250)
+        self.batch_update_timer.setInterval(BATCH_UPDATE_INTERVAL_MS)
         self.batch_update_timer.timeout.connect(self.on_batch_update_timer)
         self.batch_update_timer.start()  # Start persistent timer immediately
 
         # UI update batching counters
         self.ui_update_counter = 0
-        self.ui_update_batch_size = 50  # Batch UI updates every 50 files
+        self.ui_update_batch_size = UI_UPDATE_BATCH_SIZE  # Batch UI updates every N files
 
         # Memory management: limit batch size to prevent unbounded growth
-        self.max_batch_size = 500  # Maximum items in scraped_files_batch
+        self.max_batch_size = MAX_BATCH_SIZE  # Maximum items in scraped_files_batch
 
         self.exclude_update_timer = QTimer(self)
-        self.exclude_update_timer.setInterval(500)
+        self.exclude_update_timer.setInterval(EXCLUDE_UPDATE_INTERVAL_MS)
         self.exclude_update_timer.setSingleShot(True)
         self.exclude_update_timer.timeout.connect(self.start_local_file_scan)
 
         self.ui_update_timer = QTimer(self)
-        self.ui_update_timer.setInterval(1000)
+        self.ui_update_timer.setInterval(UI_UPDATE_INTERVAL_MS)
         self.ui_update_timer.timeout.connect(self._update_timestamp_label)
         self.ui_update_timer.start()
 

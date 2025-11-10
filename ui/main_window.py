@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt, QByteArray
 from core.utils import resource_path
 from core.config import CrawlerConfig
 from core.config_manager import get_config
+from core.constants import MAX_LOG_LINES
 
 config = get_config()
 
@@ -69,7 +70,7 @@ class MainWindow(QWidget):
         self.toggle_output_view(is_web_mode=True)
 
         # Memory management: limit verbose log size to prevent unbounded growth
-        self.max_log_lines = 1000  # Keep maximum 1000 lines in verbose log
+        self.max_log_lines = MAX_LOG_LINES  # Keep maximum lines in verbose log
         self.log_line_count = 0
 
     def create_widgets(self):
@@ -250,9 +251,12 @@ class MainWindow(QWidget):
         checkbox_layout.addWidget(self.hide_binaries_check)
         form_layout.addRow("", checkbox_layout)
 
+        from core.constants import UNLIMITED_DEPTH_VALUE
+
         self.dir_level_ctrl = QSpinBox()
-        self.dir_level_ctrl.setValue(9)
-        self.dir_level_ctrl.setRange(0, 9)
+        self.dir_level_ctrl.setValue(UNLIMITED_DEPTH_VALUE)
+        self.dir_level_ctrl.setRange(0, UNLIMITED_DEPTH_VALUE)
+        self.dir_level_ctrl.setSpecialValueText("Unlimited")
         form_layout.addRow("Directory Depth:", self.dir_level_ctrl)
 
         layout.addLayout(form_layout)
