@@ -106,9 +106,8 @@ class OutputPanelFactory:
 
         package_button = QPushButton("Package")
         package_button.setObjectName("PrimaryButton")
-        copy_icon_path = resource_path("assets/icons/copy.png")
+        # The icon is set dynamically in app.py to respect theme
         copy_button = QPushButton()
-        copy_button.setIcon(QIcon(str(copy_icon_path)))
         copy_button.setFixedSize(package_button.sizeHint().height(), package_button.sizeHint().height())
         copy_button.setToolTip("Copy final package contents to clipboard")
         copy_button.setEnabled(False)

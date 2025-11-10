@@ -11,10 +11,10 @@ import sys
 import concurrent.futures
 
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog
-from PySide6.QtCore import QObject, Signal, QTimer, Qt
-from PySide6.QtGui import QIcon, QFontDatabase
+from PySide6.QtCore import QObject, Signal, QTimer, Qt, QSettings
+from PySide6.QtGui import QIcon, QFontDatabase, QPalette, QColor
 
-from ui.main_window import MainWindow, AboutDialog
+from ui.main_window import MainWindow
 from ui.styles import AppTheme
 import core.actions as actions
 from core.version import __version__
@@ -48,8 +48,8 @@ class App(QMainWindow):
             self.resize(1600, 950)
         self.setWindowTitle("ContextPacker")
 
-        # Theme Initialization
-        self.current_theme_mode = config.get("theme_mode", "system")
+        # Theme Initialization: Read saved state, default to True (Dark)
+        self.is_dark_mode = config.get("is_dark_mode", True)
 
         self._setup_app_dirs_and_cleanup()
 
@@ -59,7 +59,7 @@ class App(QMainWindow):
         self.final_output_path = None
         self.log_queue = queue.Queue()
         self.cancel_event = None
-        self.worker_future = None  # Replaces self.worker_thread
+        self.worker_future = None
         self.queue_listener_shutdown = threading.Event()
         self.shutdown_event = threading.Event()
         self.is_task_running = False
@@ -67,8 +67,6 @@ class App(QMainWindow):
         self.local_depth_excludes = set()
         self.gitignore_cache = {}
 
-        # Use ThreadPoolExecutor to manage all worker tasks
-        # Max workers set low as most tasks are singular (download, package)
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         self.local_scan_future = None
         self.local_scan_cancel_event = None
@@ -93,14 +91,12 @@ class App(QMainWindow):
         self.batch_update_timer = QTimer(self)
         self.batch_update_timer.setInterval(BATCH_UPDATE_INTERVAL_MS)
         self.batch_update_timer.timeout.connect(self.on_batch_update_timer)
-        self.batch_update_timer.start()  # Start persistent timer immediately
+        self.batch_update_timer.start()
 
-        # UI update batching counters
         self.ui_update_counter = 0
-        self.ui_update_batch_size = UI_UPDATE_BATCH_SIZE  # Batch UI updates every N files
+        self.ui_update_batch_size = UI_UPDATE_BATCH_SIZE
 
-        # Memory management: limit batch size to prevent unbounded growth
-        self.max_batch_size = MAX_BATCH_SIZE  # Maximum items in scraped_files_batch
+        self.max_batch_size = MAX_BATCH_SIZE
 
         self.exclude_update_timer = QTimer(self)
         self.exclude_update_timer.setInterval(EXCLUDE_UPDATE_INTERVAL_MS)
@@ -116,71 +112,77 @@ class App(QMainWindow):
         self.show()
 
     def _apply_theme(self):
-        """Applies the current theme mode to the application."""
-        theme_mode = self.current_theme_mode
-        effective_mode = theme_mode
+        """Applies the current theme mode to the application, relying on Qt's built-in palette."""
+        is_dark = self.is_dark_mode
+        app = QApplication.instance()
 
-        if theme_mode == "system":
-            effective_mode = "dark"  # Default fallback
+        # 1. Set the application palette to force Light/Dark mode
+        palette = app.palette()
+        if is_dark:
+            # Dark Mode Palette (Using common dark colors, can be replaced by QStyleFactory)
+            palette.setColor(QPalette.Window, QColor(43, 43, 43))
+            palette.setColor(QPalette.WindowText, QColor(224, 224, 224))
+            palette.setColor(QPalette.Base, QColor(43, 43, 43))
+            palette.setColor(QPalette.AlternateBase, QColor(50, 50, 50))
+            palette.setColor(QPalette.ToolTipBase, QColor(255, 255, 255))
+            palette.setColor(QPalette.ToolTipText, QColor(0, 0, 0))
+            palette.setColor(QPalette.Text, QColor(224, 224, 224))
+            palette.setColor(QPalette.Button, QColor(50, 50, 50))
+            palette.setColor(QPalette.ButtonText, QColor(224, 224, 224))
+            palette.setColor(QPalette.BrightText, QColor(255, 0, 0))
+            palette.setColor(QPalette.Link, QColor(42, 130, 218))
+            palette.setColor(QPalette.Highlight, QColor(46, 139, 87))  # Use accent color for highlight
+            palette.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
+        else:
+            # Light Mode Palette (Reset to default system/light palette)
+            palette = QPalette()
 
-        # Attempt to detect system theme on Windows for 'system' mode
-        if platform.system() == "Windows":
-            try:
-                # DwmGetColorizationColor is often used as a proxy for dark mode status
-                # If it fails, we default to the theme_mode setting
-                is_dark_system = ctypes.c_bool()
-                if ctypes.windll.dwmapi.DwmGetColorizationColor(0, ctypes.byref(is_dark_system)) == 0 and is_dark_system:
-                    is_dark_system = True
-                else:
-                    # Fallback on newer windows 10/11: check for dark mode setting
-                    # This check is more complex and less reliable, so we stick to the simpler one
-                    pass
+        app.setPalette(palette)
 
-                if theme_mode == "system":
-                    effective_mode = "dark" if is_dark_system else "light"
-            except (AttributeError, OSError):
-                # DwmGetColorizationColor not available, stick to default
-                pass
+        # 2. Apply the custom stylesheet for accent colors and component specifics
+        theme = AppTheme(is_dark=is_dark)
+        app.setStyleSheet(theme.get_stylesheet())
 
-        theme = AppTheme(effective_mode)
-        self.setStyleSheet(theme.get_stylesheet())
+        # 3. Update Windows title bar theme
+        set_title_bar_theme(self, is_dark)
 
-        # Set Windows title bar theme based on effective mode
-        set_title_bar_theme(self, effective_mode == "dark")
+        # 4. Update dynamic icons
+        self._update_theme_icon()
+        self._update_copy_icon(is_dark)
 
     def _update_theme_icon(self):
         """Updates the icon of the theme switch button based on the current mode."""
         if not hasattr(self, "main_panel") or not self.main_panel:
             return
 
-        mode_cycle = ["system", "dark", "light"]
-        current_mode = self.current_theme_mode
-        current_index = mode_cycle.index(current_mode)
-        next_mode = mode_cycle[(current_index + 1) % len(mode_cycle)]
-
-        # Use simple icons for now (ContextPacker-x64, ContextPacker-x128, copy.png)
-        # These are placeholders until dedicated sun/moon/gear icons are added
-        if current_mode == "system":
-            icon_path = resource_path("assets/icons/ContextPacker-x64.png")
-        elif current_mode == "dark":
-            icon_path = resource_path("assets/icons/ContextPacker-x128.png")
-        else:  # light
-            icon_path = resource_path("assets/icons/copy.png")
-
-        tooltip = f"Current: {current_mode.capitalize()} (Click to switch to {next_mode.capitalize()})"
+        # Use new paint-bucket icons
+        if self.is_dark_mode:
+            icon_path = resource_path("assets/icons/paint-bucket-light.png")
+            tooltip = "Current: Dark (Click to switch to Light Mode)"
+        else:
+            icon_path = resource_path("assets/icons/paint-bucket-dark.png")
+            tooltip = "Current: Light (Click to switch to Dark Mode)"
 
         self.main_panel.theme_switch_button.setIcon(QIcon(str(icon_path)))
         self.main_panel.theme_switch_button.setToolTip(tooltip)
 
+    def _update_copy_icon(self, is_dark):
+        """Updates the icon of the copy button based on the current mode."""
+        if not hasattr(self, "main_panel") or not self.main_panel:
+            return
+
+        if is_dark:
+            icon_path = resource_path("assets/icons/copy-light.png")
+        else:
+            icon_path = resource_path("assets/icons/copy-dark.png")
+
+        self.main_panel.copy_button.setIcon(QIcon(str(icon_path)))
+
     def on_toggle_theme(self):
-        """Cycles through the theme modes: System -> Dark -> Light -> System."""
-        mode_cycle = ["system", "dark", "light"]
-        current_index = mode_cycle.index(self.current_theme_mode)
-        next_index = (current_index + 1) % len(mode_cycle)
-        self.current_theme_mode = mode_cycle[next_index]
+        """Toggles the theme mode between dark and light."""
+        self.is_dark_mode = not self.is_dark_mode
         self._apply_theme()
-        self._update_theme_icon()
-        self.log_verbose(f"Theme set to: {self.current_theme_mode.capitalize()}")
+        self.log_verbose(f"Theme set to: {'Dark' if self.is_dark_mode else 'Light'}")
 
     def _load_custom_font(self):
         font_path = resource_path("assets/fonts/SourceCodePro-Regular.ttf")
@@ -442,7 +444,7 @@ class App(QMainWindow):
         v_sash_qba = self.main_panel.v_splitter.saveState().toBase64()
         config["sash_state"] = bytes(h_sash_qba.data()).decode("utf-8")
         config["v_sash_state"] = bytes(v_sash_qba.data()).decode("utf-8")
-        config["theme_mode"] = self.current_theme_mode
+        config["is_dark_mode"] = self.is_dark_mode
         save_config(config)
 
         # Set shutdown event first to prevent new signal processing
@@ -515,6 +517,7 @@ class App(QMainWindow):
             self.main_panel.package_button,
             self.main_panel.download_button,
             self.main_panel.delete_button,
+            self.main_panel.theme_switch_button,  # Added theme button to disable during task
         ]
         for widget in widgets_to_toggle:
             if widget is not widget_to_keep_enabled:

@@ -1,39 +1,20 @@
 class AppTheme:
-    def __init__(self, mode="system"):
+    def __init__(self, is_dark=True):
         self.accent_color = "#2E8B57"  # Darker green from logo
         self.accent_color_lighter = "#3CB371"  # Lighter green from logo
         self.accent_color_darker = "#153E27"  # Darker green
 
-        # Color palette based on mode
-        if mode == "light":
-            # Light Mode Palette
-            self.background_color = "white"
-            self.text_color = "black"
-            self.group_box_bg = "#f0f0f0"
-            self.color_gray_active = "#999"
-            self.color_gray_highlight = "#ccc"
-            self.color_gray_dark = "#333"
-            self.color_gray_light = "#ddd"
-            self.color_gray_hover = "#aaa"
-            self.color_gray_inactive = "#666"
-        else:
-            # Dark Mode Palette (default for system/dark)
-            self.background_color = "#2b2b2b"
-            self.text_color = "#e0e0e0"
-            self.group_box_bg = "#3c3c3c"
-            self.color_gray_active = "#666"
-            self.color_gray_highlight = "#444"
-            self.color_gray_dark = "#ddd"
-            self.color_gray_light = "#333"
-            self.color_gray_hover = "#777"
-            self.color_gray_inactive = "#999"
+        # Colors for stylesheet components, allowing Qt palette to handle background/text
+        self.color_gray_active = "#999" if not is_dark else "#666"
+        self.color_gray_highlight = "#ccc" if not is_dark else "#444"
+        self.color_gray_light = "#ddd" if not is_dark else "#333"  # Used for disabled text
+        self.color_gray_hover = "#aaa" if not is_dark else "#777"
+        self.color_gray_inactive = "#888"  # Used for disabled buttons/elements
+        self.group_box_bg = "#f0f0f0" if not is_dark else "#3c3c3c"
 
     def get_stylesheet(self):
+        # Rely on Qt palette for window/text/base colors. Stylesheet is only for component customization.
         return f"""
-            QWidget {{
-                background-color: {self.background_color};
-                color: {self.text_color};
-            }}
             QGroupBox {{
                 background-color: {self.group_box_bg};
                 border: 1px solid {self.color_gray_highlight};
@@ -62,8 +43,8 @@ class AppTheme:
             }}
             QPushButton#PrimaryButton:disabled {{
                 background-color: {self.color_gray_inactive};
-                border: 1px solid {self.color_gray_active};
-                color: {self.color_gray_highlight};
+                border: 1px solid {self.color_gray_highlight};
+                color: {self.color_gray_light};
             }}
             
             QPushButton#ThemeSwitchButton {{
@@ -80,20 +61,17 @@ class AppTheme:
             }}
             
             QLineEdit, QTextEdit, QComboBox, QSpinBox, QTableWidget {{
-                background-color: {self.background_color};
-                color: {self.text_color};
                 border: 1px solid {self.color_gray_active};
                 padding: 2px;
                 border-radius: 2px;
             }}
             QTableWidget {{
-                gridline-color: {self.color_gray_active};
+                gridline-color: {self.color_gray_highlight};
             }}
             QHeaderView::section {{
-                background-color: {self.group_box_bg};
-                color: {self.text_color};
+                background-color: {self.group_box_bg}; /* Match group box background */
                 padding: 4px;
-                border: 1px solid {self.color_gray_active};
+                border: 1px solid {self.color_gray_highlight};
             }}
             QTableWidget::item:selected {{
                 background-color: {self.accent_color_darker};

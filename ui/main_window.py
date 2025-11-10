@@ -127,13 +127,15 @@ class MainWindow(QWidget):
         if sash_state_b64:
             self.h_splitter.restoreState(QByteArray.fromBase64(sash_state_b64.encode("utf-8")))
         else:
-            self.h_splitter.setSizes([650, 800])
+            # New requirement: start at 50/50 split for input/output
+            self.h_splitter.setSizes([1, 1])
 
-        # LEFT PANEL (System + Input)
+        # LEFT PANEL (Input + System)
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
-        left_layout.addWidget(self.system_panel)
+        # New requirement: Input above System
         left_layout.addWidget(self.input_group)
+        left_layout.addWidget(self.system_panel)
         self.h_splitter.addWidget(left_widget)
 
         input_layout = QVBoxLayout(self.input_group)
@@ -157,7 +159,7 @@ class MainWindow(QWidget):
         if v_sash_state_b64:
             self.v_splitter.restoreState(QByteArray.fromBase64(v_sash_state_b64.encode("utf-8")))
         else:
-            self.v_splitter.setSizes([400, 400])
+            self.v_splitter.setSizes([1, 1])
 
         self.v_splitter.addWidget(self.list_group)
         self.v_splitter.addWidget(self.log_group)
