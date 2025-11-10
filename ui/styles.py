@@ -1,22 +1,26 @@
 class AppTheme:
-    def __init__(self, is_dark=True):
+    def __init__(self):
+        # Only define static colors (accents and generic component colors)
         self.accent_color = "#2E8B57"  # Darker green from logo
         self.accent_color_lighter = "#3CB371"  # Lighter green from logo
         self.accent_color_darker = "#153E27"  # Darker green
 
-        # Colors for stylesheet components, allowing Qt palette to handle background/text
-        self.color_gray_active = "#999" if not is_dark else "#666"
-        self.color_gray_highlight = "#ccc" if not is_dark else "#444"
-        self.color_gray_light = "#ddd" if not is_dark else "#333"  # Used for disabled text
-        self.color_gray_hover = "#aaa" if not is_dark else "#777"
-        self.color_gray_inactive = "#888"  # Used for disabled buttons/elements
-        self.group_box_bg = "#f0f0f0" if not is_dark else "#3c3c3c"
+        # Use neutral colors that blend with Qt's default palette for components
+        # We rely on Qt's palette for background/text/base color.
+        # These styles target specific visual elements only.
+        self.color_gray_active = "#808080"
+        self.color_gray_highlight = "#D0D0D0"
+        self.color_gray_light = "#A0A0A0"
+        self.color_gray_hover = "#A9A9A9"
+        self.color_gray_inactive = "#888888"
+        self.group_box_bg = "transparent"  # Rely on Qt's QPalette.Base or QPalette.Window
 
     def get_stylesheet(self):
-        # Rely on Qt palette for window/text/base colors. Stylesheet is only for component customization.
+        # Removed all specific color assignments for QWidget, QLineEdit, etc.
+        # to allow Qt's palette to take over for light/dark mode.
         return f"""
             QGroupBox {{
-                background-color: {self.group_box_bg};
+                /* Removing custom background color to rely on system theme */
                 border: 1px solid {self.color_gray_highlight};
                 margin-top: 10px;
                 padding-top: 20px;
@@ -61,6 +65,7 @@ class AppTheme:
             }}
             
             QLineEdit, QTextEdit, QComboBox, QSpinBox, QTableWidget {{
+                /* Keep border for clear component separation, rely on palette for colors */
                 border: 1px solid {self.color_gray_active};
                 padding: 2px;
                 border-radius: 2px;
@@ -69,7 +74,7 @@ class AppTheme:
                 gridline-color: {self.color_gray_highlight};
             }}
             QHeaderView::section {{
-                background-color: {self.group_box_bg}; /* Match group box background */
+                /* Removing custom background color to rely on system theme */
                 padding: 4px;
                 border: 1px solid {self.color_gray_highlight};
             }}
