@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, QByteArray
 from core.utils import resource_path
 from core.config import CrawlerConfig
 from core.config_manager import get_config
-from core.constants import MAX_LOG_LINES
+from core.constants import MAX_LOG_LINES, DEFAULT_MIN_PAUSE_MS, DEFAULT_MAX_PAUSE_MS
 
 config = get_config()
 
@@ -133,9 +133,9 @@ class MainWindow(QWidget):
         self.crawl_depth_ctrl = QSpinBox()
         self.crawl_depth_ctrl.setValue(1)
         self.crawl_depth_ctrl.setRange(0, 99)
-        self.min_pause_ctrl = QLineEdit("212")
+        self.min_pause_ctrl = QLineEdit(str(DEFAULT_MIN_PAUSE_MS))
         self.min_pause_ctrl.setFixedWidth(60)
-        self.max_pause_ctrl = QLineEdit("2200")
+        self.max_pause_ctrl = QLineEdit(str(DEFAULT_MAX_PAUSE_MS))
         self.max_pause_ctrl.setFixedWidth(60)
 
         numerical_layout.addWidget(self.max_pages_ctrl)

@@ -12,6 +12,10 @@ UI_UPDATE_INTERVAL_MS = 1000  # Timer for UI updates (timestamp labels, etc.)
 PAGE_LOAD_TIMEOUT_SECONDS = 15  # Selenium page load timeout
 MEMORY_MANAGEMENT_URL_LIMIT = 1000  # Minimum processed URLs to keep in memory
 
+# Crawler Pause Defaults (in milliseconds)
+DEFAULT_MIN_PAUSE_MS = 53
+DEFAULT_MAX_PAUSE_MS = 735
+
 # Depth Constants
 UNLIMITED_DEPTH_VALUE = 9  # Value that represents "unlimited" depth
 UNLIMITED_DEPTH_REPLACEMENT = float("inf")  # What to replace unlimited depth with internally

@@ -6,14 +6,14 @@ A desktop app to scrape websites, Git repositories, or package local files into 
 
 ## Features
 
-* **Web Crawling**: Scrape a website, convert pages to Markdown, and package them into one file.
-* **Git Repository Cloning**: Enter a Git URL to automatically clone the repository and switch to local packaging mode.
-* **Local Packaging**: Package a local directory (e.g., a code repository) into a single file.
-* **Multiple Output Formats**: Package files as `.md`, `.txt`, or `.xml`.
-* **Smart Filtering**: Automatically respects `.gitignore` rules and provides an option to hide common binary and image files from the list.
-* **Customizable**: Scraping options (depth, paths, speed) and file exclusions can be configured.
-* **External Configuration**: Key settings can be modified in a `config.json` file.
-* **Cross-Platform**: Light and Dark theme support (detects system theme on Windows, macOS, and Linux).
+- **Web Crawling**: Scrape a website, convert pages to Markdown, and package them into one file.
+- **Git Repository Cloning**: Enter a Git URL to automatically clone the repository and switch to local packaging mode.
+- **Local Packaging**: Package a local directory (e.g., a code repository) into a single file.
+- **Multiple Output Formats**: Package files as `.md`, `.txt`, or `.xml`.
+- **Smart Filtering**: Automatically respects `.gitignore` rules and provides an option to hide common binary and image files from the list.
+- **Customizable**: Scraping options (depth, paths, speed) and file exclusions can be configured.
+- **External Configuration**: Key settings can be modified in a `config.json` file.
+- **Cross-Platform**: Light and Dark theme support (detects system theme on Windows, macOS, and Linux).
 
 ## Installation
 
