@@ -5,14 +5,14 @@ Provides standardized platform detection and configuration across the applicatio
 
 import platform
 import os
-from typing import Dict, Any, Union, List
+from typing import Dict, Any, Union, List, Optional
 
 
 class PlatformDetector:
     """Centralized platform detection and configuration."""
 
     _instance = None
-    _platform_info = None
+    _platform_info: Optional[Dict[str, Any]] = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -20,8 +20,9 @@ class PlatformDetector:
             cls._instance._initialize_platform_info()
         return cls._instance
 
-    def _initialize_platform_info(self) -> None:
+    def _initialize_platform_info(self):
         """Initialize platform information once and cache it."""
+        assert self._platform_info is None
         self._platform_info = {
             "system": platform.system(),
             "release": platform.release(),
@@ -39,31 +40,37 @@ class PlatformDetector:
     @property
     def system(self) -> str:
         """Get the system name (Windows, Darwin, Linux)."""
+        assert self._platform_info is not None
         return self._platform_info["system"]
 
     @property
     def is_windows(self) -> bool:
         """Check if running on Windows."""
+        assert self._platform_info is not None
         return self._platform_info["is_windows"]
 
     @property
     def is_macos(self) -> bool:
         """Check if running on macOS."""
+        assert self._platform_info is not None
         return self._platform_info["is_macos"]
 
     @property
     def is_linux(self) -> bool:
         """Check if running on Linux."""
+        assert self._platform_info is not None
         return self._platform_info["is_linux"]
 
     @property
     def is_posix(self) -> bool:
         """Check if running on a POSIX system."""
+        assert self._platform_info is not None
         return self._platform_info["is_posix"]
 
     @property
     def is_nt(self) -> bool:
         """Check if running on an NT system (Windows)."""
+        assert self._platform_info is not None
         return self._platform_info["is_nt"]
 
     def get_process_creation_flags(self) -> int:
@@ -235,10 +242,12 @@ class PlatformDetector:
 
     def get_platform_info(self) -> Dict[str, Any]:
         """Get complete platform information."""
+        assert self._platform_info is not None
         return self._platform_info.copy()
 
     def __str__(self) -> str:
         """String representation of platform info."""
+        assert self._platform_info is not None
         return f"Platform: {self.system} (Release: {self._platform_info['release']})"
 
 

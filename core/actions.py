@@ -52,7 +52,7 @@ def start_git_clone(app, cancel_event):
 
     app.temp_dir = _create_session_dir()
     app.log_verbose(f"Created temporary directory for git clone: {app.temp_dir}")
-    url = app.main_panel.start_url_ctrl.text()
+    url = app.main_panel.start_url_widget.text()
 
     app.log_verbose(f"Starting git clone for {url}...")
     app.worker_thread = threading.Thread(target=_clone_repo_worker, args=(url, app.temp_dir, app.log_queue, cancel_event, app.shutdown_event), daemon=True)

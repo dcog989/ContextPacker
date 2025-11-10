@@ -14,11 +14,11 @@ class TaskHandler:
         msg = UITaskMessage(task=TaskType.DOWNLOAD)
         self.app.signals.message.emit(message_to_dict(msg))
 
-        start_url = self.app.start_url_widget.text()
+        start_url = self.app.main_panel.start_url_widget.text()
         git_pattern = r"(\.git$)|(github\.com)|(gitlab\.com)|(bitbucket\.org)"
         if __import__("re").search(git_pattern, start_url):
             try:
-                self.app.get_crawler_config("dummy_dir_for_validation")
+                self.app.main_panel.get_crawler_config("dummy_dir_for_validation")
             except (ValueError, AttributeError):
                 msg_text = "Invalid input. Please ensure 'Max Pages', 'Min Pause', and 'Max Pause' are whole numbers."
                 QMessageBox.critical(self.app, "Input Error", msg_text)
@@ -31,7 +31,7 @@ class TaskHandler:
             return
 
         try:
-            self.app.get_crawler_config("dummy_dir_for_validation")
+            self.app.main_panel.get_crawler_config("dummy_dir_for_validation")
         except (ValueError, AttributeError):
             msg_text = "Invalid input. Please ensure 'Max Pages', 'Min Pause', and 'Max Pause' are whole numbers."
             QMessageBox.critical(self.app, "Input Error", msg_text)
@@ -47,9 +47,9 @@ class TaskHandler:
         msg = UITaskMessage(task=TaskType.PACKAGE)
         self.app.signals.message.emit(message_to_dict(msg))
 
-        is_web_mode = self.app.web_crawl_radio.isChecked()
+        is_web_mode = self.app.main_panel.web_crawl_radio.isChecked()
         if not is_web_mode:
-            source_dir = self.app.local_dir_ctrl.text()
+            source_dir = self.app.main_panel.local_dir_ctrl.text()
             if not source_dir or not Path(source_dir).is_dir():
                 msg_text = f"The specified input directory is not valid:\n{source_dir}"
                 QMessageBox.critical(self.app, "Input Error", msg_text)
