@@ -73,10 +73,15 @@ class App(QMainWindow):
 
         self.queue_listener_thread = None
         self.scraped_files_batch = []
+        self.discovered_count_batch = 0
         self.batch_update_timer = QTimer(self)
         self.batch_update_timer.setInterval(250)
         self.batch_update_timer.setSingleShot(True)
         self.batch_update_timer.timeout.connect(self.on_batch_update_timer)
+
+        # UI update batching counters
+        self.ui_update_counter = 0
+        self.ui_update_batch_size = 50  # Batch UI updates every 50 files
 
         self.exclude_update_timer = QTimer(self)
         self.exclude_update_timer.setInterval(500)
@@ -201,9 +206,17 @@ class App(QMainWindow):
             self.scraped_files_batch.append(msg_obj)
             if not self.batch_update_timer.isActive():
                 self.batch_update_timer.start()
-            self.main_panel.update_discovered_count(msg_obj.get("queue_size", 0))
-            verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
-            self.log_verbose(verbose_msg)
+
+            # Batch UI updates to reduce frame drops
+            self.ui_update_counter += 1
+            self.discovered_count_batch = max(self.discovered_count_batch, msg_obj.get("queue_size", 0))
+
+            # Only update UI every ui_update_batch_size files or on timer
+            if self.ui_update_counter >= self.ui_update_batch_size:
+                self.main_panel.update_discovered_count(self.discovered_count_batch)
+                verbose_msg = f"  -> Saved: {msg_obj['filename']} [{msg_obj['pages_saved']}/{msg_obj['max_pages']}]"
+                self.log_verbose(verbose_msg)
+                self.ui_update_counter = 0
         elif msg_type == "progress":
             self.main_panel.progress_gauge.setValue(msg_obj["value"])
             self.main_panel.progress_gauge.setMaximum(msg_obj["max_value"])
@@ -239,6 +252,10 @@ class App(QMainWindow):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         self.is_task_running = True
         self.main_panel.copy_button.setEnabled(False)
+
+        # Reset batching counters for new task
+        self.ui_update_counter = 0
+        self.discovered_count_batch = 0
 
         if task == "download":
             dl_button.setText("Stop!")
@@ -300,6 +317,13 @@ class App(QMainWindow):
             self.main_panel.add_scraped_files_batch(self.scraped_files_batch)
             self.scraped_files_batch.clear()
             self._update_button_states()
+
+        # Update discovered count on timer to ensure final count is displayed
+        if self.discovered_count_batch > 0:
+            self.main_panel.update_discovered_count(self.discovered_count_batch)
+
+        # Reset counters
+        self.ui_update_counter = 0
 
     def _set_icon(self):
         icon_path = resource_path("assets/icons/ContextPacker.ico")

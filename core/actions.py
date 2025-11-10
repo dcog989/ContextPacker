@@ -241,6 +241,8 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
             self.processed_count = 0
             self.total_files = total_files_ref
             self.shutdown_event = shutdown_event_ref
+            self.batch_size = 10  # Update progress every 10 files
+            self.last_progress_value = 0
 
         def emit(self, record):
             # Don't emit during shutdown to prevent race conditions
@@ -251,7 +253,11 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
             if "Processing file:" in msg:
                 self.processed_count += 1
                 progress_value = int((self.processed_count / self.total_files) * 100) if self.total_files > 0 else 0
-                self.log_queue.put({"type": "progress", "value": progress_value, "max_value": 100})
+
+                # Only send progress updates if progress changed significantly or every batch_size files
+                if progress_value != self.last_progress_value or self.processed_count % self.batch_size == 0 or self.processed_count == self.total_files:
+                    self.log_queue.put({"type": "progress", "value": progress_value, "max_value": 100})
+                    self.last_progress_value = progress_value
 
             self.log_queue.put({"type": "log", "message": msg})
 
