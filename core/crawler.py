@@ -123,33 +123,41 @@ def _initialize_driver(config, log_queue, shutdown_event):
 
 
 def _process_page(driver, config, current_url, filename_cache=None):
-    """Fetches, processes, and saves a single web page."""
-    driver.get(current_url)
-    pause_duration = random.uniform(config.min_pause, config.max_pause)
-    time.sleep(pause_duration)
+    """Fetches, processes, and saves a single web page.
 
-    final_url = driver.current_url
-    if config.ignore_queries:
-        final_url = final_url.split("?")[0]
+    Returns:
+        tuple: (page_data, None) on success, where page_data is (soup, final_url, output_path, filename)
+        tuple: (None, error_msg) on failure
+    """
+    try:
+        driver.get(current_url)
+        pause_duration = random.uniform(config.min_pause, config.max_pause)
+        time.sleep(pause_duration)
 
-    if "404" in driver.title or "Not Found" in driver.title:
-        return None, f"  -> Skipping (404 Not Found): {final_url}"
+        final_url = driver.current_url
+        if config.ignore_queries:
+            final_url = final_url.split("?")[0]
 
-    html_content = driver.page_source
-    soup = BeautifulSoup(html_content, "lxml")
+        if "404" in driver.title or "Not Found" in driver.title:
+            return None, f"  -> Skipping (404 Not Found): {final_url}"
 
-    for tag in soup(["script", "style"]):
-        tag.decompose()
-    cleaned_html = str(soup)
+        html_content = driver.page_source
+        soup = BeautifulSoup(html_content, "lxml")
 
-    filename = sanitize_filename(final_url, filename_cache) + ".md"
-    md_content = md(cleaned_html)
+        for tag in soup(["script", "style"]):
+            tag.decompose()
+        cleaned_html = str(soup)
 
-    output_path = Path(config.output_dir) / filename
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(md_content)
+        filename = sanitize_filename(final_url, filename_cache) + ".md"
+        md_content = md(cleaned_html)
 
-    return (soup, final_url, output_path, filename), None
+        output_path = Path(config.output_dir) / filename
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(md_content)
+
+        return (soup, final_url, output_path, filename), None
+    except Exception as e:
+        return None, f"  -> Error processing {current_url}: {str(e)}"
 
 
 def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visit, depth, url_cache=None, max_processed_urls=None, log_queue=None):

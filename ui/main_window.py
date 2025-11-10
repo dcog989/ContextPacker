@@ -93,9 +93,9 @@ class MainWindow(QWidget):
         self.standard_log_list.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.standard_log_list.verticalHeader().setVisible(False)
 
-        self.verbose_log_ctrl = QTextEdit()
-        self.verbose_log_ctrl.setReadOnly(True)
-        self.verbose_log_ctrl.setFont(QFont("Consolas", 11))
+        self.verbose_log_widget = QTextEdit()
+        self.verbose_log_widget.setReadOnly(True)
+        self.verbose_log_widget.setFont(QFont("Consolas", 11))
 
         self.local_file_list = QTableWidget(0, 3)
         self.local_file_list.setHorizontalHeaderLabels(["Name", "Type", "Size"])
@@ -173,28 +173,28 @@ class MainWindow(QWidget):
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        self.start_url_ctrl = QLineEdit()
+        self.start_url_widget = QLineEdit()
         user_agents = config.get("user_agents", [])
-        self.user_agent_combo = QComboBox()
-        self.user_agent_combo.addItems(user_agents)
-        self.user_agent_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.user_agent_combo.setMinimumContentsLength(20)
+        self.user_agent_widget = QComboBox()
+        self.user_agent_widget.addItems(user_agents)
+        self.user_agent_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.user_agent_widget.setMinimumContentsLength(20)
 
         numerical_layout, pause_layout = self._create_crawler_numerical_layout()
 
-        self.include_paths_ctrl = QTextEdit()
-        self.exclude_paths_ctrl = QTextEdit()
-        self.include_paths_ctrl.setFixedHeight(80)
-        self.exclude_paths_ctrl.setFixedHeight(80)
+        self.include_paths_widget = QTextEdit()
+        self.exclude_paths_widget = QTextEdit()
+        self.include_paths_widget.setFixedHeight(80)
+        self.exclude_paths_widget.setFixedHeight(80)
 
         options_layout = self._create_crawler_options_layout()
 
-        form_layout.addRow("Start URL:", self.start_url_ctrl)
-        form_layout.addRow("User-Agent:", self.user_agent_combo)
+        form_layout.addRow("Start URL:", self.start_url_widget)
+        form_layout.addRow("User-Agent:", self.user_agent_widget)
         form_layout.addRow("Max Pages:", numerical_layout)
         form_layout.addRow("Pause (ms):", pause_layout)
-        form_layout.addRow("Include Paths:", self.include_paths_ctrl)
-        form_layout.addRow("Exclude Paths:", self.exclude_paths_ctrl)
+        form_layout.addRow("Include Paths:", self.include_paths_widget)
+        form_layout.addRow("Exclude Paths:", self.exclude_paths_widget)
 
         form_layout.addRow("", options_layout)
         form_layout.addRow("", self.download_button)
@@ -302,7 +302,7 @@ class MainWindow(QWidget):
         self.list_stack_layout = QVBoxLayout(list_stack)
         self.list_stack_layout.setContentsMargins(0, 0, 0, 0)
         self.list_stack_layout.addWidget(self.standard_log_list)
-        self.list_stack_layout.addWidget(self.verbose_log_ctrl)
+        self.list_stack_layout.addWidget(self.verbose_log_widget)
         self.list_stack_layout.addWidget(self.local_file_list)
         list_layout.addWidget(list_stack)
 
@@ -340,28 +340,57 @@ class MainWindow(QWidget):
         self.local_file_list.itemSelectionChanged.connect(self.update_delete_button_state)
 
     def get_crawler_config(self, output_dir):
+        """Validate and create crawler configuration. Raises ValueError on invalid input."""
+        start_url = self.start_url_widget.text().strip()
+        if not start_url:
+            raise ValueError("Start URL is required")
+
+        max_pages_text = self.max_pages_ctrl.text().strip()
+        if not max_pages_text or not max_pages_text.isdigit():
+            raise ValueError("Max pages must be a positive integer")
+        max_pages = int(max_pages_text)
+        if max_pages <= 0:
+            raise ValueError("Max pages must be greater than 0")
+
+        min_pause_text = self.min_pause_ctrl.text().strip()
+        if not min_pause_text or not min_pause_text.isdigit():
+            raise ValueError("Min pause must be a positive integer")
+        min_pause = int(min_pause_text)
+        if min_pause < 0:
+            raise ValueError("Min pause cannot be negative")
+
+        max_pause_text = self.max_pause_ctrl.text().strip()
+        if not max_pause_text or not max_pause_text.isdigit():
+            raise ValueError("Max pause must be a positive integer")
+        max_pause = int(max_pause_text)
+        if max_pause < 0:
+            raise ValueError("Max pause cannot be negative")
+
+        if min_pause > max_pause:
+            raise ValueError("Min pause cannot be greater than max pause")
+
         return CrawlerConfig(
-            start_url=self.start_url_ctrl.text(),
+            start_url=start_url,
             output_dir=output_dir,
-            max_pages=int(self.max_pages_ctrl.text()),
-            min_pause=int(self.min_pause_ctrl.text()) / 1000.0,
-            max_pause=int(self.max_pause_ctrl.text()) / 1000.0,
+            max_pages=max_pages,
+            min_pause=min_pause / 1000.0,
+            max_pause=max_pause / 1000.0,
             crawl_depth=self.crawl_depth_ctrl.value(),
-            include_paths=[p.strip() for p in self.include_paths_ctrl.toPlainText().splitlines() if p.strip()],
-            exclude_paths=[p.strip() for p in self.exclude_paths_ctrl.toPlainText().splitlines() if p.strip()],
+            include_paths=[p.strip() for p in self.include_paths_widget.toPlainText().splitlines() if p.strip()],
+            exclude_paths=[p.strip() for p in self.exclude_paths_widget.toPlainText().splitlines() if p.strip()],
             stay_on_subdomain=self.stay_on_subdomain_check.isChecked(),
             ignore_queries=self.ignore_queries_check.isChecked(),
-            user_agent=self.user_agent_combo.currentText(),
+            user_agent=self.user_agent_widget.currentText(),
         )
 
     def on_toggle_log_mode(self, checked):
         if self.log_mode_web_panel.isVisible():
             is_files_mode = self.standard_log_radio.isChecked()
             self.standard_log_list.setVisible(is_files_mode)
-            self.verbose_log_ctrl.setVisible(not is_files_mode)
+            self.verbose_log_widget.setVisible(not is_files_mode)
             self.delete_button.setVisible(is_files_mode)
             if not is_files_mode:
-                self.verbose_log_ctrl.verticalScrollBar().setValue(self.verbose_log_ctrl.verticalScrollBar().maximum())
+                self.verbose_log_widget.verticalScrollBar().setValue(self.verbose_log_widget.verticalScrollBar().maximum())
             self.update_delete_button_state()
 
     def toggle_output_view(self, is_web_mode):
@@ -373,7 +402,7 @@ class MainWindow(QWidget):
             self.on_toggle_log_mode(True)
         else:
             self.standard_log_list.hide()
-            self.verbose_log_ctrl.hide()
+            self.verbose_log_widget.hide()
             self.delete_button.show()
         self.update_delete_button_state()
         self.update_file_count()
@@ -440,7 +469,7 @@ class MainWindow(QWidget):
         self.delete_button.setEnabled(is_enabled)
 
     def clear_logs(self):
-        self.verbose_log_ctrl.clear()
+        self.verbose_log_widget.clear()
         self.log_line_count = 0  # Reset line counter
         self.standard_log_list.setRowCount(0)
         self.scraped_files.clear()
@@ -452,7 +481,7 @@ class MainWindow(QWidget):
         """Manage verbose log size to prevent memory bloat."""
         if self.log_line_count > self.max_log_lines:
             # Remove oldest lines to stay within limit
-            cursor = self.verbose_log_ctrl.textCursor()
+            cursor = self.verbose_log_widget.textCursor()
 
             # Calculate how many lines to remove (remove 25% when limit exceeded)
             lines_to_remove = self.log_line_count // 4

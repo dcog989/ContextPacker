@@ -494,7 +494,7 @@ class App(QMainWindow):
         # Check if we need to trim the log before adding new content
         self.main_panel._manage_log_size()
 
-        self.main_panel.verbose_log_ctrl.append(message)
+        self.main_panel.verbose_log_widget.append(message)
 
     def _open_output_folder(self):
         if not self.final_output_path:
