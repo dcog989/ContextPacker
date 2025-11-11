@@ -380,13 +380,6 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
                 current_path, rel_path, current_depth = queue.popleft()
                 processed_dirs += 1
 
-                # Check depth limit
-                if current_depth >= max_depth_limit:
-                    # Add to depth excludes if we hit the limit
-                    if current_path.is_dir():
-                        depth_excludes.add(rel_path.as_posix() + "/")
-                    continue
-
                 # Process directory contents with better error handling
                 try:
                     entries = list(current_path.iterdir())
@@ -421,16 +414,7 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
                         # Skip problematic entries but continue processing
                         continue
 
-                # Add directories to queue (depth-first for better memory locality)
-                for dir_entry, dir_rel_path in dirs:
-                    queue.appendleft((dir_entry, dir_rel_path, current_depth + 1))
-
-                    # Add directory to results
-                    rel_path_str = dir_rel_path.as_posix()
-                    folder_info = FileInfo(name=rel_path_str + "/", type=FileType.FOLDER, size=0, size_str="", rel_path=rel_path_str + "/")
-                    files_to_show.append(file_info_to_dict(folder_info))
-
-                # Process files with optimized stat calls
+                # Process files at current level first (before depth check)
                 for file_entry, file_rel_path in files:
                     try:
                         stat_info = file_entry.stat()
@@ -444,6 +428,22 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
                     except (OSError, ValueError):
                         # Skip files that can't be accessed
                         continue
+
+                # Check depth limit for adding subdirectories to queue
+                if current_depth >= max_depth_limit:
+                    # Add to depth excludes if we hit the limit
+                    if current_path.is_dir():
+                        depth_excludes.add(rel_path.as_posix() + "/")
+                    continue
+
+                # Add directories to queue (depth-first for better memory locality)
+                for dir_entry, dir_rel_path in dirs:
+                    queue.appendleft((dir_entry, dir_rel_path, current_depth + 1))
+
+                    # Add directory to results
+                    rel_path_str = dir_rel_path.as_posix()
+                    folder_info = FileInfo(name=rel_path_str + "/", type=FileType.FOLDER, size=0, size_str="", rel_path=rel_path_str + "/")
+                    files_to_show.append(file_info_to_dict(folder_info))
 
             # Periodic cancellation check and progress feedback
             if cancel_event and cancel_event.is_set():

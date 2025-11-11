@@ -24,13 +24,13 @@ class AboutDialog(QDialog):
         layout.addWidget(title_label, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addSpacing(10)
 
-        desc = QLabel("Scrape websites or select local files, then package into a single file, optimized for LLMs.")
+        desc = QLabel("Scrape websites or import local files, then package into a single, optimized file for LLMs.")
         desc.setWordWrap(True)
         layout.addWidget(desc)
         layout.addSpacing(15)
 
         milkshake = QLabel('"I drink your milkshake! I drink it up!"')
-        milkshake_font = QFont("Source Code Pro", 12, QFont.Weight.Normal, italic=True)
+        milkshake_font = QFont("Source Code Pro", 11, QFont.Weight.Normal, italic=True)
         milkshake.setFont(milkshake_font)
         layout.addWidget(milkshake, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addSpacing(20)

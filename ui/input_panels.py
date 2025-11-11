@@ -18,49 +18,6 @@ class InputPanelFactory:
         # We store parent for access to properties like parent_window.app.version
         self.parent = parent_window
 
-    def create_system_panel(self):
-        """Creates and configures the System QGroupBox, returning the group and its controls."""
-        system_group = QGroupBox("System")
-        layout = QHBoxLayout(system_group)
-        layout.setContentsMargins(10, 15, 10, 10)
-
-        # Logo and Title
-        logo_path = resource_path("assets/icons/ContextPacker-x64.png")
-        about_logo = QLabel()
-        about_logo.setPixmap(QPixmap(str(logo_path)))
-        about_logo.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        about_logo.setFixedSize(48, 48)
-        about_logo.setScaledContents(True)
-
-        about_text = QLabel("ContextPacker")
-        about_text.setFont(QFont("Source Code Pro", 18, QFont.Weight.Bold))
-        about_text.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        version_text = QLabel(f"v{self.parent.app.version}")
-        version_text.setFont(QFont("Source Code Pro", 10))
-
-        text_layout = QVBoxLayout()
-        text_layout.addWidget(about_text)
-        text_layout.addWidget(version_text)
-        text_layout.setSpacing(0)
-
-        layout.addWidget(about_logo)
-        layout.addLayout(text_layout)
-        layout.addStretch()
-
-        # Theme Switch
-        theme_switch_button = QPushButton()
-        theme_switch_button.setObjectName("ThemeSwitchButton")
-        theme_switch_button.setFixedSize(32, 32)
-        layout.addWidget(theme_switch_button)
-
-        widgets = {
-            "system_panel": system_group,
-            "about_logo": about_logo,
-            "about_text": about_text,
-            "theme_switch_button": theme_switch_button,
-        }
-        return widgets
-
     def create_crawler_panel(self):
         """Creates and configures the Web Crawl input panel, returning the panel and its controls."""
         panel = QWidget()
@@ -70,7 +27,6 @@ class InputPanelFactory:
         form_layout = QFormLayout()
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        # Fix row spacing to be consistent
         form_layout.setVerticalSpacing(8)
         form_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins from form
         widgets = {"crawler_panel": panel}
@@ -149,13 +105,11 @@ class InputPanelFactory:
 
         form_layout.addRow("", checkbox_layout)
 
-        # Button layout at the bottom
         button_layout = QHBoxLayout()
         button_layout.addStretch()
         button_layout.addWidget(download_button)
 
         main_layout.addLayout(form_layout)
-        # Button layout at the bottom
         main_layout.addLayout(button_layout)
 
         widgets["start_url_widget"] = start_url_widget
@@ -181,7 +135,6 @@ class InputPanelFactory:
         form_layout = QFormLayout()
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        # Fix row spacing to match crawler panel exactly
         form_layout.setVerticalSpacing(8)
         form_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins from form
         widgets = {"local_panel": panel}
@@ -195,7 +148,6 @@ class InputPanelFactory:
         dir_layout.setSpacing(6)
         form_layout.addRow("Input Directory:", dir_layout)
 
-        # Fix: Ensure excludes are displayed on separate lines
         default_excludes = config.get("default_local_excludes", [])
         local_exclude_ctrl = QTextEdit()
         local_exclude_ctrl.setPlainText("\n".join(default_excludes))  # Use setPlainText instead of constructor
@@ -216,9 +168,9 @@ class InputPanelFactory:
         form_layout.addRow("", checkbox_layout)
 
         dir_level_ctrl = QSpinBox()
-        dir_level_ctrl.setValue(0)  # Start with current level
-        dir_level_ctrl.setRange(0, 9)  # 0-8 are levels, 9 represents unlimited
-        dir_level_ctrl.setToolTip("0-8: Directory depth level\n9: Unlimited depth")
+        dir_level_ctrl.setValue(9)  # Start with current level
+        dir_level_ctrl.setRange(0, 9)  # 0-8 are levels, 9 = unlimited
+        dir_level_ctrl.setToolTip("0: Current directory only\n1: Current + 1 level down\n...\n9: Unlimited depth")
         dir_level_ctrl.setFixedWidth(100)
 
         dir_level_layout = QHBoxLayout()
@@ -243,4 +195,44 @@ class InputPanelFactory:
             }
         )
 
+        return widgets
+
+    def create_system_panel(self):
+        """Creates and configures the System QGroupBox, returning the group and its controls."""
+        system_group = QGroupBox("System")
+        layout = QHBoxLayout(system_group)
+        layout.setContentsMargins(10, 15, 10, 10)
+
+        # Logo and Title
+        logo_path = resource_path("assets/icons/ContextPacker-x64.png")
+        about_logo = QLabel()
+        about_logo.setPixmap(QPixmap(str(logo_path)))
+        about_logo.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        about_logo.setFixedSize(48, 48)
+        about_logo.setScaledContents(True)
+
+        about_text = QLabel("ContextPacker")
+        about_text.setFont(QFont("Source Code Pro", 18, QFont.Weight.Bold))
+        about_text.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        text_layout = QVBoxLayout()
+        text_layout.addWidget(about_text)
+        text_layout.setSpacing(0)
+
+        layout.addWidget(about_logo)
+        layout.addLayout(text_layout)
+        layout.addStretch()
+
+        # Theme Switch
+        theme_switch_button = QPushButton()
+        theme_switch_button.setObjectName("ThemeSwitchButton")
+        theme_switch_button.setFixedSize(32, 32)
+        layout.addWidget(theme_switch_button)
+
+        widgets = {
+            "system_panel": system_group,
+            "about_logo": about_logo,
+            "about_text": about_text,
+            "theme_switch_button": theme_switch_button,
+        }
         return widgets
