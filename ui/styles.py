@@ -18,4 +18,13 @@ class AppTheme:
             QSplitter::handle:hover {
                 background-color: #A9A9A9;
             }
+            QGroupBox {
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 10px 0 10px;
+            }
         """

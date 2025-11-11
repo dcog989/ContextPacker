@@ -267,7 +267,7 @@ class App(QMainWindow):
 
     def remove_local_file_from_package(self, rel_path):
         self.local_files_to_exclude.add(rel_path)
-        self.log_verbose(f"Will exclude from package: {rel_path}")
+        self.log_verbose(f"Deleted from package: {rel_path}")
 
     def _open_output_folder(self):
         """Opens the folder containing the final output file."""

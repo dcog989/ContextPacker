@@ -69,7 +69,7 @@ class InputPanelFactory:
         main_layout.setSpacing(0)  # Remove extra spacing from main layout
         form_layout = QFormLayout()
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         # Fix row spacing to be consistent
         form_layout.setVerticalSpacing(8)
         form_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins from form
@@ -120,8 +120,10 @@ class InputPanelFactory:
 
         include_paths_widget = QTextEdit()
         exclude_paths_widget = QTextEdit()
-        include_paths_widget.setFixedHeight(80)
-        exclude_paths_widget.setFixedHeight(80)
+        include_paths_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        exclude_paths_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        include_paths_widget.setMinimumHeight(60)
+        exclude_paths_widget.setMinimumHeight(60)
 
         stay_on_subdomain_check = QCheckBox("Stay on start URL's subdomain")
         stay_on_subdomain_check.setChecked(True)
@@ -153,8 +155,7 @@ class InputPanelFactory:
         button_layout.addWidget(download_button)
 
         main_layout.addLayout(form_layout)
-        # Keep minimal stretch for button alignment but don't let it expand rows
-        main_layout.addStretch(1)
+        # Button layout at the bottom
         main_layout.addLayout(button_layout)
 
         widgets["start_url_widget"] = start_url_widget
@@ -179,7 +180,7 @@ class InputPanelFactory:
         layout.setSpacing(0)  # Remove extra spacing from main layout
         form_layout = QFormLayout()
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         # Fix row spacing to match crawler panel exactly
         form_layout.setVerticalSpacing(8)
         form_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins from form
@@ -218,7 +219,7 @@ class InputPanelFactory:
         dir_level_ctrl.setValue(UNLIMITED_DEPTH_VALUE)
         dir_level_ctrl.setRange(0, UNLIMITED_DEPTH_VALUE)
         dir_level_ctrl.setSpecialValueText("Unlimited")
-        dir_level_ctrl.setFixedWidth(60)
+        dir_level_ctrl.setFixedWidth(100)
 
         dir_level_layout = QHBoxLayout()
         dir_level_layout.addWidget(dir_level_ctrl)

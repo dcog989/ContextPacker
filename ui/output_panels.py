@@ -58,6 +58,7 @@ class OutputPanelFactory:
         bottom_bar_layout.addWidget(file_count_label)
         bottom_bar_layout.addWidget(progress_gauge)
         bottom_bar_layout.addWidget(delete_button)
+        delete_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         list_panel_layout.addLayout(bottom_bar_layout)
 
         # --- Log Group (Bottom Half of Right Panel) ---
