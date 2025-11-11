@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLab
 from PySide6.QtGui import QPixmap, QFont, QCursor, QIntValidator
 from PySide6.QtCore import Qt
 from core.utils import resource_path
-from core.constants import DEFAULT_MIN_PAUSE_MS, DEFAULT_MAX_PAUSE_MS, UNLIMITED_DEPTH_VALUE
+from core.constants import DEFAULT_MIN_PAUSE_MS, DEFAULT_MAX_PAUSE_MS
 from core.config_manager import get_config
 
 config = get_config()
@@ -216,9 +216,9 @@ class InputPanelFactory:
         form_layout.addRow("", checkbox_layout)
 
         dir_level_ctrl = QSpinBox()
-        dir_level_ctrl.setValue(UNLIMITED_DEPTH_VALUE)
-        dir_level_ctrl.setRange(0, UNLIMITED_DEPTH_VALUE)
-        dir_level_ctrl.setSpecialValueText("Unlimited")
+        dir_level_ctrl.setValue(0)  # Start with current level
+        dir_level_ctrl.setRange(0, 9)  # 0-8 are levels, 9 represents unlimited
+        dir_level_ctrl.setToolTip("0-8: Directory depth level\n9: Unlimited depth")
         dir_level_ctrl.setFixedWidth(100)
 
         dir_level_layout = QHBoxLayout()
