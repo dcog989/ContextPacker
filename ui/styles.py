@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QPen
 from PySide6.QtCore import Qt
+from core.utils import resource_path
 
 
 class AppTheme:
@@ -89,6 +90,17 @@ class AppTheme:
         # Convert path to use forward slashes for Qt stylesheet
         icon_path = str(self.checkbox_icon_path).replace("\\", "/")
 
+        # Define arrow paths based on theme
+        if self.is_dark:
+            up_arrow_path = resource_path("assets/icons/arrow-up-light.svg")
+            down_arrow_path = resource_path("assets/icons/arrow-down-light.svg")
+        else:
+            up_arrow_path = resource_path("assets/icons/arrow-up-dark.svg")
+            down_arrow_path = resource_path("assets/icons/arrow-down-dark.svg")
+
+        up_arrow_url = str(up_arrow_path).replace("\\", "/")
+        down_arrow_url = str(down_arrow_path).replace("\\", "/")
+
         return f"""
             QWidget {{
                 font-size: 13px;
@@ -125,7 +137,7 @@ class AppTheme:
                 font-weight: bold;
             }}
             
-            /* Label styling for about dialog quote */
+            /* Label styling (for about dialog quote) */
             QLabel#MilkshakeLabel {{
                 color: #d581b0;
                 font-family: "Source Code Pro";
@@ -137,7 +149,7 @@ class AppTheme:
             /* Style for the verbose log widget */
             QTextEdit#VerboseLog {{
                 font-family: "Source Code Pro";
-                font-size: 10px;
+                font-size: 12px;
             }}
             
             /* Input fields - different shade of grey from app background */
@@ -181,24 +193,14 @@ class AppTheme:
                 background-color: {self.spinbox_button_pressed};
             }}
             QSpinBox::up-arrow {{
-                width: 0;
-                height: 0;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-bottom: 7px solid {self.text_color};
+                image: url({up_arrow_url});
+                width: 12px;
+                height: 12px;
             }}
             QSpinBox::down-arrow {{
-                width: 0;
-                height: 0;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 7px solid {self.text_color};
-            }}
-            QSpinBox::up-arrow:hover {{
-                border-bottom-color: {self.text_hover};
-            }}
-            QSpinBox::down-arrow:hover {{
-                border-top-color: {self.text_hover};
+                image: url({down_arrow_url});
+                width: 12px;
+                height: 12px;
             }}
             
             /* Button styling with more padding and darker greys */
