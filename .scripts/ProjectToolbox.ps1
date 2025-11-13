@@ -48,7 +48,6 @@ function Get-ProjectRoot {
 
 # Function to verify required tools are available (Poetry and Nox via poetry run)
 function Test-RequiredTools {
-    Write-Host "`nChecking Poetry version..." -ForegroundColor Yellow
     try {
         $poetryVersion = & poetry --version
         Write-Host "Poetry found: $poetryVersion" -ForegroundColor Green
@@ -59,7 +58,6 @@ function Test-RequiredTools {
         return $false
     }
 
-    Write-Host "Checking for Nox within the Poetry environment..." -ForegroundColor Yellow
     # Set location to the project root to run poetry commands in the correct context
     Push-Location -Path $Config.ProjectRoot -ErrorAction Stop
     try {
