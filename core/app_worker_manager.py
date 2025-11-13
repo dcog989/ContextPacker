@@ -1,6 +1,7 @@
 import threading
 import queue
 import concurrent.futures
+import os
 
 
 class WorkerManager:
@@ -12,7 +13,7 @@ class WorkerManager:
         self.queue_listener_shutdown = threading.Event()
         self.shutdown_event = threading.Event()
         self.queue_listener_thread = None
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count())
         self._draining = False
         self._drain_lock = threading.Lock()
 
