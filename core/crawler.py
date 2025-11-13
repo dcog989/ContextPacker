@@ -7,6 +7,9 @@ import time
 import random
 import re
 from markdownify import markdownify as md
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
 
 from .browser_utils import initialize_driver, cleanup_driver
 from .constants import PAGE_LOAD_TIMEOUT_SECONDS, MEMORY_MANAGEMENT_URL_LIMIT, PROCESSED_URLS_MEMORY_FACTOR
@@ -62,6 +65,9 @@ def _process_page(driver, config, current_url, filename_cache=None):
     """Fetches, processes, and saves a single web page."""
     try:
         driver.get(current_url)
+        # Explicitly wait for the body tag to ensure the DOM is ready for processing.
+        WebDriverWait(driver, PAGE_LOAD_TIMEOUT_SECONDS).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+
         pause_duration = random.uniform(config.min_pause, config.max_pause)
         time.sleep(pause_duration)
 

@@ -3,9 +3,10 @@ import platform
 import subprocess
 import sys
 import ctypes
+import shutil
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMainWindow
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt, QSize
 from PySide6.QtGui import QIcon, QFontDatabase
 from ui.main_window import MainWindow
 from core.version import __version__
@@ -196,7 +197,14 @@ class App(QMainWindow):
         config["v_sash_state"] = bytes(v_sash_qba.data()).decode("utf-8")
         save_config(config)
 
-        # FIXED: Correct shutdown order - cancel workers BEFORE setting shutdown event
+        # Clean up the current session's temporary directory on graceful exit
+        if self.state.temp_dir and self.Path(self.state.temp_dir).is_dir():
+            try:
+                shutil.rmtree(self.state.temp_dir)
+            except Exception as e:
+                # Log to console, as logger might be shutting down
+                print(f"Warning: Failed to clean up temp directory {self.state.temp_dir}: {e}")
+
         # 1. Cancel any running tasks first
         if self.state.cancel_event:
             self.state.cancel_event.set()
