@@ -15,7 +15,7 @@ class AppTheme:
         self.color_gray_a0a = "#A0A0A0"
         self.color_gray_a9a = "#A9A9A9"
         self.color_gray_888 = "#888888"
-        
+
         # Create checkmark icon and save to temp location
         self._setup_checkbox_icon()
 
@@ -24,25 +24,26 @@ class AppTheme:
         size = 18
         pixmap = QPixmap(size, size)
         pixmap.fill(Qt.GlobalColor.transparent)
-        
+
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
+
         # Draw checkmark
         pen = QPen(QColor(255, 255, 255))
         pen.setWidth(2)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
-        
+
         # Checkmark path (approximate coordinates for 18x18 icon)
         painter.drawLine(4, 9, 7, 13)
         painter.drawLine(7, 13, 14, 5)
-        
+
         painter.end()
-        
+
         # Save to temp directory
         from core.utils import get_app_data_dir
+
         temp_dir = get_app_data_dir() / "temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
         self.checkbox_icon_path = temp_dir / "checkbox_check.png"
@@ -51,7 +52,7 @@ class AppTheme:
     def get_stylesheet(self):
         # Convert path to use forward slashes for Qt stylesheet
         icon_path = str(self.checkbox_icon_path).replace("\\", "/")
-        
+
         return f"""
             /* Splitter styling */
             QSplitter::handle {{
@@ -122,9 +123,19 @@ class AppTheme:
             QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
                 background-color: #4A4A4A;
             }}
-            QSpinBox::up-arrow, QSpinBox::down-arrow {{
-                width: 0px;
-                height: 0px;
+            QSpinBox::up-arrow {{
+                width: 0; 
+                height: 0; 
+                border-left: 4px solid transparent; 
+                border-right: 4px solid transparent; 
+                border-bottom: 6px solid #D0D0D0;
+            }}
+            QSpinBox::down-arrow {{
+                width: 0; 
+                height: 0; 
+                border-left: 4px solid transparent; 
+                border-right: 4px solid transparent; 
+                border-top: 6px solid #D0D0D0;
             }}
             
             /* Button styling with more padding and darker greys */
@@ -132,7 +143,7 @@ class AppTheme:
                 background-color: #404040;
                 border: 1px solid #555555;
                 border-radius: 4px;
-                padding: 8px 16px;
+                padding: 6px 12px;
                 font-size: 11px;
             }}
             QPushButton:hover {{

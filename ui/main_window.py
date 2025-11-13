@@ -136,6 +136,7 @@ class MainWindow(QWidget):
         input_layout = QVBoxLayout(self.input_group)
         radio_layout = QHBoxLayout()
         radio_layout.setContentsMargins(10, 10, 0, 0)
+        radio_layout.setSpacing(15)
         radio_layout.addWidget(self.web_crawl_radio)
         radio_layout.addWidget(self.local_dir_radio)
         radio_layout.addStretch()

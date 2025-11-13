@@ -142,6 +142,7 @@ class InputPanelFactory:
         dir_layout = QHBoxLayout()
         local_dir_ctrl = QLineEdit()
         browse_button = QPushButton("Browse...")
+        browse_button.setObjectName("PrimaryButton")
         dir_layout.addWidget(local_dir_ctrl)
         dir_layout.addWidget(browse_button)
         dir_layout.setContentsMargins(0, 0, 0, 0)
@@ -171,7 +172,7 @@ class InputPanelFactory:
         dir_level_ctrl.setValue(9)  # Start with current level
         dir_level_ctrl.setRange(0, 9)  # 0-8 are levels, 9 = unlimited
         dir_level_ctrl.setToolTip("0: Current directory only\n1: Current + 1 level down\n...\n9: Unlimited depth")
-        dir_level_ctrl.setFixedWidth(100)
+        dir_level_ctrl.setFixedWidth(60)
 
         dir_level_layout = QHBoxLayout()
         dir_level_layout.addWidget(dir_level_ctrl)
