@@ -1,20 +1,17 @@
 import os
-import threading
 import platform
 import subprocess
 import sys
 import ctypes
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMainWindow
-from PySide6.QtCore import QTimer, Qt, QSize
-from PySide6.QtGui import QIcon, QFontDatabase, QPalette, QColor
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QIcon, QFontDatabase
 from ui.main_window import MainWindow
-from ui.styles import AppTheme
 from core.version import __version__
 from core.config_manager import get_config, save_config
 from core.task_handler import TaskHandler
-from core.utils import get_app_data_dir, cleanup_old_directories, resource_path, set_title_bar_theme
-from core.icon_utils import create_themed_svg_icon
+from core.utils import get_app_data_dir, cleanup_old_directories, resource_path
 from core.constants import (
     BATCH_UPDATE_INTERVAL_MS,
     EXCLUDE_UPDATE_INTERVAL_MS,
