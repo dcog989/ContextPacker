@@ -265,93 +265,61 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
     app.state.worker_future = app.executor.submit(_packaging_worker, *args)
 
 
-def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event=None, gitignore_cache=None, gitignore_cache_lock=None):
-    """
-    Scans a directory and returns a filtered list of files and folders,
-    optimized for performance with depth-aware traversal and efficient pattern matching.
-    """
-    import heapq
+# --- Local File Scanning Refactor ---
+def _load_ignore_patterns(ignore_file_path, cache, cache_lock):
+    """Load and cache ignore patterns efficiently."""
+    if cache is None or cache_lock is None:
+        return []
 
-    base_path = Path(root_dir)
-    if not base_path.is_dir():
-        return [], set()
-
-    if max_depth == UNLIMITED_DEPTH_VALUE:  # Treat specific value as unlimited
-        max_depth = UNLIMITED_DEPTH_REPLACEMENT
-
-    # Use heap for efficient sorting of large directories
-    files_to_show = []
-    depth_excludes = set()
-
-    # Issue 13: Pre-compile fnmatch patterns into regex for speed
-    compiled_regex_patterns = []
-    for pattern in custom_excludes:
+    cache_key = str(ignore_file_path)
+    with cache_lock:
         try:
-            compiled_regex_patterns.append(re.compile(fnmatch.translate(pattern)))
-        except Exception:
-            continue
+            stat_info = ignore_file_path.stat()
+            mtime = stat_info.st_mtime
 
-    # Optimized gitignore loading with better caching
-    def load_ignore_patterns(ignore_file_path, cache_key):
-        """Load and cache ignore patterns efficiently."""
-        # Use the lock for all cache operations (read, write, delete)
-        if gitignore_cache is None or gitignore_cache_lock is None:
+            if cache_key in cache:
+                cached = cache[cache_key]
+                if cached.get("mtime") == mtime:
+                    return cached["patterns"]
+
+            with open(ignore_file_path, "r", encoding="utf-8") as f:
+                patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+
+            cache[cache_key] = {"mtime": mtime, "patterns": patterns}
+            return patterns
+        except Exception:
+            if cache_key in cache:
+                del cache[cache_key]
             return []
 
-        with gitignore_cache_lock:
-            try:
-                stat_info = ignore_file_path.stat()
-                mtime = stat_info.st_mtime
 
-                # Check cache first
-                if cache_key in gitignore_cache:
-                    cached = gitignore_cache[cache_key]
-                    if cached.get("mtime") == mtime:
-                        return cached["patterns"]
+def _prepare_filters(root_dir, use_gitignore, custom_excludes, binary_excludes, gitignore_cache, gitignore_cache_lock):
+    """Loads all ignore patterns and returns a compiled filter function."""
+    base_path = Path(root_dir)
+    all_patterns = []
 
-                # Load and parse file
-                with open(ignore_file_path, "r", encoding="utf-8") as f:
-                    patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
-
-                # Update cache
-                gitignore_cache[cache_key] = {"mtime": mtime, "patterns": patterns}
-
-                return patterns
-            except Exception:
-                # Remove invalid cache entry
-                if cache_key in gitignore_cache:
-                    del gitignore_cache[cache_key]
-                return []
-
-    # Load root-level ignore patterns once
-    ignore_files_to_check = [".repomixignore"]
+    # 1. Load gitignore patterns
     if use_gitignore:
-        ignore_files_to_check.append(".gitignore")
+        ignore_files_to_check = [".repomixignore", ".gitignore"]
+        for filename in ignore_files_to_check:
+            ignore_file_path = base_path / filename
+            if ignore_file_path.is_file():
+                all_patterns.extend(_load_ignore_patterns(ignore_file_path, gitignore_cache, gitignore_cache_lock))
 
-    root_patterns = []
-    for filename in ignore_files_to_check:
-        ignore_file_path = base_path / filename
-        if ignore_file_path.is_file():
-            patterns = load_ignore_patterns(ignore_file_path, str(ignore_file_path))
-            root_patterns.extend(patterns)
+    # 2. Add custom and binary excludes
+    all_patterns.extend(custom_excludes)
+    all_patterns.extend(binary_excludes)
 
-    # Add binary excludes to compiled patterns
-    for pattern in binary_excludes:
+    # 3. Compile patterns to regex
+    compiled_regex_patterns = []
+    for pattern in all_patterns:
         try:
             compiled_regex_patterns.append(re.compile(fnmatch.translate(pattern)))
-        except Exception:
+        except re.error:
             continue
 
-    # Add root ignore patterns to compiled patterns
-    for pattern in root_patterns:
-        try:
-            compiled_regex_patterns.append(re.compile(fnmatch.translate(pattern)))
-        except Exception:
-            continue
-
-    # Optimized directory traversal with depth awareness
-    def should_ignore_path(rel_path, is_dir=False):
-        """Check if a path should be ignored using compiled patterns."""
+    # 4. Return a callable that checks against the compiled patterns
+    def is_ignored(rel_path, is_dir=False):
         path_str = rel_path.as_posix()
         if is_dir:
             path_str = path_str.rstrip("/") + "/"
@@ -361,128 +329,112 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
                 return True
         return False
 
-    # Use iterative approach for better control and early termination
-    def scan_directory_iterative(start_path, max_depth_limit):
-        """Iteratively scan directory with depth control and early termination."""
-        # Use deque for better performance with large directories
-        from collections import deque
+    return is_ignored
 
-        queue = deque([(start_path, Path("."), 0)])
 
-        # Performance counters for monitoring
-        processed_dirs = 0
-        processed_files = 0
-        max_items_per_batch = 1000  # Process in batches to prevent memory spikes
+def _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event):
+    """
+    Scans a directory, applies filters, and formats file/folder info.
+    Returns a list of FileInfo dictionaries and a set of paths excluded due to depth.
+    """
+    from collections import deque
 
-        while queue:
+    base_path = Path(root_dir)
+    files_to_show = []
+    depth_excludes = set()
+
+    if max_depth == UNLIMITED_DEPTH_VALUE:
+        max_depth = UNLIMITED_DEPTH_REPLACEMENT
+
+    queue = deque([(base_path, Path("."), 0)])  # current_path, rel_path, depth
+
+    while queue:
+        if cancel_event and cancel_event.is_set():
+            return [], set()
+
+        current_path, rel_path, current_depth = queue.popleft()
+
+        try:
+            entries = list(current_path.iterdir())
+        except (OSError, PermissionError):
+            continue
+
+        for entry in entries:
             if cancel_event and cancel_event.is_set():
-                return
+                return [], set()
 
-            # Process in batches to control memory usage
-            batch_size = min(len(queue), max_items_per_batch)
-            for _ in range(batch_size):
-                current_path, rel_path, current_depth = queue.popleft()
-                processed_dirs += 1
+            entry_rel_path = rel_path / entry.name
+            is_dir = entry.is_dir()
 
-                # Process directory contents with better error handling
+            if is_ignored_func(entry_rel_path, is_dir):
+                continue
+
+            if is_dir:
+                rel_path_str = entry_rel_path.as_posix() + "/"
+                folder_info = FileInfo(name=rel_path_str, type=FileType.FOLDER, size=0, size_str="", rel_path=rel_path_str)
+                files_to_show.append(file_info_to_dict(folder_info))
+
+                if current_depth < max_depth:
+                    queue.append((entry, entry_rel_path, current_depth + 1))
+                else:
+                    depth_excludes.add(rel_path_str)
+            else:  # is file
                 try:
-                    entries = list(current_path.iterdir())
-                except (OSError, PermissionError) as e:
-                    # Log permission errors but continue scanning
-                    if not cancel_event or not cancel_event.is_set():
-                        print(f"Warning: Cannot access {current_path}: {e}")
-                    continue
-                except Exception as e:
-                    # Handle unexpected errors gracefully
-                    if not cancel_event or not cancel_event.is_set():
-                        print(f"Error scanning {current_path}: {e}")
+                    stat_info = entry.stat()
+                    size = stat_info.st_size
+                    size_str = f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
+                    rel_path_str = entry_rel_path.as_posix()
+
+                    file_info = FileInfo(name=rel_path_str, type=FileType.FILE, size=size, size_str=size_str, rel_path=rel_path_str)
+                    files_to_show.append(file_info_to_dict(file_info))
+                except (OSError, ValueError):
                     continue
 
-                # Separate files and directories for optimized processing
-                dirs = []
-                files = []
+    return files_to_show, depth_excludes
 
-                for entry in entries:
-                    try:
-                        entry_rel_path = rel_path / entry.name
 
-                        # Skip if ignored
-                        if should_ignore_path(entry_rel_path, entry.is_dir()):
-                            continue
+def _sort_key_func(item):
+    """Provides a sort key for file/folder items: folders first, then by name."""
+    return (0 if item["type"] == FileType.FOLDER.value else 1, item["name"].lower())
 
-                        if entry.is_dir():
-                            dirs.append((entry, entry_rel_path))
-                        else:
-                            files.append((entry, entry_rel_path))
-                    except Exception:
-                        # Skip problematic entries but continue processing
-                        continue
 
-                # Process files at current level first (before depth check)
-                for file_entry, file_rel_path in files:
-                    try:
-                        stat_info = file_entry.stat()
-                        size = stat_info.st_size
-                        size_str = f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
-                        rel_path_str = file_rel_path.as_posix()
+def _format_and_sort_results(scan_results):
+    """Sorts the list of file info dictionaries, using a heap for large lists."""
+    import heapq
 
-                        file_info = FileInfo(name=rel_path_str, type=FileType.FILE, size=size, size_str=size_str, rel_path=rel_path_str)
-                        files_to_show.append(file_info_to_dict(file_info))
-                        processed_files += 1
-                    except (OSError, ValueError):
-                        # Skip files that can't be accessed
-                        continue
+    if not scan_results:
+        return []
 
-                # Check depth limit for adding subdirectories to queue
-                if current_depth >= max_depth_limit:
-                    # Add to depth excludes if we hit the limit
-                    if current_path.is_dir():
-                        depth_excludes.add(rel_path.as_posix() + "/")
-                    continue
+    if len(scan_results) > LARGE_DIRECTORY_THRESHOLD:
+        # Use heap for efficient sorting of large lists
+        heap = [(_sort_key_func(item), item) for item in scan_results]
+        heapq.heapify(heap)
+        return [heapq.heappop(heap)[1] for _ in range(len(heap))]
+    else:
+        # Use regular sort for smaller lists
+        scan_results.sort(key=_sort_key_func)
+        return scan_results
 
-                # Add directories to queue (depth-first for better memory locality)
-                for dir_entry, dir_rel_path in dirs:
-                    queue.appendleft((dir_entry, dir_rel_path, current_depth + 1))
 
-                    # Add directory to results
-                    rel_path_str = dir_rel_path.as_posix()
-                    folder_info = FileInfo(name=rel_path_str + "/", type=FileType.FOLDER, size=0, size_str="", rel_path=rel_path_str + "/")
-                    files_to_show.append(file_info_to_dict(folder_info))
+def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event=None, gitignore_cache=None, gitignore_cache_lock=None):
+    """
+    Scans a directory and returns a filtered, formatted, and sorted list of files and folders.
+    This function orchestrates the scanning, filtering, and sorting process.
+    """
+    base_path = Path(root_dir)
+    if not base_path.is_dir():
+        return [], set()
 
-            # Periodic cancellation check and progress feedback
-            if cancel_event and cancel_event.is_set():
-                return
+    # 1. Prepare filter function from all exclusion sources
+    is_ignored_func = _prepare_filters(root_dir, use_gitignore, custom_excludes, binary_excludes, gitignore_cache, gitignore_cache_lock)
 
-            # Optional: Add progress logging for very large scans
-            if processed_dirs % 1000 == 0 and processed_dirs > 0:
-                print(f"Scanned {processed_dirs} directories, {processed_files} files...")
+    # 2. Scan directory, applying filters as we go to prune branches
+    scan_results, depth_excludes = _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event)
 
-    # Start the scan
-    scan_directory_iterative(base_path, max_depth)
-
-    # Check for cancellation before sorting
     if cancel_event and cancel_event.is_set():
         return [], set()
 
-    # Efficient sorting using heap for large datasets
-    if len(files_to_show) > LARGE_DIRECTORY_THRESHOLD:  # Use heap for large directories
-        # Create separate heaps for folders and files
-        folders = []
-        files = []
+    # 3. Sort the collected results
+    sorted_results = _format_and_sort_results(scan_results)
 
-        for item in files_to_show:
-            if item["type"] == "Folder":
-                heapq.heappush(folders, (item["name"].lower(), item))
-            else:
-                heapq.heappush(files, (item["name"].lower(), item))
-
-        # Extract sorted items
-        sorted_folders = [heapq.heappop(folders)[1] for _ in range(len(folders))]
-        sorted_files = [heapq.heappop(files)[1] for _ in range(len(files))]
-
-        files_to_show = sorted_folders + sorted_files
-    else:
-        # Use regular sort for smaller datasets
-        files_to_show.sort(key=lambda p: (p["type"] != "Folder", p["name"].lower()), reverse=True)
-
-    return files_to_show, depth_excludes
+    return sorted_results, depth_excludes
