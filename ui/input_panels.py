@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QSpinBox, QTextEdit, QCheckBox, QPushButton, QFormLayout, QSizePolicy
-from PySide6.QtGui import QPixmap, QCursor, QIntValidator
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap, QFont, QCursor, QIntValidator
+from PySide6.QtCore import Qt, QSize
 from core.utils import resource_path
+from core.icon_utils import render_svg_to_pixmap
 from core.constants import DEFAULT_MIN_PAUSE_MS, DEFAULT_MAX_PAUSE_MS
 from core.config_manager import get_config
 
@@ -206,9 +207,12 @@ class InputPanelFactory:
         layout.setContentsMargins(10, 15, 10, 10)
 
         # Logo and Title
-        logo_path = resource_path("assets/icons/ContextPacker-x64.png")
+        logo_path = resource_path("assets/icons/ContextPacker.svg")
+        svg_bytes = logo_path.read_bytes()
+        logo_pixmap = render_svg_to_pixmap(svg_bytes, QSize(48, 48))
+
         about_logo = QLabel()
-        about_logo.setPixmap(QPixmap(str(logo_path)))
+        about_logo.setPixmap(logo_pixmap)
         about_logo.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         about_logo.setFixedSize(48, 48)
         about_logo.setScaledContents(True)

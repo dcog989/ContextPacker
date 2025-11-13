@@ -1,5 +1,7 @@
-from PySide6.QtGui import QPixmap, QPainter, QColor, QPen
-from PySide6.QtCore import Qt
+import os
+from pathlib import Path
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QPen
+from PySide6.QtCore import Qt, QSize
 from core.utils import resource_path
 
 
@@ -50,54 +52,38 @@ class AppTheme:
             self.spinbox_button_pressed = "#D0D0D0"
 
         # Create checkmark icon and save to temp location
-        self._setup_checkbox_icon()
+        self._setup_themed_icons()
 
-    def _setup_checkbox_icon(self):
-        """Creates and saves a checkmark icon for checkboxes."""
-        size = 18
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.GlobalColor.transparent)
-
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        # Draw checkmark with color that works for both themes (white on dark, black on light)
-        checkmark_color = QColor(255, 255, 255) if self.is_dark else QColor(0, 0, 0)
-        pen = QPen(checkmark_color)
-        pen.setWidth(2)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen)
-
-        # Checkmark path (approximate coordinates for 18x18 icon)
-        painter.drawLine(4, 9, 7, 13)
-        painter.drawLine(7, 13, 14, 5)
-
-        painter.end()
-
-        # Save to temp directory with theme-specific filename
+    def _setup_themed_icons(self):
+        """Generates and saves themed icons required by the stylesheet."""
+        from core.icon_utils import colorize_svg, render_svg_to_pixmap
         from core.utils import get_app_data_dir
 
         temp_dir = get_app_data_dir() / "temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
         theme_suffix = "_dark" if self.is_dark else "_light"
-        self.checkbox_icon_path = temp_dir / f"checkbox_check{theme_suffix}.png"
-        pixmap.save(str(self.checkbox_icon_path))
+
+        icons_to_generate = {
+            "up_arrow": (resource_path("assets/icons/arrow-up.svg"), QSize(16, 16)),
+            "down_arrow": (resource_path("assets/icons/arrow-down.svg"), QSize(16, 16)),
+            "checkmark": (resource_path("assets/icons/checkmark.svg"), QSize(18, 18)),
+        }
+
+        for name, (path, size) in icons_to_generate.items():
+            themed_svg_bytes = colorize_svg(path, self.text_color)
+            pixmap = render_svg_to_pixmap(themed_svg_bytes, size)
+
+            # Save to a temporary file and store its path on the instance
+            icon_path = temp_dir / f"{name}{theme_suffix}.png"
+            pixmap.save(str(icon_path))
+            setattr(self, f"{name}_icon_path", icon_path)
 
     def get_stylesheet(self):
         # Convert path to use forward slashes for Qt stylesheet
-        icon_path = str(self.checkbox_icon_path).replace("\\", "/")
-
-        # Define arrow paths based on theme
-        if self.is_dark:
-            up_arrow_path = resource_path("assets/icons/arrow-up-light.svg")
-            down_arrow_path = resource_path("assets/icons/arrow-down-light.svg")
-        else:
-            up_arrow_path = resource_path("assets/icons/arrow-up-dark.svg")
-            down_arrow_path = resource_path("assets/icons/arrow-down-dark.svg")
-
-        up_arrow_url = str(up_arrow_path).replace("\\", "/")
-        down_arrow_url = str(down_arrow_path).replace("\\", "/")
+        # Get paths for theme-generated icons
+        up_arrow_url = str(getattr(self, "up_arrow_icon_path", "")).replace("\\", "/")
+        down_arrow_url = str(getattr(self, "down_arrow_icon_path", "")).replace("\\", "/")
+        checkmark_icon_url = str(getattr(self, "checkmark_icon_path", "")).replace("\\", "/")
 
         return f"""
             QWidget {{
@@ -276,7 +262,7 @@ class AppTheme:
             QCheckBox::indicator:checked {{
                 background-color: {self.accent_color};
                 border: 1px solid {self.accent_color_darker};
-                image: url({icon_path});
+                image: url({checkmark_icon_url});
             }}
             QCheckBox::indicator:checked:hover {{
                 background-color: {self.accent_color_lighter};

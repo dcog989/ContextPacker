@@ -7,7 +7,7 @@ import multiprocessing
 import sys
 
 from PySide6.QtWidgets import QApplication, QMainWindow
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer, Qt, QSize
 from PySide6.QtGui import QIcon, QFontDatabase, QPalette, QColor
 
 from ui.main_window import MainWindow
@@ -16,6 +16,7 @@ from core.version import __version__
 from core.config_manager import get_config, save_config
 from core.task_handler import TaskHandler
 from core.utils import get_app_data_dir, cleanup_old_directories, resource_path, set_title_bar_theme
+from core.icon_utils import create_themed_svg_icon
 from core.constants import (
     BATCH_UPDATE_INTERVAL_MS,
     EXCLUDE_UPDATE_INTERVAL_MS,
@@ -89,9 +90,6 @@ class App(QMainWindow):
         self._load_custom_font()
         self._apply_theme()  # Apply theme, relies on theme state
         self._set_icon()
-
-        self._update_theme_icon()
-        self._update_copy_icon(self.is_dark_mode_visual_state)
 
         # Timers
         self.batch_update_timer = QTimer(self)
@@ -168,39 +166,35 @@ class App(QMainWindow):
         set_title_bar_theme(self, is_dark)
 
         # 4. Update dynamic icons
-        self._update_theme_icon(initial_load=False)
-        self._update_copy_icon(is_dark)
+        self._update_theme_icon()
+        self._update_copy_icon()
 
-    def _update_theme_icon(self, initial_load=False):
+    def _update_theme_icon(self):
         """Updates the icon of the theme switch button based on the current visual state."""
         if not hasattr(self, "main_panel") or not self.main_panel:
             return
 
-        is_currently_dark = self.is_dark_mode_visual_state
+        icon = create_themed_svg_icon(
+            resource_path("assets/icons/paint-bucket.svg"),
+            self.palette().color(QPalette.ColorRole.Text).name(),
+            QSize(20, 20),
+        )
+        self.main_panel.theme_switch_button.setIcon(icon)
 
-        # For the theme button, if the current visual state is dark, the action is to switch to light,
-        # so we show the light paint bucket icon.
+        is_currently_dark = self.is_dark_mode_visual_state
         if is_currently_dark:
-            icon_path = resource_path("assets/icons/paint-bucket-light.png")
             tooltip = "Current: Dark (Click to switch to Light Mode)"
         else:
-            icon_path = resource_path("assets/icons/paint-bucket-dark.png")
             tooltip = "Current: Light (Click to switch to Dark Mode)"
-
-        self.main_panel.theme_switch_button.setIcon(QIcon(str(icon_path)))
         self.main_panel.theme_switch_button.setToolTip(tooltip)
 
-    def _update_copy_icon(self, is_dark):
+    def _update_copy_icon(self):
         """Updates the icon of the copy button based on the current mode."""
         if not hasattr(self, "main_panel") or not self.main_panel:
             return
 
-        if is_dark:
-            icon_path = resource_path("assets/icons/copy-light.png")
-        else:
-            icon_path = resource_path("assets/icons/copy-dark.png")
-
-        self.main_panel.copy_button.setIcon(QIcon(str(icon_path)))
+        icon = create_themed_svg_icon(resource_path("assets/icons/copy.svg"), self.palette().color(QPalette.ColorRole.Text).name(), QSize(20, 20))
+        self.main_panel.copy_button.setIcon(icon)
 
     def _load_custom_font(self):
         font_files = [

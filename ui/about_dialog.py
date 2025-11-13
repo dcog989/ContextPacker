@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
 from PySide6.QtGui import QPixmap
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
 from core.utils import resource_path
+from core.icon_utils import render_svg_to_pixmap
 
 
 class AboutDialog(QDialog):
@@ -14,8 +15,9 @@ class AboutDialog(QDialog):
 
         # Don't set any custom fonts - let the dialog inherit from the application stylesheet
 
-        logo_path = resource_path("assets/icons/ContextPacker-x128.png")
-        pixmap = QPixmap(str(logo_path))
+        logo_path = resource_path("assets/icons/ContextPacker.svg")
+        svg_bytes = logo_path.read_bytes()
+        pixmap = render_svg_to_pixmap(svg_bytes, QSize(128, 128))
         logo_label = QLabel()
         logo_label.setPixmap(pixmap)
         layout.addWidget(logo_label, alignment=Qt.AlignmentFlag.AlignCenter)

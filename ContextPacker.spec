@@ -4,14 +4,11 @@ from PyInstaller.utils.hooks import collect_data_files
 selenium_datas = collect_data_files('selenium')
 app_assets = [
     ('assets/icons/ContextPacker.ico', 'assets/icons'),
-    ('assets/icons/ContextPacker-x64.png', 'assets/icons'),
-    ('assets/icons/ContextPacker-x128.png', 'assets/icons'),
-    ('assets/icons/copy-dark.png', 'assets/icons'),
-    ('assets/icons/copy-light.png', 'assets/icons'),
-    ('assets/icons/arrow-up-dark.svg', 'assets/icons'),
-    ('assets/icons/arrow-up-light.svg', 'assets/icons'),
-    ('assets/icons/arrow-down-dark.svg', 'assets/icons'),
-    ('assets/icons/arrow-down-light.svg', 'assets/icons'),
+    ('assets/icons/copy.svg', 'assets/icons'),
+    ('assets/icons/paint-bucket.svg', 'assets/icons'),
+    ('assets/icons/arrow-up.svg', 'assets/icons'),
+    ('assets/icons/arrow-down.svg', 'assets/icons'),
+    ('assets/icons/checkmark.svg', 'assets/icons'),
     ('assets/fonts/SourceCodePro-VariableFont_wght.ttf', 'assets/fonts'),
     ('assets/fonts/SourceCodePro-Italic-VariableFont_wght.ttf', 'assets/fonts'),
 ]
