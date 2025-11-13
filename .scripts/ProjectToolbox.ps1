@@ -2,6 +2,26 @@
 # Version: 0.1.8
 # -----------------------------------------------------------------------------
 
+# --- Configuration Section ---
+# Adjust these variables as needed for your project
+$Config = @{
+    ProjectName = "ContextPacker"
+    ProjectRoot = $null  # Will be set after function definition
+    LogsDir     = "logs"
+    LogFileName = "contextpacker.log"
+    MenuOptions = @{
+        '1' = @{ Name = "Clean Build Artifacts"; Action = { Invoke-ActionClean } }
+        '2' = @{ Name = "Check for Package Updates"; Action = { Invoke-ActionCheckUpdates } }
+        '3' = @{ Name = "Quick Run (from Source)"; Action = { Invoke-ActionQuickRun } }
+        '4' = @{ Name = "Build and Run (Debug Executable)"; Action = { Invoke-ActionBuildRunDebug } } # Fixed syntax
+        '5' = @{ Name = "Build Production Package"; Action = { Invoke-ActionBuildProduction } }
+        '6' = @{ Name = "Open Log File"; Action = { Invoke-ActionOpenLog } }
+        'Q' = @{ Name = "Quit"; Action = { return 'exit' } }
+    }
+}
+
+# -----------------------------------------------------------------------------
+
 # Function to attempt finding the project root based on standard Python project files
 function Get-ProjectRoot {
     $currentPath = $PSScriptRoot
@@ -228,27 +248,8 @@ function Invoke-ActionOpenLog {
     }
 }
 
-# --- Configuration Section (Must be after helper functions are defined) ---
-# Adjust these variables as needed for your project
-$Config = @{
-    ProjectName = "ContextPacker"
-    # Attempt to find the project root based on standard files
-    ProjectRoot = Get-ProjectRoot
-    LogsDir     = "logs"
-    LogFileName = "contextpacker.log"
-    # Configuration for tools is handled in Test-RequiredTools
-    MenuOptions = @{
-        '1' = @{ Name = "Clean Build Artifacts"; Action = { Invoke-ActionClean } }
-        '2' = @{ Name = "Check for Package Updates"; Action = { Invoke-ActionCheckUpdates } }
-        '3' = @{ Name = "Quick Run (from Source)"; Action = { Invoke-ActionQuickRun } }
-        '4' = @{ Name = "Build and Run (Debug Executable)"; Action = { Invoke-ActionBuildRunDebug } } # Fixed syntax
-        '5' = @{ Name = "Build for Production"; Action = { Invoke-ActionBuildProduction } }
-        '6' = @{ Name = "Open Log File"; Action = { Invoke-ActionOpenLog } }
-        'Q' = @{ Name = "Quit"; Action = { return 'exit' } }
-    }
-}
-
-# Initialize LogFilePath based on config
+# Initialize ProjectRoot and LogFilePath based on config
+$Config.ProjectRoot = Get-ProjectRoot
 $Config.LogFilePath = Join-Path $Config.ProjectRoot $Config.LogsDir $Config.LogFileName
 
 # Main Menu Display Function
