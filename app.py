@@ -162,7 +162,7 @@ class App(QMainWindow):
         app.setPalette(palette)
 
         # 2. Apply the custom stylesheet for accent colors and component specifics
-        theme = AppTheme()
+        theme = AppTheme(is_dark=is_dark)
         app.setStyleSheet(theme.get_stylesheet())
 
         # 3. Update Windows title bar theme (only if running on Windows)
@@ -204,7 +204,7 @@ class App(QMainWindow):
         self.main_panel.copy_button.setIcon(QIcon(str(icon_path)))
 
     def _load_custom_font(self):
-        font_path = resource_path("assets/fonts/SourceCodePro-Regular.ttf")
+        font_path = resource_path("assets/fonts/SourceCodePro-VariableFont_wght.ttf")
         if font_path.exists():
             font_id = QFontDatabase.addApplicationFont(str(font_path))
             if font_id == -1:

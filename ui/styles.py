@@ -5,11 +5,52 @@ from PySide6.QtCore import Qt
 
 
 class AppTheme:
-    def __init__(self):
+    def __init__(self, is_dark=True):
+        self.is_dark = is_dark
         self.accent_color = "#2E8B57"  # Darker green from logo
         self.accent_color_lighter = "#3CB371"  # Lighter green from logo
         self.accent_color_darker = "#153E27"  # Darker green
 
+        if is_dark:
+            # Dark theme colors
+            self.bg_primary = "#2B2B2B"
+            self.bg_secondary = "#3A3A3A"
+            self.bg_tertiary = "#404040"
+            self.bg_button = "#404040"
+            self.bg_button_hover = "#4A4A4A"
+            self.bg_button_pressed = "#353535"
+            self.bg_button_disabled = "#2A2A2A"
+            self.border_color = "#555555"
+            self.border_hover = "#666666"
+            self.border_pressed = "#444444"
+            self.border_disabled = "#3A3A3A"
+            self.text_color = "#D0D0D0"
+            self.text_hover = "#E0E0E0"
+            self.text_disabled = "#666666"
+            self.spinbox_button_bg = "#4A4A4A"
+            self.spinbox_button_hover = "#5A5A5A"
+            self.spinbox_button_pressed = "#3A3A3A"
+        else:
+            # Light theme colors
+            self.bg_primary = "#F0F0F0"
+            self.bg_secondary = "#FFFFFF"
+            self.bg_tertiary = "#E8E8E8"
+            self.bg_button = "#F0F0F0"
+            self.bg_button_hover = "#E0E0E0"
+            self.bg_button_pressed = "#D0D0D0"
+            self.bg_button_disabled = "#F5F5F5"
+            self.border_color = "#CCCCCC"
+            self.border_hover = "#AAAAAA"
+            self.border_pressed = "#999999"
+            self.border_disabled = "#DDDDDD"
+            self.text_color = "#333333"
+            self.text_hover = "#222222"
+            self.text_disabled = "#999999"
+            self.spinbox_button_bg = "#F0F0F0"
+            self.spinbox_button_hover = "#E0E0E0"
+            self.spinbox_button_pressed = "#D0D0D0"
+
+        # Common colors
         self.color_gray_808 = "#808080"
         self.color_gray_d0d = "#D0D0D0"
         self.color_gray_a0a = "#A0A0A0"
@@ -28,8 +69,9 @@ class AppTheme:
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Draw checkmark
-        pen = QPen(QColor(255, 255, 255))
+        # Draw checkmark with color that works for both themes (white on dark, black on light)
+        checkmark_color = QColor(255, 255, 255) if self.is_dark else QColor(0, 0, 0)
+        pen = QPen(checkmark_color)
         pen.setWidth(2)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -41,12 +83,13 @@ class AppTheme:
 
         painter.end()
 
-        # Save to temp directory
+        # Save to temp directory with theme-specific filename
         from core.utils import get_app_data_dir
 
         temp_dir = get_app_data_dir() / "temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
-        self.checkbox_icon_path = temp_dir / "checkbox_check.png"
+        theme_suffix = "_dark" if self.is_dark else "_light"
+        self.checkbox_icon_path = temp_dir / f"checkbox_check{theme_suffix}.png"
         pixmap.save(str(self.checkbox_icon_path))
 
     def get_stylesheet(self):
@@ -66,6 +109,10 @@ class AppTheme:
             QGroupBox {{
                 font-size: 15px;
                 font-weight: bold;
+                border: 2px solid {self.border_color};
+                border-radius: 5px;
+                margin-top: 10px;
+                padding-top: 10px;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
@@ -79,6 +126,12 @@ class AppTheme:
                 font-size: 22px;
             }}
             
+            /* Italic label styling (for about dialog quote) */
+            QLabel#ItalicLabel {{
+                font-style: italic;
+                font-size: 11px;
+            }}
+            
             /* Content inside QGroupBox - increase by 3px total (11px + 3px = 14px) */
             QGroupBox QLineEdit, QGroupBox QTextEdit, QGroupBox QSpinBox, 
             QGroupBox QComboBox, QGroupBox QPushButton, QGroupBox QCheckBox, 
@@ -88,8 +141,8 @@ class AppTheme:
             
             /* Input fields - different shade of grey from app background */
             QLineEdit, QTextEdit, QSpinBox, QComboBox {{
-                background-color: #3A3A3A;
-                border: 1px solid #555555;
+                background-color: {self.bg_secondary};
+                border: 1px solid {self.border_color};
                 border-radius: 3px;
                 padding: 6px 8px;
                 font-size: 11px;
@@ -108,56 +161,66 @@ class AppTheme:
                 height: 12px;
             }}
             QComboBox QAbstractItemView {{
-                background-color: #3A3A3A;
+                background-color: {self.bg_secondary};
                 selection-background-color: {self.accent_color};
-                border: 1px solid #555555;
+                border: 1px solid {self.border_color};
                 padding: 4px;
             }}
             
-            /* QSpinBox buttons - same color as field bg, with hover state */
+            /* QSpinBox buttons - better contrast and visible arrows */
             QSpinBox::up-button, QSpinBox::down-button {{
-                width: 16px;
-                border: none;
-                background-color: #3A3A3A;
+                width: 18px;
+                border: 1px solid {self.border_color};
+                background-color: {self.spinbox_button_bg};
             }}
             QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
-                background-color: #4A4A4A;
+                background-color: {self.spinbox_button_hover};
+                border: 1px solid {self.border_hover};
+            }}
+            QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {{
+                background-color: {self.spinbox_button_pressed};
             }}
             QSpinBox::up-arrow {{
-                width: 0; 
-                height: 0; 
-                border-left: 4px solid transparent; 
-                border-right: 4px solid transparent; 
-                border-bottom: 6px solid #D0D0D0;
+                width: 0;
+                height: 0;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-bottom: 6px solid {self.text_color};
             }}
             QSpinBox::down-arrow {{
-                width: 0; 
-                height: 0; 
-                border-left: 4px solid transparent; 
-                border-right: 4px solid transparent; 
-                border-top: 6px solid #D0D0D0;
+                width: 0;
+                height: 0;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid {self.text_color};
+            }}
+            QSpinBox::up-arrow:hover {{
+                border-bottom-color: {self.text_hover};
+            }}
+            QSpinBox::down-arrow:hover {{
+                border-top-color: {self.text_hover};
             }}
             
             /* Button styling with more padding and darker greys */
             QPushButton {{
-                background-color: #404040;
-                border: 1px solid #555555;
+                background-color: {self.bg_button};
+                border: 1px solid {self.border_color};
                 border-radius: 4px;
                 padding: 6px 12px;
                 font-size: 11px;
             }}
             QPushButton:hover {{
-                background-color: #4A4A4A;
-                border: 1px solid #666666;
+                background-color: {self.bg_button_hover};
+                border: 1px solid {self.border_hover};
             }}
             QPushButton:pressed {{
-                background-color: #353535;
-                border: 1px solid #444444;
+                background-color: {self.bg_button_pressed};
+                border: 1px solid {self.border_pressed};
             }}
             QPushButton:disabled {{
-                background-color: #2A2A2A;
-                border: 1px solid #3A3A3A;
-                color: #666666;
+                background-color: {self.bg_button_disabled};
+                border: 1px solid {self.border_disabled};
+                color: {self.text_disabled};
             }}
             
             /* Primary button styling (Download, Package, Delete) */
@@ -184,16 +247,16 @@ class AppTheme:
             /* Theme switch button */
             QPushButton#ThemeSwitchButton {{
                 background-color: transparent;
-                border: 1px solid #555555;
+                border: 1px solid {self.border_color};
                 border-radius: 4px;
                 padding: 6px;
             }}
             QPushButton#ThemeSwitchButton:hover {{
-                background-color: #4A4A4A;
-                border: 1px solid #666666;
+                background-color: {self.bg_button_hover};
+                border: 1px solid {self.border_hover};
             }}
             QPushButton#ThemeSwitchButton:pressed {{
-                background-color: #353535;
+                background-color: {self.bg_button_pressed};
             }}
             
             /* Checkbox styling with custom checkmark */
@@ -205,12 +268,12 @@ class AppTheme:
             QCheckBox::indicator {{
                 width: 18px;
                 height: 18px;
-                border: 1px solid #555555;
+                border: 1px solid {self.border_color};
                 border-radius: 3px;
-                background-color: #3A3A3A;
+                background-color: {self.bg_secondary};
             }}
             QCheckBox::indicator:hover {{
-                border: 1px solid #666666;
+                border: 1px solid {self.border_hover};
             }}
             QCheckBox::indicator:checked {{
                 background-color: {self.accent_color};
@@ -230,12 +293,12 @@ class AppTheme:
             QRadioButton::indicator {{
                 width: 18px;
                 height: 18px;
-                border: 1px solid #555555;
+                border: 1px solid {self.border_color};
                 border-radius: 9px;
-                background-color: #3A3A3A;
+                background-color: {self.bg_secondary};
             }}
             QRadioButton::indicator:hover {{
-                border: 1px solid #666666;
+                border: 1px solid {self.border_hover};
             }}
             QRadioButton::indicator:checked {{
                 background-color: {self.accent_color};
@@ -251,11 +314,16 @@ class AppTheme:
                 padding: 2px 0px;
             }}
             
+            /* Dialog label styling - ensure dialogs use same font size */
+            QDialog QLabel {{
+                font-size: 11px;
+            }}
+            
             /* Table widget styling */
             QTableWidget {{
-                background-color: #3A3A3A;
-                border: 1px solid #555555;
-                gridline-color: #4A4A4A;
+                background-color: {self.bg_secondary};
+                border: 1px solid {self.border_color};
+                gridline-color: {self.bg_tertiary};
                 font-size: 11px;
             }}
             QTableWidget::item {{
@@ -265,8 +333,8 @@ class AppTheme:
                 background-color: {self.accent_color};
             }}
             QHeaderView::section {{
-                background-color: #404040;
-                border: 1px solid #555555;
+                background-color: {self.bg_tertiary};
+                border: 1px solid {self.border_color};
                 padding: 6px 8px;
                 font-size: 11px;
                 font-weight: bold;
@@ -274,9 +342,9 @@ class AppTheme:
             
             /* Progress bar styling */
             QProgressBar {{
-                border: 1px solid #555555;
+                border: 1px solid {self.border_color};
                 border-radius: 3px;
-                background-color: #3A3A3A;
+                background-color: {self.bg_secondary};
                 text-align: center;
                 font-size: 11px;
                 padding: 2px;
@@ -288,34 +356,34 @@ class AppTheme:
             
             /* Scrollbar styling */
             QScrollBar:vertical {{
-                background-color: #2B2B2B;
+                background-color: {self.bg_primary};
                 width: 14px;
                 margin: 0px;
             }}
             QScrollBar::handle:vertical {{
-                background-color: #555555;
+                background-color: {self.border_color};
                 min-height: 30px;
                 border-radius: 7px;
             }}
             QScrollBar::handle:vertical:hover {{
-                background-color: #666666;
+                background-color: {self.border_hover};
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0px;
             }}
             
             QScrollBar:horizontal {{
-                background-color: #2B2B2B;
+                background-color: {self.bg_primary};
                 height: 14px;
                 margin: 0px;
             }}
             QScrollBar::handle:horizontal {{
-                background-color: #555555;
+                background-color: {self.border_color};
                 min-width: 30px;
                 border-radius: 7px;
             }}
             QScrollBar::handle:horizontal:hover {{
-                background-color: #666666;
+                background-color: {self.border_hover};
             }}
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
                 width: 0px;

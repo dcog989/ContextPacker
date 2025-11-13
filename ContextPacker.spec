@@ -8,7 +8,8 @@ app_assets = [
     ('assets/icons/ContextPacker-x128.png', 'assets/icons'),
     ('assets/icons/copy-dark.png', 'assets/icons'),
     ('assets/icons/copy-light.png', 'assets/icons'),
-    ('assets/fonts/SourceCodePro-Regular.ttf', 'assets/fonts')
+    ('assets/fonts/SourceCodePro-VariableFont_wght.ttf', 'assets/fonts')
+    ('assets/fonts/'SourceCodePro-Italic-VariableFont_wght.ttf, 'assets/fonts')
 ]
 
 all_datas = selenium_datas + app_assets
