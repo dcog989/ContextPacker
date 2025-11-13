@@ -1,6 +1,4 @@
-import os
-from pathlib import Path
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QPen
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen
 from PySide6.QtCore import Qt
 from core.utils import resource_path
 
@@ -157,7 +155,7 @@ class AppTheme:
                 background-color: {self.bg_secondary};
                 border: 1px solid {self.border_color};
                 border-radius: 3px;
-                padding: 6px 8px;
+                padding: 4px 8px;
             }}
             QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QComboBox:focus {{
                 border: 1px solid {self.accent_color};
@@ -327,7 +325,7 @@ class AppTheme:
             QHeaderView::section {{
                 background-color: {self.bg_tertiary};
                 border: 1px solid {self.border_color};
-                padding: 6px 8px;
+                padding: 2px 8px;
                 font-weight: bold;
             }}
             

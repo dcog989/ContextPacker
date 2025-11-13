@@ -1,5 +1,4 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QTextEdit, QPushButton, QTableWidget, QProgressBar, QHeaderView, QSizePolicy
-from PySide6.QtGui import QFont
 from core.config_manager import get_config
 
 config = get_config()

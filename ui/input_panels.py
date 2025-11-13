@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QSpinBox, QTextEdit, QCheckBox, QPushButton, QFormLayout, QSizePolicy
-from PySide6.QtGui import QPixmap, QFont, QCursor, QIntValidator
+from PySide6.QtGui import QPixmap, QCursor, QIntValidator
 from PySide6.QtCore import Qt
 from core.utils import resource_path
 from core.constants import DEFAULT_MIN_PAUSE_MS, DEFAULT_MAX_PAUSE_MS
