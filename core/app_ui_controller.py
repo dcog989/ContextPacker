@@ -17,12 +17,8 @@ class UiController:
 
     def on_toggle_theme(self):
         """Toggles the theme mode's visual state (for icons) and updates colors."""
-        self.app.is_dark_mode_visual_state = not self.app.is_dark_mode_visual_state
-        # Re-apply theme to force the OS/platform-specific hints (like title bar color) to flip,
-        # and update the dynamic icons.
-        self.app._apply_theme()
-
-        self.app.log_verbose(f"Theme toggled to: {'Dark' if self.app.is_dark_mode_visual_state else 'Light'}")
+        self.app.theme_manager.toggle_theme()
+        self.app.log_verbose(f"Theme toggled to: {'Dark' if self.app.theme_manager.is_dark_mode_visual_state else 'Light'}")
 
     def on_toggle_input_mode(self):
         self.toggle_input_mode()
@@ -50,24 +46,24 @@ class UiController:
         self.app.exclude_update_timer.start()
 
     def on_download_button_click(self):
-        if self.app.is_task_running:
+        if self.app.state.is_task_running:
             self.app.task_handler.stop_current_task()
         else:
             self.app.task_handler.start_download_task()
 
     def on_package_button_click(self):
-        if self.app.is_task_running:
+        if self.app.state.is_task_running:
             self.app.task_handler.stop_current_task()
         else:
             file_list = self.app.main_panel.scraped_files if self.app.main_panel.web_crawl_radio.isChecked() else self.app.main_panel.local_files
             self.app.task_handler.start_package_task(file_list)
 
     def on_copy_to_clipboard(self):
-        if not self.app.final_output_path or not self.app.Path(self.app.final_output_path).exists():
+        if not self.app.state.final_output_path or not self.app.Path(self.app.state.final_output_path).exists():
             self.app.log_verbose("ERROR: No output file found to copy.")
             return
         try:
-            with open(self.app.final_output_path, "r", encoding="utf-8") as f:
+            with open(self.app.state.final_output_path, "r", encoding="utf-8") as f:
                 content = f.read()
             QApplication.clipboard().setText(content)
             self.app.log_verbose(f"Copied {len(content):,} characters to clipboard.")
@@ -81,14 +77,14 @@ class UiController:
     def _update_timestamp_label(self):
         from datetime import datetime
 
-        if not self.app.is_task_running:
+        if not self.app.state.is_task_running:
             ts = datetime.now().strftime("-%y%m%d-%H%M%S")
             self.app.main_panel.output_timestamp_label.setText(ts)
 
     def _update_button_states(self):
         is_web_mode = self.app.main_panel.web_crawl_radio.isChecked()
         package_ready = False
-        copy_ready = bool(self.app.final_output_path and self.app.Path(self.app.final_output_path).exists())
+        copy_ready = bool(self.app.state.final_output_path and self.app.Path(self.app.state.final_output_path).exists())
 
         if is_web_mode:
             package_ready = bool(self.app.main_panel.scraped_files)
@@ -99,11 +95,11 @@ class UiController:
 
     def start_local_file_scan(self):
         """Initiates the local file scanning process in a worker thread."""
-        if self.app.local_scan_future and not self.app.local_scan_future.done():
-            if self.app.local_scan_cancel_event:
-                self.app.local_scan_cancel_event.set()
+        if self.app.state.local_scan_future and not self.app.state.local_scan_future.done():
+            if self.app.state.local_scan_cancel_event:
+                self.app.state.local_scan_cancel_event.set()
 
-        self.app.local_scan_cancel_event = threading.Event()
+        self.app.state.local_scan_cancel_event = threading.Event()
         input_dir = self.app.main_panel.local_dir_ctrl.text()
 
         if not input_dir or not self.app.Path(input_dir).is_dir():
@@ -112,16 +108,16 @@ class UiController:
 
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         self.app.main_panel.local_panel.setEnabled(False)
-        self.app.local_files_to_exclude.clear()
-        self.app.local_depth_excludes.clear()
+        self.app.state.local_files_to_exclude.clear()
+        self.app.state.local_depth_excludes.clear()
 
         custom_excludes = [p.strip() for p in self.app.main_panel.local_exclude_ctrl.toPlainText().splitlines() if p.strip()]
         binary_excludes = self.app.BINARY_FILE_PATTERNS if self.app.main_panel.hide_binaries_check.isChecked() else []
 
-        args = (input_dir, self.app.main_panel.dir_level_ctrl.value(), self.app.main_panel.use_gitignore_check.isChecked(), custom_excludes, binary_excludes, self.app.local_scan_cancel_event, self.app.gitignore_cache, self.app.gitignore_cache_lock)
+        args = (input_dir, self.app.main_panel.dir_level_ctrl.value(), self.app.main_panel.use_gitignore_check.isChecked(), custom_excludes, binary_excludes, self.app.state.local_scan_cancel_event, self.app.state.gitignore_cache, self.app.state.gitignore_cache_lock)
 
         # Submit task to ThreadPoolExecutor
-        self.app.local_scan_future = self.app.worker_manager.executor.submit(self._local_scan_worker, *args)
+        self.app.state.local_scan_future = self.app.worker_manager.executor.submit(self._local_scan_worker, *args)
 
     def _local_scan_worker(self, *args):
         """Worker wrapper for get_local_files to emit results back to main thread."""

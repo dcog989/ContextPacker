@@ -48,10 +48,10 @@ class TaskHandler:
                 self.app.signals.message.emit(stop_msg)
                 return
 
-            self.app.cancel_event = threading.Event()
+            self.app.state.cancel_event = threading.Event()
             # The git clone is a blocking process, so we submit the worker directly
-            path = actions.start_git_clone(self.app, start_url, self.app.cancel_event)
-            self.app.worker_future = self.app.executor.submit(actions._clone_repo_worker, start_url, path, self.app.log_queue, self.app.cancel_event, self.app.shutdown_event)
+            path = actions.start_git_clone(self.app, start_url, self.app.state.cancel_event)
+            self.app.state.worker_future = self.app.executor.submit(actions._clone_repo_worker, start_url, path, self.app.log_queue, self.app.state.cancel_event, self.app.shutdown_event)
             return
 
         try:
@@ -63,15 +63,15 @@ class TaskHandler:
             self.app.signals.message.emit(stop_msg)
             return
 
-        self.app.cancel_event = threading.Event()
+        self.app.state.cancel_event = threading.Event()
         self.app.worker_manager.start_queue_listener()
 
         # 1. Prepare/Cleanup temp directory
-        actions.start_download(self.app, self.app.cancel_event)
+        actions.start_download(self.app, self.app.state.cancel_event)
         # 2. Get the config using the newly set temp_dir
-        crawler_config = self.app.main_panel.get_crawler_config(self.app.temp_dir)
+        crawler_config = self.app.main_panel.get_crawler_config(self.app.state.temp_dir)
         # 3. Submit the crawling logic to the executor
-        self.app.worker_future = self.app.executor.submit(crawl_website, crawler_config, self.app.log_queue, self.app.cancel_event, self.app.shutdown_event)
+        self.app.state.worker_future = self.app.executor.submit(crawl_website, crawler_config, self.app.log_queue, self.app.state.cancel_event, self.app.shutdown_event)
 
     def start_package_task(self, file_list_for_count):
         msg = UITaskMessage(task=TaskType.PACKAGE)
@@ -116,14 +116,14 @@ class TaskHandler:
                 self.app.signals.message.emit(stop_msg)
                 return
 
-        self.app.cancel_event = threading.Event()
+        self.app.state.cancel_event = threading.Event()
         self.app.worker_manager.start_queue_listener()
         # Submit packaging task to executor
-        self.app.worker_future = self.app.executor.submit(actions.start_packaging, self.app, self.app.cancel_event, file_list_for_count)
+        self.app.state.worker_future = self.app.executor.submit(actions.start_packaging, self.app, self.app.state.cancel_event, file_list_for_count)
 
     def stop_current_task(self):
-        if self.app.cancel_event:
-            self.app.cancel_event.set()
+        if self.app.state.cancel_event:
+            self.app.state.cancel_event.set()
             msg = UITaskStoppingMessage()
             self.app.signals.message.emit(msg)
 

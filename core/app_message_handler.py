@@ -94,7 +94,7 @@ class MessageHandler:
         self.app._toggle_ui_controls(False, widget_to_keep_enabled=widget_to_keep_enabled)
 
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        self.app.is_task_running = True
+        self.app.state.is_task_running = True
         self.app.main_panel.copy_button.setEnabled(False)
 
         # Reset batching counters for new task
@@ -125,14 +125,14 @@ class MessageHandler:
 
     def _handle_ui_task_stop(self, was_cancelled):
         """Final UI update when a worker task completes or is cancelled."""
-        if self.app.is_task_running:
+        if self.app.state.is_task_running:
             QApplication.restoreOverrideCursor()
-            self.app.is_task_running = False
+            self.app.state.is_task_running = False
 
         # Explicitly wait for future to finish to ensure its thread is fully released back to the pool
-        if self.app.worker_future:
+        if self.app.state.worker_future:
             try:
-                self.app.worker_future.result(timeout=0)
+                self.app.state.worker_future.result(timeout=0)
             except Exception:
                 pass  # Already logged, just ensure we clean up the future reference
 
@@ -140,8 +140,8 @@ class MessageHandler:
 
         self.app._toggle_ui_controls(True)
 
-        self.app.worker_future = None
-        self.app.cancel_event = None
+        self.app.state.worker_future = None
+        self.app.state.cancel_event = None
 
         if self.app.shutdown_event.is_set():
             self.app.close()
@@ -172,8 +172,8 @@ class MessageHandler:
         """Updates UI after local file scanning is complete."""
         QApplication.restoreOverrideCursor()
         self.app.main_panel.local_panel.setEnabled(True)
-        self.app.local_scan_future = None
+        self.app.state.local_scan_future = None
         if typed_msg.results is not None:
             files, depth_excludes = typed_msg.results
             self.app.main_panel.populate_local_file_list(files)
-            self.app.local_depth_excludes = depth_excludes
+            self.app.state.local_depth_excludes = depth_excludes

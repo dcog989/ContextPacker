@@ -31,11 +31,11 @@ def start_download(app, cancel_event):
     app.main_panel.clear_logs()
     app.main_panel.progress_gauge.setValue(0)
 
-    if app.temp_dir and Path(app.temp_dir).is_dir():
-        shutil.rmtree(app.temp_dir)
+    if app.state.temp_dir and Path(app.state.temp_dir).is_dir():
+        shutil.rmtree(app.state.temp_dir)
 
-    app.temp_dir = _create_session_dir()
-    app.log_verbose(f"Created temporary directory: {app.temp_dir}")
+    app.state.temp_dir = _create_session_dir()
+    app.log_verbose(f"Created temporary directory: {app.state.temp_dir}")
     app.log_verbose("Starting url conversion...")
 
     # The actual crawl_website call is submitted by task_handler.py to the executor.
@@ -49,13 +49,13 @@ def start_git_clone(app, url, cancel_event):
     """
     app.main_panel.clear_logs()
 
-    if app.temp_dir and Path(app.temp_dir).is_dir():
-        shutil.rmtree(app.temp_dir)
+    if app.state.temp_dir and Path(app.state.temp_dir).is_dir():
+        shutil.rmtree(app.state.temp_dir)
 
-    app.temp_dir = _create_session_dir()
-    app.log_verbose(f"Created temporary directory for git clone: {app.temp_dir}")
+    app.state.temp_dir = _create_session_dir()
+    app.log_verbose(f"Created temporary directory for git clone: {app.state.temp_dir}")
     app.log_verbose(f"Starting git clone for {url}...")
-    return app.temp_dir
+    return app.state.temp_dir
 
 
 def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
@@ -163,15 +163,15 @@ def start_packaging(app, cancel_event, file_list=None):
     effective_excludes = []
 
     if is_web_mode:
-        if not app.temp_dir or not any(Path(app.temp_dir).iterdir()):
+        if not app.state.temp_dir or not any(Path(app.state.temp_dir).iterdir()):
             app.log_verbose("ERROR: No downloaded content to package. Please run 'Download & Convert' first.")
             return
-        source_dir = app.temp_dir
+        source_dir = app.state.temp_dir
         effective_excludes = []
     else:
         source_dir = app.main_panel.local_dir_ctrl.text()
         default_excludes = [p.strip() for p in app.main_panel.local_exclude_ctrl.toPlainText().splitlines() if p.strip()]
-        effective_excludes = list(set(default_excludes) | app.local_files_to_exclude | app.local_depth_excludes)
+        effective_excludes = list(set(default_excludes) | app.state.local_files_to_exclude | app.state.local_depth_excludes)
 
     extension = app.main_panel.output_format_choice.currentText()
     style_map = {".md": "markdown", ".txt": "plain", ".xml": "xml"}
@@ -207,10 +207,10 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
     timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
     downloads_path = get_downloads_folder()
     output_basename = f"{filename_prefix}-{timestamp}{extension}"
-    app.final_output_path = str(Path(downloads_path) / output_basename)
+    app.state.final_output_path = str(Path(downloads_path) / output_basename)
 
     app.log_verbose("\nStarting packaging process...")
-    app.log_verbose(f"Output file will be saved to: {app.final_output_path}")
+    app.log_verbose(f"Output file will be saved to: {app.state.final_output_path}")
 
     class RepomixProgressHandler(logging.Handler):
         def __init__(self, log_queue_ref, total_files_ref, shutdown_event_ref):
@@ -255,14 +255,14 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
 
     args = (
         source_dir,
-        app.final_output_path,
+        app.state.final_output_path,
         app.log_queue,
         cancel_event,
         repomix_style,
         exclude_paths,
         progress_handler,
     )
-    app.worker_future = app.executor.submit(_packaging_worker, *args)
+    app.state.worker_future = app.executor.submit(_packaging_worker, *args)
 
 
 def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event=None, gitignore_cache=None, gitignore_cache_lock=None):

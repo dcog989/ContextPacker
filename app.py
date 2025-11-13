@@ -26,6 +26,8 @@ from core.app_signals import WorkerSignals
 from core.app_worker_manager import WorkerManager
 from core.app_message_handler import MessageHandler
 from core.app_ui_controller import UiController
+from core.state_manager import StateManager
+from core.theme_manager import ThemeManager
 
 config = get_config()
 BINARY_FILE_PATTERNS = config.get("binary_file_patterns", [])
@@ -46,17 +48,7 @@ class App(QMainWindow):
 
         # Core State & Managers
         self.version = __version__
-        self.is_task_running = False
-        self.temp_dir = None
-        self.final_output_path = None
-        self.local_files_to_exclude = set()
-        self.local_depth_excludes = set()
-        self.gitignore_cache = {}
-        self.gitignore_cache_lock = threading.Lock()
-        self.worker_future = None
-        self.cancel_event = None
-        self.local_scan_future = None
-        self.local_scan_cancel_event = None
+        self.state = StateManager()
 
         # Constants used by MessageHandler
         self.max_batch_size = MAX_BATCH_SIZE
@@ -70,11 +62,8 @@ class App(QMainWindow):
         self.executor = self.worker_manager.executor
         self.signals = WorkerSignals()
         self.message_handler = MessageHandler(self)
-        self.task_handler = TaskHandler(self)  # Still uses a mix of internal App logic and external TaskHandler
+        self.task_handler = TaskHandler(self)
         self.ui_controller = UiController(self)
-
-        # Theme State (Visual only, to choose correct icon)
-        self.is_dark_mode_visual_state = self._check_if_system_is_dark()
 
         self._setup_app_dirs_and_cleanup()
 
@@ -85,8 +74,11 @@ class App(QMainWindow):
         self.main_panel = MainWindow(self)
         self.setCentralWidget(self.main_panel)
 
+        # Theme Manager (must be after main_panel is created)
+        self.theme_manager = ThemeManager(self)
+
         self._load_custom_font()
-        self._apply_theme()  # Apply theme, relies on theme state
+        self.theme_manager.apply_theme()
         self._set_icon()
 
         # Timers
@@ -107,92 +99,6 @@ class App(QMainWindow):
 
         self.ui_controller.toggle_input_mode()
         self.show()
-
-    # --- Theme & Utility Methods ---
-
-    def _check_if_system_is_dark(self):
-        """Checks if the system/Qt palette is currently in a dark mode."""
-        app = QApplication.instance()
-        if not app or not isinstance(app, QApplication):
-            return False
-        # A simple check: if the window background is closer to black than white
-        return app.palette().color(QPalette.ColorRole.Window).lightnessF() < 0.5
-
-    def _apply_theme(self):
-        """Applies the base stylesheet and platform-specific hints, relying on Qt's built-in palette."""
-        is_dark = self.is_dark_mode_visual_state
-        app = QApplication.instance()
-        if not app or not isinstance(app, QApplication):
-            return
-
-        # 1. Force the PySide6 palette to switch using the saved visual state
-        palette = app.palette()
-        if is_dark:
-            # Dark Mode Palette (Setting basic dark colors)
-            palette.setColor(QPalette.ColorRole.Window, QColor(43, 43, 43))
-            palette.setColor(QPalette.ColorRole.WindowText, QColor(224, 224, 224))
-            palette.setColor(QPalette.ColorRole.Base, QColor(43, 43, 43))
-            palette.setColor(QPalette.ColorRole.Text, QColor(224, 224, 224))
-            palette.setColor(QPalette.ColorRole.Button, QColor(50, 50, 50))
-            palette.setColor(QPalette.ColorRole.ButtonText, QColor(224, 224, 224))
-            palette.setColor(QPalette.ColorRole.Highlight, QColor(46, 139, 87))
-            palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
-        else:
-            # Light Mode Palette (Reset to default system/light palette)
-            palette = QPalette()
-            palette.setColor(QPalette.ColorRole.Window, QColor(240, 240, 240))
-            palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.black)
-            palette.setColor(QPalette.ColorRole.Base, Qt.GlobalColor.white)
-            palette.setColor(QPalette.ColorRole.AlternateBase, QColor(240, 240, 240))
-            palette.setColor(QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
-            palette.setColor(QPalette.ColorRole.ToolTipText, Qt.GlobalColor.black)
-            palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.black)
-            palette.setColor(QPalette.ColorRole.Button, QColor(240, 240, 240))
-            palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.black)
-            palette.setColor(QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
-            palette.setColor(QPalette.ColorRole.Link, QColor(0, 0, 255))
-            palette.setColor(QPalette.ColorRole.Highlight, QColor(46, 139, 87))
-            palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.white)
-
-        app.setPalette(palette)
-
-        # 2. Apply the custom stylesheet for accent colors and component specifics
-        theme = AppTheme(is_dark=is_dark)
-        app.setStyleSheet(theme.get_stylesheet())
-
-        # 3. Update Windows title bar theme (only if running on Windows)
-        set_title_bar_theme(self, is_dark)
-
-        # 4. Update dynamic icons
-        self._update_theme_icon()
-        self._update_copy_icon()
-
-    def _update_theme_icon(self):
-        """Updates the icon of the theme switch button based on the current visual state."""
-        if not hasattr(self, "main_panel") or not self.main_panel:
-            return
-
-        icon = create_themed_svg_icon(
-            resource_path("assets/icons/paint-bucket.svg"),
-            self.palette().color(QPalette.ColorRole.Text).name(),
-            QSize(20, 20),
-        )
-        self.main_panel.theme_switch_button.setIcon(icon)
-
-        is_currently_dark = self.is_dark_mode_visual_state
-        if is_currently_dark:
-            tooltip = "Current: Dark (Click to switch to Light Mode)"
-        else:
-            tooltip = "Current: Light (Click to switch to Dark Mode)"
-        self.main_panel.theme_switch_button.setToolTip(tooltip)
-
-    def _update_copy_icon(self):
-        """Updates the icon of the copy button based on the current mode."""
-        if not hasattr(self, "main_panel") or not self.main_panel:
-            return
-
-        icon = create_themed_svg_icon(resource_path("assets/icons/copy.svg"), self.palette().color(QPalette.ColorRole.Text).name(), QSize(20, 20))
-        self.main_panel.copy_button.setIcon(icon)
 
     def _load_custom_font(self):
         font_files = [
@@ -258,7 +164,7 @@ class App(QMainWindow):
             self.log_verbose(f"ERROR: Could not delete file {filepath}: {e}")
 
     def remove_local_file_from_package(self, rel_path):
-        self.local_files_to_exclude.add(rel_path)
+        self.state.local_files_to_exclude.add(rel_path)
         self.log_verbose(f"Deleted from package: {rel_path}")
 
     def _open_output_folder_blocking_task(self, output_dir_path):
@@ -275,8 +181,8 @@ class App(QMainWindow):
 
     def _open_output_folder(self):
         """Opens the folder containing the final output file."""
-        if self.final_output_path and self.Path(self.final_output_path).exists():
-            output_dir = self.Path(self.final_output_path).parent
+        if self.state.final_output_path and self.Path(self.state.final_output_path).exists():
+            output_dir = self.Path(self.state.final_output_path).parent
             # Submit the blocking task to the thread pool to prevent UI hang
             self.worker_manager.executor.submit(self._open_output_folder_blocking_task, output_dir)
         else:
@@ -293,10 +199,10 @@ class App(QMainWindow):
 
         # FIXED: Correct shutdown order - cancel workers BEFORE setting shutdown event
         # 1. Cancel any running tasks first
-        if self.cancel_event:
-            self.cancel_event.set()
-        if self.local_scan_cancel_event:
-            self.local_scan_cancel_event.set()
+        if self.state.cancel_event:
+            self.state.cancel_event.set()
+        if self.state.local_scan_cancel_event:
+            self.state.local_scan_cancel_event.set()
 
         # 2. Check if workers need time to stop gracefully
         workers_need_cleanup = self.worker_manager.cleanup_workers()

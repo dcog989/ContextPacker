@@ -109,21 +109,21 @@ class WorkerManager:
         """
         is_worker_running = False
 
-        if self.app.worker_future and not self.app.worker_future.done():
+        if self.app.state.worker_future and not self.app.state.worker_future.done():
             if not self.shutdown_event.is_set():
                 # Don't set shutdown_event here - that's done in closeEvent after cleanup
                 self.app.log_verbose("Waiting for main task to terminate...")
-                if self.app.cancel_event:
-                    self.app.cancel_event.set()
+                if self.app.state.cancel_event:
+                    self.app.state.cancel_event.set()
                 self.app._toggle_ui_controls(False)
             is_worker_running = True
 
-        if self.app.local_scan_future and not self.app.local_scan_future.done():
+        if self.app.state.local_scan_future and not self.app.state.local_scan_future.done():
             if not self.shutdown_event.is_set():
                 self.app.log_verbose("Waiting for file scanner to terminate...")
 
-            if self.app.local_scan_cancel_event:
-                self.app.local_scan_cancel_event.set()
+            if self.app.state.local_scan_cancel_event:
+                self.app.state.local_scan_cancel_event.set()
 
             is_worker_running = True
 
