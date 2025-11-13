@@ -1,3 +1,4 @@
+# File: core/browser_utils.py
 """
 Browser initialization utilities to eliminate code duplication.
 Centralizes browser setup logic for Chrome, Edge, and Firefox.
@@ -12,6 +13,7 @@ from selenium.webdriver.edge.service import Service as EdgeService
 from selenium.webdriver.firefox.service import Service as FirefoxService
 
 from .platform_detection import get_process_creation_flags
+from .config_manager import get_config
 
 
 def _create_base_options(user_agent):
@@ -94,7 +96,7 @@ def _initialize_browser_driver(browser_name, driver_class, options, service_clas
 def initialize_driver(config, log_queue, shutdown_event):
     """
     Initializes and returns a Selenium WebDriver instance.
-    Tries browsers in order: Edge, Chrome, Firefox.
+    Tries browsers in order based on 'default_browser' config, then fallbacks.
 
     Args:
         config: Configuration object containing user_agent
@@ -104,17 +106,28 @@ def initialize_driver(config, log_queue, shutdown_event):
     Returns:
         WebDriver instance or None if no browser could be initialized
     """
+    app_config = get_config()
+    preferred_browser = app_config.get("default_browser", "msedge")
+
     if not shutdown_event.is_set():
         log_queue.put({"type": "log", "message": "Searching for a compatible web browser..."})
 
-    # Define browser configurations in order of preference
+    # Define all browser configurations
     browser_configs = [
         ("msedge", webdriver.Edge, _create_edge_options(config.user_agent), EdgeService),
         ("chrome", webdriver.Chrome, _create_chrome_options(config.user_agent), ChromeService),
         ("firefox", webdriver.Firefox, _create_firefox_options(config.user_agent), FirefoxService),
     ]
 
-    for name_key, driver_class, options, service_class in browser_configs:
+    # Reorder configs based on preference
+    ordered_configs = []
+    preferred_config_tuple = next(((name, driver_class, options, service_class) for name, driver_class, options, service_class in browser_configs if name == preferred_browser), None)
+
+    if preferred_config_tuple:
+        ordered_configs.append(preferred_config_tuple)
+    ordered_configs.extend(cfg for cfg in browser_configs if cfg[0] != preferred_browser)
+
+    for name_key, driver_class, options, service_class in ordered_configs:
         driver = _initialize_browser_driver(name_key, driver_class, options, service_class, log_queue, shutdown_event)
         if driver:
             return driver

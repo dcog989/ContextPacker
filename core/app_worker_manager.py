@@ -69,7 +69,7 @@ class WorkerManager:
         self._drain_queue()
 
     def _drain_queue(self):
-        """FIXED: Process remaining messages with proper guards against recursion and hangs."""
+        """Process remaining messages with proper guards against recursion and hangs. (Uses max_drain_attempts to prevent infinite loop)."""
         # Prevent recursive calls
         with self._drain_lock:
             if self._draining:

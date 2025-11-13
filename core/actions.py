@@ -108,7 +108,7 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
         reader_thread.start()
 
         while process.poll() is None:
-            if cancel_event.is_set():
+            if cancel_event.is_set() or shutdown_event.is_set():
                 error_handler.handle_process_cleanup(process)
                 cancel_msg = StatusMessage(status=StatusType.CANCELLED, message="Git clone cancelled.")
                 log_queue.put(message_to_dict(cancel_msg))
@@ -128,7 +128,7 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
                 log_msg = LogMessage(message=line.strip())
                 log_queue.put(message_to_dict(log_msg))
 
-        if cancel_event.is_set():
+        if cancel_event.is_set() or shutdown_event.is_set():
             cancel_msg = StatusMessage(status=StatusType.CANCELLED, message="Git clone cancelled.")
             log_queue.put(message_to_dict(cancel_msg))
             return
@@ -232,6 +232,7 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
             if "Processing file:" in msg:
                 self.processed_count += 1
                 progress_value = int((self.processed_count / self.total_files) * 100) if self.total_files > 0 else 0
+                progress_value = min(progress_value, 100)  # Clamp at 100%
 
                 # Only send progress updates if progress changed significantly or every batch_size files
                 if progress_value != self.last_progress_value or self.processed_count % self.batch_size == 0 or self.processed_count == self.total_files:

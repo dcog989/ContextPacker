@@ -15,6 +15,7 @@ DEFAULT_CONFIG = {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:141.0) Gecko/20100101 Firefox/141.0",
     ],
     "default_output_format": ".md",
+    "default_browser": "msedge",
     "default_local_excludes": [".archive/", ".git/", ".testing/", "*node_modules*", "build/", "dist/"],
     "binary_file_patterns": [
         "*.png",

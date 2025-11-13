@@ -93,14 +93,6 @@ class TaskHandler:
                 # Resolve path and check for suspicious patterns
                 resolved_path = Path(source_dir).resolve()
 
-                # Check for path traversal attempts
-                if ".." in source_dir or source_dir.startswith("~"):
-                    msg_text = "Invalid directory path. Absolute paths and parent directory references are not allowed."
-                    QMessageBox.critical(self.app, "Input Error", msg_text)
-                    stop_msg = UITaskStopMessage(was_cancelled=False)
-                    self.app.signals.message.emit(message_to_dict(stop_msg))
-                    return
-
                 # Verify directory exists and is accessible
                 if not resolved_path.is_dir():
                     msg_text = f"The specified input directory is not valid:\n{source_dir}"
