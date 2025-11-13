@@ -214,7 +214,6 @@ class InputPanelFactory:
 
         about_text = QLabel("ContextPacker")
         about_text.setObjectName("AppNameLabel")  # Set object name for accent color styling
-        about_text.setFont(QFont("Source Code Pro", 18, QFont.Weight.Bold))
         about_text.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
         text_layout = QVBoxLayout()

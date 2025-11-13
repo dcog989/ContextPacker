@@ -59,7 +59,7 @@ class App(QMainWindow):
         self.local_scan_future = None
         self.local_scan_cancel_event = None
 
-        # Constants used by MessageHandler (moved here for central definition)
+        # Constants used by MessageHandler
         self.max_batch_size = MAX_BATCH_SIZE
         self.ui_update_batch_size = UI_UPDATE_BATCH_SIZE
         self.BINARY_FILE_PATTERNS = BINARY_FILE_PATTERNS
@@ -90,7 +90,6 @@ class App(QMainWindow):
         self._apply_theme()  # Apply theme, relies on theme state
         self._set_icon()
 
-        # CORRECTED CALL: Theme icon updates are methods on App
         self._update_theme_icon()
         self._update_copy_icon(self.is_dark_mode_visual_state)
 
@@ -204,11 +203,16 @@ class App(QMainWindow):
         self.main_panel.copy_button.setIcon(QIcon(str(icon_path)))
 
     def _load_custom_font(self):
-        font_path = resource_path("assets/fonts/SourceCodePro-VariableFont_wght.ttf")
-        if font_path.exists():
-            font_id = QFontDatabase.addApplicationFont(str(font_path))
-            if font_id == -1:
-                self.log_verbose(f"Warning: Failed to load font from {font_path}")
+        font_files = [
+            "assets/fonts/SourceCodePro-VariableFont_wght.ttf",
+            "assets/fonts/SourceCodePro-Italic-VariableFont_wght.ttf",
+        ]
+        for font_file in font_files:
+            font_path = resource_path(font_file)
+            if font_path.exists():
+                font_id = QFontDatabase.addApplicationFont(str(font_path))
+                if font_id == -1:
+                    self.log_verbose(f"Warning: Failed to load font from {font_path}")
 
     def _setup_app_dirs_and_cleanup(self):
         app_data_dir = get_app_data_dir()
@@ -286,7 +290,6 @@ class App(QMainWindow):
             self.log_verbose("ERROR: No output file found to locate.")
 
     # --- Shutdown/Cleanup Methods ---
-
     def closeEvent(self, event):
         config["window_size"] = [self.width(), self.height()]
         h_sash_qba = self.main_panel.h_splitter.saveState().toBase64()

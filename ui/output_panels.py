@@ -68,7 +68,7 @@ class OutputPanelFactory:
 
         verbose_log_widget = QTextEdit()
         verbose_log_widget.setReadOnly(True)
-        verbose_log_widget.setFont(QFont("Source Code Pro", 10))
+        verbose_log_widget.setObjectName("VerboseLog")
         log_layout.addWidget(verbose_log_widget)
 
         widgets = {

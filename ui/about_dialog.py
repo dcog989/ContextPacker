@@ -31,7 +31,7 @@ class AboutDialog(QDialog):
         layout.addSpacing(15)
 
         milkshake = QLabel('"I drink your milkshake! I drink it up!"')  # this should use 'Source Code Pro' italic
-        milkshake.setObjectName("ItalicLabel")
+        milkshake.setObjectName("MilkshakeLabel")
         layout.addWidget(milkshake, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addSpacing(20)
 

@@ -50,13 +50,6 @@ class AppTheme:
             self.spinbox_button_hover = "#E0E0E0"
             self.spinbox_button_pressed = "#D0D0D0"
 
-        # Common colors
-        self.color_gray_808 = "#808080"
-        self.color_gray_d0d = "#D0D0D0"
-        self.color_gray_a0a = "#A0A0A0"
-        self.color_gray_a9a = "#A9A9A9"
-        self.color_gray_888 = "#888888"
-
         # Create checkmark icon and save to temp location
         self._setup_checkbox_icon()
 
@@ -97,6 +90,10 @@ class AppTheme:
         icon_path = str(self.checkbox_icon_path).replace("\\", "/")
 
         return f"""
+            QWidget {{
+                font-size: 13px;
+            }}
+
             /* Splitter styling */
             QSplitter::handle {{
                 background-color: #999999;
@@ -123,20 +120,24 @@ class AppTheme:
             /* System panel app name styling */
             QLabel#AppNameLabel {{
                 color: {self.accent_color};
+                font-family: "Source Code Pro";
                 font-size: 22px;
+                font-weight: bold;
             }}
             
-            /* Italic label styling (for about dialog quote) */
-            QLabel#ItalicLabel {{
+            /* Label styling for about dialog quote */
+            QLabel#MilkshakeLabel {{
+                color: #d581b0;
+                font-family: "Source Code Pro";
                 font-style: italic;
-                font-size: 11px;
-            }}
-            
-            /* Content inside QGroupBox - increase by 3px total (11px + 3px = 14px) */
-            QGroupBox QLineEdit, QGroupBox QTextEdit, QGroupBox QSpinBox, 
-            QGroupBox QComboBox, QGroupBox QPushButton, QGroupBox QCheckBox, 
-            QGroupBox QRadioButton, QGroupBox QLabel {{
                 font-size: 14px;
+                font-weight: 600;
+            }}
+
+            /* Style for the verbose log widget */
+            QTextEdit#VerboseLog {{
+                font-family: "Source Code Pro";
+                font-size: 10px;
             }}
             
             /* Input fields - different shade of grey from app background */
@@ -145,7 +146,6 @@ class AppTheme:
                 border: 1px solid {self.border_color};
                 border-radius: 3px;
                 padding: 6px 8px;
-                font-size: 11px;
             }}
             QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QComboBox:focus {{
                 border: 1px solid {self.accent_color};
@@ -183,16 +183,16 @@ class AppTheme:
             QSpinBox::up-arrow {{
                 width: 0;
                 height: 0;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-bottom: 6px solid {self.text_color};
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-bottom: 7px solid {self.text_color};
             }}
             QSpinBox::down-arrow {{
                 width: 0;
                 height: 0;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 6px solid {self.text_color};
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 7px solid {self.text_color};
             }}
             QSpinBox::up-arrow:hover {{
                 border-bottom-color: {self.text_hover};
@@ -207,7 +207,6 @@ class AppTheme:
                 border: 1px solid {self.border_color};
                 border-radius: 4px;
                 padding: 6px 12px;
-                font-size: 11px;
             }}
             QPushButton:hover {{
                 background-color: {self.bg_button_hover};
@@ -261,7 +260,6 @@ class AppTheme:
             
             /* Checkbox styling with custom checkmark */
             QCheckBox {{
-                font-size: 11px;
                 spacing: 8px;
                 padding: 4px 0px;
             }}
@@ -286,7 +284,6 @@ class AppTheme:
             
             /* Radio button styling */
             QRadioButton {{
-                font-size: 11px;
                 spacing: 8px;
                 padding: 4px 0px;
             }}
@@ -310,13 +307,7 @@ class AppTheme:
             
             /* Label styling */
             QLabel {{
-                font-size: 11px;
                 padding: 2px 0px;
-            }}
-            
-            /* Dialog label styling - ensure dialogs use same font size */
-            QDialog QLabel {{
-                font-size: 11px;
             }}
             
             /* Table widget styling */
@@ -324,7 +315,6 @@ class AppTheme:
                 background-color: {self.bg_secondary};
                 border: 1px solid {self.border_color};
                 gridline-color: {self.bg_tertiary};
-                font-size: 11px;
             }}
             QTableWidget::item {{
                 padding: 6px 8px;
@@ -336,7 +326,6 @@ class AppTheme:
                 background-color: {self.bg_tertiary};
                 border: 1px solid {self.border_color};
                 padding: 6px 8px;
-                font-size: 11px;
                 font-weight: bold;
             }}
             
@@ -346,7 +335,6 @@ class AppTheme:
                 border-radius: 3px;
                 background-color: {self.bg_secondary};
                 text-align: center;
-                font-size: 11px;
                 padding: 2px;
             }}
             QProgressBar::chunk {{

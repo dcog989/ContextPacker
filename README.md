@@ -18,9 +18,9 @@ A desktop app to scrape websites, Git repositories, or package local files into 
 ## Installation
 
 1. **Install a Web Browser**: The web crawling feature requires one of the following browsers to be installed:
-    * Microsoft Edge
-    * Google Chrome
-    * Mozilla Firefox
+    - Microsoft Edge
+    - Google Chrome
+    - Mozilla Firefox
 
 2. **Install Git**: The Git repository cloning feature requires `git` to be installed and accessible in your system's PATH.
 
@@ -96,8 +96,8 @@ This mode is for scraping online content or cloning Git repositories.
 
 1. Select the **"Web Crawl"** radio button.
 2. Enter the **Start URL**.
-    * For a website, enter the full URL to begin scraping.
-    * For a Git repository, enter the repository's clone URL (e.g., `https://github.com/user/repo.git`). The app will detect it, clone the repo, and switch to Local Directory mode.
+    - For a website, enter the full URL to begin scraping.
+    - For a Git repository, enter the repository's clone URL (e.g., `https://github.com/user/repo.git`). The app will detect it, clone the repo, and switch to Local Directory mode.
 3. Adjust the crawling options as needed (these are ignored for Git URLs).
 4. Click **"Download & Convert"**.
 
@@ -115,9 +115,9 @@ This mode is for packaging local files.
 
 On first run, the application creates a `config.json` file in the same directory. You can edit this file to customize:
 
-* `user_agents`: The list of user-agents available in the dropdown.
-* `default_local_excludes`: The default patterns that appear in the "Excludes" text box.
-* `binary_file_patterns`: The list of file patterns to hide when "Hide Images + Binaries" is checked.
+- `user_agents`: The list of user-agents available in the dropdown.
+- `default_local_excludes`: The default patterns that appear in the "Excludes" text box.
+- `binary_file_patterns`: The list of file patterns to hide when "Hide Images + Binaries" is checked.
 
 ## Building from Source
 
@@ -127,34 +127,23 @@ This project uses [Nox](https://nox.thea.codes/) for task automation. Ensure you
 
 Run these commands from the project root in your terminal.
 
-* **Build for Production:**
+- **Build for Production:**
     Creates a compressed archive (`.7z` or `.zip`) in the `dist` folder.
 
     ```sh
     poetry run nox -s build
     ```
 
-* **Build and Run for Debugging:**
+- **Build and Run for Debugging:**
     Builds a version with the console enabled, then launches it immediately.
 
     ```sh
     poetry run nox -s build-run
     ```
 
-* **Clean Build Artifacts:**
+- **Clean Build Artifacts:**
     Removes the `dist`, `build`, and `__pycache__` directories.
 
     ```sh
     poetry run nox -s clean
     ```
-
-## Technology Stack
-
-## Developer troubleshooting
-
-There is a small environment checker that validates Python, git, browsers, and key packages:
-
-```pwsh
-poetry run python scripts/check_env.py
-# or (Windows) use the helper:
-.\scripts\check_env.ps1
