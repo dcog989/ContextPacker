@@ -14,6 +14,7 @@ from selenium.webdriver.firefox.service import Service as FirefoxService
 from .platform_detection import get_process_creation_flags
 from .config_manager import get_config
 from .types import LogMessage
+from .constants import DRIVER_CLEANUP_TIMEOUT_SECONDS
 
 
 def _create_base_options(user_agent):
@@ -129,7 +130,7 @@ def initialize_driver(config, log_queue, shutdown_event):
     return None
 
 
-def cleanup_driver(driver, timeout=10, log_queue=None):
+def cleanup_driver(driver, timeout=DRIVER_CLEANUP_TIMEOUT_SECONDS, log_queue=None):
     """
     Clean up driver with actual timeout enforcement to prevent hanging.
 

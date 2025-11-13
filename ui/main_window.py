@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt, QByteArray
 
 from core.config import CrawlerConfig
 from core.config_manager import get_config
-from core.constants import MAX_LOG_LINES
+from core.constants import MAX_LOG_LINES, UI_TABLE_INSERT_CHUNK_SIZE
 from ui.input_panels import InputPanelFactory
 from ui.output_panels import OutputPanelFactory
 
@@ -295,7 +295,7 @@ class MainWindow(QWidget):
         """
         from PySide6.QtCore import QTimer
 
-        rows_to_insert = 50  # Chunk size
+        rows_to_insert = UI_TABLE_INSERT_CHUNK_SIZE  # Chunk size
         data_inserted = 0
 
         for _ in range(rows_to_insert):

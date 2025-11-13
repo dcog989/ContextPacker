@@ -2,6 +2,7 @@ import threading
 import queue
 import concurrent.futures
 import os
+from .constants import QUEUE_LISTENER_STOP_TIMEOUT_SECONDS, QUEUE_GET_TIMEOUT_SECONDS, MAX_QUEUE_DRAIN_ATTEMPTS
 
 
 class WorkerManager:
@@ -24,7 +25,7 @@ class WorkerManager:
             self.queue_listener_thread = threading.Thread(target=self._queue_listener_worker, daemon=True)
             self.queue_listener_thread.start()
 
-    def stop_queue_listener(self, timeout=5.0):
+    def stop_queue_listener(self, timeout=QUEUE_LISTENER_STOP_TIMEOUT_SECONDS):
         """
         Safely stop the queue listener thread.
         Returns: True if stopped cleanly, False if timeout occurred
@@ -52,13 +53,19 @@ class WorkerManager:
         """Worker thread that processes messages from log_queue."""
         while not self.queue_listener_shutdown.is_set():
             try:
-                msg_obj = self.log_queue.get(timeout=5.0)
+                # Check for shutdown before getting from queue to exit faster
+                if self.shutdown_event.is_set():
+                    break
+
+                msg_obj = self.log_queue.get(timeout=QUEUE_GET_TIMEOUT_SECONDS)
 
                 if msg_obj is None:
                     # Sentinel received, break the loop and proceed to drain/exit
                     break
 
-                self.app.signals.message.emit(msg_obj)
+                if not self.shutdown_event.is_set():
+                    self.app.signals.message.emit(msg_obj)
+
                 self.log_queue.task_done()
 
             except queue.Empty:
@@ -79,7 +86,7 @@ class WorkerManager:
 
         try:
             # Safety limit to prevent infinite loops
-            max_drain_attempts = 1000
+            max_drain_attempts = MAX_QUEUE_DRAIN_ATTEMPTS
             attempts = 0
 
             while attempts < max_drain_attempts:
@@ -97,7 +104,7 @@ class WorkerManager:
                     continue
 
             if attempts >= max_drain_attempts:
-                print(f"Warning: Stopped draining queue after {max_drain_attempts} attempts")
+                print(f"Warning: Stopped draining queue after {MAX_QUEUE_DRAIN_ATTEMPTS} attempts")
 
         finally:
             self._draining = False

@@ -10,7 +10,14 @@ import re
 from .packager import run_repomix
 from .utils import get_app_data_dir, get_downloads_folder
 from .error_handling import WorkerErrorHandler, create_process_with_flags, safe_stream_enqueue, validate_tool_availability, create_tool_missing_error
-from .constants import UNLIMITED_DEPTH_VALUE, UNLIMITED_DEPTH_REPLACEMENT, LARGE_DIRECTORY_THRESHOLD
+from .constants import (
+    UNLIMITED_DEPTH_VALUE,
+    UNLIMITED_DEPTH_REPLACEMENT,
+    LARGE_DIRECTORY_THRESHOLD,
+    GIT_CLONE_OUTPUT_POLL_SECONDS,
+    GIT_READER_THREAD_JOIN_TIMEOUT_SECONDS,
+    REPOMIX_PROGRESS_UPDATE_BATCH_SIZE,
+)
 from .types import StatusMessage, ProgressMessage, LogMessage, StatusType, FileType, FileInfo, file_info_to_dict, dict_to_file_info
 
 
@@ -113,7 +120,7 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
                 return
 
             try:
-                line = output_queue.get(timeout=0.1)
+                line = output_queue.get(timeout=GIT_CLONE_OUTPUT_POLL_SECONDS)
                 if line and not shutdown_event.is_set():
                     # line is already a LogMessage object from safe_stream_enqueue
                     log_queue.put(line)
@@ -146,7 +153,7 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
         if process is not None:
             # Wait for reader thread to finish processing the stream
             if reader_thread is not None and reader_thread.is_alive():
-                reader_thread.join(timeout=1.0)
+                reader_thread.join(timeout=GIT_READER_THREAD_JOIN_TIMEOUT_SECONDS)
 
             # Use centralized process cleanup
             error_handler.handle_process_cleanup(process)
@@ -219,7 +226,7 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
             self.processed_count = 0
             self.total_files = total_files_ref
             self.shutdown_event = shutdown_event_ref
-            self.batch_size = 10  # Update progress every 10 files
+            self.batch_size = REPOMIX_PROGRESS_UPDATE_BATCH_SIZE  # Update progress every 10 files
             self.last_progress_value = 0
 
         def emit(self, record):

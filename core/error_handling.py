@@ -10,6 +10,7 @@ from typing import Optional
 
 # Union type for messages to simplify typing
 from .types import StatusMessage, LogMessage, StatusType
+from .constants import PROCESS_CLEANUP_TIMEOUT_SECONDS, PROCESS_FORCE_KILL_WAIT_SECONDS
 
 
 class WorkerErrorHandler:
@@ -43,7 +44,7 @@ class WorkerErrorHandler:
 
         return StatusMessage(status=StatusType.ERROR, message=error_msg)
 
-    def handle_process_cleanup(self, process, timeout: int = 2) -> bool:
+    def handle_process_cleanup(self, process, timeout: int = PROCESS_CLEANUP_TIMEOUT_SECONDS) -> bool:
         """
         Standardized process cleanup with timeout and error handling.
 
@@ -63,7 +64,7 @@ class WorkerErrorHandler:
                     return True
                 except subprocess.TimeoutExpired:
                     process.kill()
-                    process.wait(timeout=1)
+                    process.wait(timeout=PROCESS_FORCE_KILL_WAIT_SECONDS)
                     self.log_message("Process killed forcefully.")
                     return True
         except Exception as e:

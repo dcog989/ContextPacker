@@ -18,6 +18,8 @@ from core.constants import (
     UI_UPDATE_INTERVAL_MS,
     MAX_BATCH_SIZE,
     UI_UPDATE_BATCH_SIZE,
+    DEFAULT_WINDOW_WIDTH,
+    DEFAULT_WINDOW_HEIGHT,
 )
 from core.app_signals import WorkerSignals
 from core.app_worker_manager import WorkerManager
@@ -40,7 +42,7 @@ class App(QMainWindow):
         if w > 0 and h > 0:
             self.resize(w, h)
         else:
-            self.resize(1600, 950)
+            self.resize(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
         self.setWindowTitle("ContextPacker")
 
         # Core State & Managers

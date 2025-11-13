@@ -21,13 +21,26 @@ def colorize_svg(svg_path: Path, color: str) -> bytes:
 
 
 def render_svg_to_pixmap(svg_bytes: bytes, size: QSize) -> QPixmap:
-    """Renders SVG byte data to a QPixmap of a given size."""
+    """Renders SVG byte data to a QPixmap of a given size, ensuring painter cleanup."""
     renderer = QSvgRenderer(QByteArray(svg_bytes))
+
+    # Return an empty pixmap if the SVG data is invalid or size is not valid.
+    if not renderer.isValid() or not size.isValid():
+        return QPixmap()
+
     pixmap = QPixmap(size)
-    pixmap.fill(Qt.GlobalColor.transparent)  # Transparent background
+    if pixmap.isNull():
+        return pixmap  # Return the null pixmap
+
+    pixmap.fill(Qt.GlobalColor.transparent)
+
     painter = QPainter(pixmap)
-    renderer.render(painter)
-    painter.end()
+    try:
+        # The render call can trigger errors; the finally block ensures the painter is always cleaned up.
+        renderer.render(painter)
+    finally:
+        painter.end()
+
     return pixmap
 
 

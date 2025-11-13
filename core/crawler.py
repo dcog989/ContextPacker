@@ -9,7 +9,7 @@ import re
 from markdownify import markdownify as md
 
 from .browser_utils import initialize_driver, cleanup_driver
-from .constants import PAGE_LOAD_TIMEOUT_SECONDS, MEMORY_MANAGEMENT_URL_LIMIT
+from .constants import PAGE_LOAD_TIMEOUT_SECONDS, MEMORY_MANAGEMENT_URL_LIMIT, PROCESSED_URLS_MEMORY_FACTOR
 from .types import LogMessage, StatusMessage, ProgressMessage, FileSavedMessage, StatusType
 
 
@@ -158,7 +158,7 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
     processed_urls = {normalized_start_url}
     pages_saved = 0
 
-    max_processed_urls = max(config.max_pages * 10, MEMORY_MANAGEMENT_URL_LIMIT)
+    max_processed_urls = max(config.max_pages * PROCESSED_URLS_MEMORY_FACTOR, MEMORY_MANAGEMENT_URL_LIMIT)
 
     try:
         while not urls_to_visit.empty() and pages_saved < config.max_pages:
