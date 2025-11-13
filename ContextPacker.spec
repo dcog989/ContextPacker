@@ -6,7 +6,8 @@ app_assets = [
     ('assets/icons/ContextPacker.ico', 'assets/icons'),
     ('assets/icons/ContextPacker-x64.png', 'assets/icons'),
     ('assets/icons/ContextPacker-x128.png', 'assets/icons'),
-    ('assets/icons/copy.png', 'assets/icons'),
+    ('assets/icons/copy-dark.png', 'assets/icons'),
+    ('assets/icons/copy-light.png', 'assets/icons'),
     ('assets/fonts/SourceCodePro-Regular.ttf', 'assets/fonts')
 ]
 
