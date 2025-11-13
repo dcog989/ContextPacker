@@ -4,6 +4,7 @@ Centralizes browser setup logic for Chrome, Edge, and Firefox.
 """
 
 import traceback
+import threading
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -123,21 +124,44 @@ def initialize_driver(config, log_queue, shutdown_event):
 
 def cleanup_driver(driver, timeout=10, log_queue=None):
     """
-    Clean up driver with timeout and standardized error handling.
+    FIXED: Clean up driver with actual timeout enforcement to prevent hanging.
 
     Args:
         driver: WebDriver instance to clean up
-        timeout: Timeout for cleanup operations
+        timeout: Timeout in seconds for cleanup operations
         log_queue: Queue for logging messages (optional)
     """
     if log_queue:
         log_queue.put({"type": "log", "message": "Cleaning up browser driver..."})
 
-    try:
-        # Try graceful quit first
-        driver.quit()
+    cleanup_complete = threading.Event()
+    cleanup_exception = None
+
+    def _quit_driver():
+        nonlocal cleanup_exception
+        try:
+            driver.quit()
+        except Exception as e:
+            cleanup_exception = e
+
+        cleanup_complete.set()
+
+    # Run driver.quit() in a separate thread to enforce timeout
+    cleanup_thread = threading.Thread(target=_quit_driver, daemon=True)
+    cleanup_thread.start()
+
+    # Wait for cleanup with timeout
+    cleanup_complete.wait(timeout=timeout)
+
+    if cleanup_complete.is_set():
+        if cleanup_exception:
+            if log_queue:
+                log_queue.put({"type": "log", "message": f"Warning during driver cleanup: {cleanup_exception}"})
+        else:
+            if log_queue:
+                log_queue.put({"type": "log", "message": "Browser driver cleaned up successfully."})
+    else:
+        # Timeout occurred
         if log_queue:
-            log_queue.put({"type": "log", "message": "Browser driver cleaned up successfully."})
-    except Exception as e:
-        if log_queue:
-            log_queue.put({"type": "log", "message": f"Warning during driver cleanup: {e}"})
+            log_queue.put({"type": "log", "message": f"Warning: Driver cleanup timed out after {timeout}s. Thread may still be running."})
+        # Note: We can't forcefully kill the thread, but at least we don't hang the main thread

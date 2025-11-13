@@ -13,6 +13,8 @@ class WorkerManager:
         self.shutdown_event = threading.Event()
         self.queue_listener_thread = None
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        self._draining = False
+        self._drain_lock = threading.Lock()
 
     def start_queue_listener(self):
         """Start the queue listener thread if not already running."""
@@ -67,27 +69,44 @@ class WorkerManager:
         self._drain_queue()
 
     def _drain_queue(self):
-        """Process all remaining messages in the queue without blocking."""
-        if hasattr(self, "_draining_queue") and self._draining_queue:
-            return
+        """FIXED: Process remaining messages with proper guards against recursion and hangs."""
+        # Prevent recursive calls
+        with self._drain_lock:
+            if self._draining:
+                return
+            self._draining = True
 
-        self._draining_queue = True
         try:
-            while True:
+            # Safety limit to prevent infinite loops
+            max_drain_attempts = 1000
+            attempts = 0
+
+            while attempts < max_drain_attempts:
                 try:
                     msg_obj = self.log_queue.get_nowait()
                     if msg_obj is not None:
+                        # Only emit if not shutting down and signal still exists
                         if not self.shutdown_event.is_set():
-                            if hasattr(self.app.signals, "message"):
-                                self.app.signals.message.emit(msg_obj)
+                            if hasattr(self.app, "signals") and hasattr(self.app.signals, "message"):
+                                try:
+                                    self.app.signals.message.emit(msg_obj)
+                                except RuntimeError:
+                                    # Signal may have been disconnected during shutdown
+                                    pass
                         self.log_queue.task_done()
+                    attempts += 1
                 except queue.Empty:
                     break
                 except Exception as e:
                     print(f"Error draining queue: {e}")
+                    attempts += 1
                     continue
+
+            if attempts >= max_drain_attempts:
+                print(f"Warning: Stopped draining queue after {max_drain_attempts} attempts")
+
         finally:
-            self._draining_queue = False
+            self._draining = False
 
     def cleanup_workers(self):
         """
@@ -98,8 +117,8 @@ class WorkerManager:
 
         if self.app.worker_future and not self.app.worker_future.done():
             if not self.shutdown_event.is_set():
-                self.shutdown_event.set()
-                self.app.log_verbose("Shutdown requested. Waiting for main task to terminate...")
+                # Don't set shutdown_event here - that's done in closeEvent after cleanup
+                self.app.log_verbose("Waiting for main task to terminate...")
                 if self.app.cancel_event:
                     self.app.cancel_event.set()
                 self.app._toggle_ui_controls(False)
@@ -107,16 +126,12 @@ class WorkerManager:
 
         if self.app.local_scan_future and not self.app.local_scan_future.done():
             if not self.shutdown_event.is_set():
-                self.shutdown_event.set()
-                self.app.log_verbose("Shutdown requested. Waiting for file scanner to terminate...")
+                self.app.log_verbose("Waiting for file scanner to terminate...")
 
             if self.app.local_scan_cancel_event:
                 self.app.local_scan_cancel_event.set()
 
             is_worker_running = True
 
-        if is_worker_running:
-            return True
-
-        self.shutdown_event.clear()
-        return False
+        # FIXED: Don't clear shutdown event - let caller manage it
+        return is_worker_running

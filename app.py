@@ -5,6 +5,7 @@ import subprocess
 import platform
 import multiprocessing
 import sys
+import threading
 
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtCore import QTimer, Qt, QSize
@@ -55,6 +56,7 @@ class App(QMainWindow):
         self.local_files_to_exclude = set()
         self.local_depth_excludes = set()
         self.gitignore_cache = {}
+        self.gitignore_cache_lock = threading.Lock()
         self.worker_future = None
         self.cancel_event = None
         self.local_scan_future = None
@@ -247,10 +249,6 @@ class App(QMainWindow):
         self.ui_controller._update_button_states()
 
     def log_verbose(self, message):
-        # Count lines in the message (handle multi-line messages)
-        lines_in_message = message.count("\n") + 1
-        self.main_panel.log_line_count += lines_in_message
-
         # Check if we need to trim the log before adding new content
         self.main_panel._manage_log_size()
 
@@ -292,27 +290,35 @@ class App(QMainWindow):
         config["v_sash_state"] = bytes(v_sash_qba.data()).decode("utf-8")
         save_config(config)
 
-        # 1. Set global shutdown event
+        # 1. Cancel any running tasks first
+        if self.cancel_event:
+            self.cancel_event.set()
+        if self.local_scan_cancel_event:
+            self.local_scan_cancel_event.set()
+
+        # 2. Check if workers need time to stop gracefully
+        workers_need_cleanup = self.worker_manager.cleanup_workers()
+        if workers_need_cleanup:
+            # Workers are still running, defer close
+            event.ignore()
+            return
+
+        # 3. NOW set global shutdown event (after workers stopped)
         self.worker_manager.shutdown_event.set()
 
-        # 2. Shutdown executor non-blocking
+        # 4. Shutdown executor non-blocking
         self.worker_manager.executor.shutdown(wait=False)
 
-        # 3. Disconnect signals
+        # 5. Disconnect signals
         try:
             self.signals.message.disconnect()
         except RuntimeError:
             pass
 
-        # 4. Stop queue listener thread
+        # 6. Stop queue listener thread with timeout
         queue_stopped = self.worker_manager.stop_queue_listener(timeout=5.0)
         if not queue_stopped:
             print("Warning: Queue listener did not stop cleanly")
-
-        # 5. Check if any worker is still running
-        if self.worker_manager.cleanup_workers():
-            event.ignore()
-            return
 
         event.accept()
 

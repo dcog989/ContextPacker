@@ -79,9 +79,7 @@ class MainWindow(QWidget):
         self.create_context_menus()
         self.toggle_output_view(is_web_mode=True)
 
-        # Memory management: limit verbose log size to prevent unbounded growth
-        self.max_log_lines = MAX_LOG_LINES  # Keep maximum lines in verbose log
-        self.log_line_count = 0
+        self.max_log_lines = MAX_LOG_LINES
 
     def _assign_widgets_from_dict(self, widgets_dict):
         """Assigns keys/values from a dictionary to self as attributes."""
@@ -354,7 +352,6 @@ class MainWindow(QWidget):
 
     def clear_logs(self):
         self.verbose_log_widget.clear()
-        self.log_line_count = 0  # Reset line counter
         self.standard_log_list.setRowCount(0)
         self.scraped_files.clear()
         self.discovered_url_count = 0
@@ -362,22 +359,26 @@ class MainWindow(QWidget):
         self.update_file_count()
 
     def _manage_log_size(self):
-        """Manage verbose log size to prevent memory bloat."""
-        if self.log_line_count > self.max_log_lines:
-            # Remove oldest lines to stay within limit
-            cursor = self.verbose_log_widget.textCursor()
+        """Manage verbose log size accurately using QTextDocument."""
+        document = self.verbose_log_widget.document()
+        current_line_count = document.blockCount()
 
+        if current_line_count > self.max_log_lines:
             # Calculate how many lines to remove (remove 25% when limit exceeded)
-            lines_to_remove = self.log_line_count // 4
+            lines_to_remove = current_line_count // 4
 
-            # Move to beginning and remove lines
+            # Use QTextCursor to accurately remove blocks from the beginning
+            cursor = self.verbose_log_widget.textCursor()
             cursor.movePosition(cursor.MoveOperation.Start)
-            for _ in range(lines_to_remove):
-                cursor.select(cursor.SelectionType.LineUnderCursor)
-                cursor.removeSelectedText()
-                cursor.deleteChar()  # Remove newline
 
-            self.log_line_count -= lines_to_remove
+            for _ in range(lines_to_remove):
+                cursor.select(cursor.SelectionType.BlockUnderCursor)
+                cursor.removeSelectedText()
+                cursor.deleteChar()  # Remove the newline/block separator
+
+                # Safety check - if document is somehow empty, break
+                if document.blockCount() == 0:
+                    break
 
     def update_discovered_count(self, count):
         self.discovered_url_count = count

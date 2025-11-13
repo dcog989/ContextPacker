@@ -43,23 +43,22 @@ def _normalize_url(url):
 
 
 def _url_matches_any_pattern(url, patterns):
-    parsed_url_path = urlparse(url).path
+    """Case-insensitive URL pattern matching for better user experience."""
+    parsed_url_path = urlparse(url).path.lower()
+    url_lower = url.lower()
+
     for pattern in patterns:
-        if pattern.startswith(("http://", "https://")):
-            if url.startswith(pattern):
+        pattern_lower = pattern.lower()
+        if pattern_lower.startswith(("http://", "https://")):
+            if url_lower.startswith(pattern_lower):
                 return True
-        elif pattern in parsed_url_path:
+        elif pattern_lower in parsed_url_path:
             return True
     return False
 
 
 def _process_page(driver, config, current_url, filename_cache=None):
-    """Fetches, processes, and saves a single web page.
-
-    Returns:
-        tuple: (page_data, None) on success, where page_data is (soup, final_url, output_path, filename)
-        tuple: (None, error_msg) on failure
-    """
+    """Fetches, processes, and saves a single web page."""
     try:
         driver.get(current_url)
         pause_duration = random.uniform(config.min_pause, config.max_pause)
@@ -109,7 +108,6 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
 
         abs_link = urljoin(base_url, href_attr)
 
-        # Use cache for normalized URLs
         if abs_link in url_cache:
             normalized_abs_link, parsed_link_domain = url_cache[abs_link]
         else:
@@ -127,10 +125,7 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
             continue
 
         if normalized_abs_link not in processed_urls:
-            # Memory management: check if we're approaching the limit
             if max_processed_urls and len(processed_urls) >= max_processed_urls:
-                # Remove oldest entries to prevent memory bloat
-                # Convert to list, keep only the most recent half
                 url_list = list(processed_urls)
                 processed_urls.clear()
                 processed_urls.update(url_list[-max_processed_urls // 2 :])
@@ -142,10 +137,7 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
 
 
 def crawl_website(config, log_queue, cancel_event, shutdown_event):
-    """
-    Crawls a website based on provided configuration.
-    This function orchestrates crawling process.
-    """
+    """Crawls a website based on provided configuration."""
     driver = initialize_driver(config, log_queue, shutdown_event)
     if not driver:
         error_msg = "ERROR: Could not find a compatible web browser or its driver.\nPlease ensure a supported browser (Edge, Chrome, or Firefox) is installed."
@@ -155,9 +147,8 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
     driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
     log_queue.put({"type": "log", "message": "Starting web crawl..."})
 
-    # Initialize caches to avoid redundant operations
-    url_cache = {}  # Cache for normalized URLs and parsed domains
-    filename_cache = {}  # Cache for sanitized filenames
+    url_cache = {}
+    filename_cache = {}
 
     urls_to_visit = queue.Queue()
     normalized_start_url = _normalize_url(config.start_url)
@@ -165,18 +156,15 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
     processed_urls = {normalized_start_url}
     pages_saved = 0
 
-    # Memory management: limit processed_urls size to prevent unbounded growth
-    # Keep track of URLs but allow cleanup when we exceed reasonable limits
-    max_processed_urls = max(config.max_pages * 10, MEMORY_MANAGEMENT_URL_LIMIT)  # Allow 10x more URLs than pages, minimum limit
+    max_processed_urls = max(config.max_pages * 10, MEMORY_MANAGEMENT_URL_LIMIT)
 
     try:
         while not urls_to_visit.empty() and pages_saved < config.max_pages:
-            if cancel_event.is_set():
+            if cancel_event.is_set() or shutdown_event.is_set():
                 break
 
             current_url, depth = urls_to_visit.get()
 
-            # Check for cancellation immediately after getting URL but before processing
             if cancel_event.is_set() or shutdown_event.is_set():
                 break
 
@@ -187,7 +175,7 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
             try:
                 page_data, error_msg = _process_page(driver, config, current_url, filename_cache)
 
-                if cancel_event.is_set():
+                if cancel_event.is_set() or shutdown_event.is_set():
                     break
 
                 if error_msg:

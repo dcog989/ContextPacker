@@ -1,6 +1,6 @@
-import threading
 from PySide6.QtWidgets import QFileDialog, QApplication
 from PySide6.QtCore import Qt
+import threading
 
 import core.actions as actions
 from core.types import LocalScanCompleteMessage, message_to_dict, LogMessage
@@ -118,7 +118,7 @@ class UiController:
         custom_excludes = [p.strip() for p in self.app.main_panel.local_exclude_ctrl.toPlainText().splitlines() if p.strip()]
         binary_excludes = self.app.BINARY_FILE_PATTERNS if self.app.main_panel.hide_binaries_check.isChecked() else []
 
-        args = (input_dir, self.app.main_panel.dir_level_ctrl.value(), self.app.main_panel.use_gitignore_check.isChecked(), custom_excludes, binary_excludes, self.app.local_scan_cancel_event, self.app.gitignore_cache)
+        args = (input_dir, self.app.main_panel.dir_level_ctrl.value(), self.app.main_panel.use_gitignore_check.isChecked(), custom_excludes, binary_excludes, self.app.local_scan_cancel_event, self.app.gitignore_cache, self.app.gitignore_cache_lock)
 
         # Submit task to ThreadPoolExecutor
         self.app.local_scan_future = self.app.worker_manager.executor.submit(self._local_scan_worker, *args)
