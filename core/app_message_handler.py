@@ -141,7 +141,7 @@ class MessageHandler:
             return
 
         dl_button = self.app.main_panel.download_button
-        dl_button.setText("Download & Convert")
+        dl_button.setText("Download && Convert")
         dl_button.setEnabled(True)
 
         pkg_button = self.app.main_panel.package_button

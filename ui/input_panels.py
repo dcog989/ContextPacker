@@ -46,6 +46,7 @@ class InputPanelFactory:
         crawl_depth_ctrl = QSpinBox()
         crawl_depth_ctrl.setValue(1)
         crawl_depth_ctrl.setRange(0, 99)
+        crawl_depth_ctrl.setToolTip("0: Start URL only\n1: Start URL + 1 level of links\n...\n9: Unlimited depth")
         crawl_depth_ctrl.setFixedWidth(60)
 
         min_pause_ctrl = QLineEdit(str(DEFAULT_MIN_PAUSE_MS))
