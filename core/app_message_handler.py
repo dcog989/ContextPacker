@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 
-from .types import LogMessage, StatusMessage, ProgressMessage, FileSavedMessage, UITaskMessage, UITaskStopMessage, UITaskStoppingMessage, GitCloneDoneMessage, LocalScanCompleteMessage, TaskType, dict_to_message
+from .types import LogMessage, StatusMessage, ProgressMessage, FileSavedMessage, UITaskMessage, UITaskStopMessage, UITaskStoppingMessage, GitCloneDoneMessage, LocalScanCompleteMessage, TaskType
 
 
 class MessageHandler:
@@ -15,24 +15,21 @@ class MessageHandler:
         self.ui_update_counter = 0
         self.ui_update_batch_size = self.app.ui_update_batch_size  # From core/constants.py via App
 
-    def process_log_queue_message(self, msg_obj):
+    def process_log_queue_message(self, typed_msg):
         """Processes a single message received from the worker queue."""
         # Ignore messages during shutdown to prevent race conditions
         if self.app.shutdown_event.is_set():
             return
 
-        # Convert dictionary to typed message for better type safety
-        typed_msg = dict_to_message(msg_obj)
-
         if isinstance(typed_msg, LogMessage):
             self.app.log_verbose(typed_msg.message)
         elif isinstance(typed_msg, FileSavedMessage):
-            self._handle_file_saved(msg_obj, typed_msg)
+            self._handle_file_saved(typed_msg)
         elif isinstance(typed_msg, ProgressMessage):
             self.app.main_panel.progress_gauge.setValue(typed_msg.value)
             self.app.main_panel.progress_gauge.setMaximum(typed_msg.max_value)
         elif isinstance(typed_msg, StatusMessage):
-            self.app.task_handler.handle_status(typed_msg.status.value, msg_obj)
+            self.app.task_handler.handle_status(typed_msg)
         elif isinstance(typed_msg, UITaskMessage):
             self._handle_ui_task_start(typed_msg.task.value)
         elif isinstance(typed_msg, UITaskStoppingMessage):
@@ -45,10 +42,12 @@ class MessageHandler:
             self._handle_local_scan_complete(typed_msg)
         else:
             # Fallback for unknown message types
-            self.app.log_verbose(str(msg_obj.get("message", "")))
+            self.app.log_verbose(str(typed_msg))
 
-    def _handle_file_saved(self, msg_obj, typed_msg):
+    def _handle_file_saved(self, typed_msg):
         """Handles the FileSavedMessage, batching UI updates."""
+        # Convert to dictionary only at the boundary for UI list processing
+        msg_obj = {"type": typed_msg.type.value, "url": typed_msg.url, "filename": typed_msg.filename, "path": typed_msg.path, "pages_saved": typed_msg.pages_saved, "max_pages": typed_msg.max_pages, "queue_size": typed_msg.queue_size}
         self.scraped_files_batch.append(msg_obj)
 
         # Proactive memory management: check batch size more frequently
@@ -130,7 +129,15 @@ class MessageHandler:
             QApplication.restoreOverrideCursor()
             self.app.is_task_running = False
 
+        # Explicitly wait for future to finish to ensure its thread is fully released back to the pool
+        if self.app.worker_future:
+            try:
+                self.app.worker_future.result(timeout=0)
+            except Exception:
+                pass  # Already logged, just ensure we clean up the future reference
+
         self.app.worker_manager.stop_queue_listener(timeout=2.0)
+
         self.app._toggle_ui_controls(True)
 
         self.app.worker_future = None
@@ -150,8 +157,8 @@ class MessageHandler:
 
         if was_cancelled:
             self.app.main_panel.progress_gauge.setValue(0)
-        self.app._update_button_states()
 
+        self.app._update_button_states()
         self.app.ui_update_timer.start()
 
     def _handle_git_clone_done(self, path):

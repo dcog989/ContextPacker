@@ -10,6 +10,7 @@ from markdownify import markdownify as md
 
 from .browser_utils import initialize_driver, cleanup_driver
 from .constants import PAGE_LOAD_TIMEOUT_SECONDS, MEMORY_MANAGEMENT_URL_LIMIT
+from .types import LogMessage, StatusMessage, ProgressMessage, FileSavedMessage, StatusType
 
 
 def sanitize_filename(url, filename_cache=None):
@@ -43,7 +44,7 @@ def _normalize_url(url):
 
 
 def _url_matches_any_pattern(url, patterns):
-    """Case-insensitive URL pattern matching for better user experience."""
+    """FIXED: Case-insensitive URL pattern matching for better user experience."""
     parsed_url_path = urlparse(url).path.lower()
     url_lower = url.lower()
 
@@ -131,7 +132,7 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
                 urls_to_prune = len(processed_urls) // 2
                 processed_urls = set(list(processed_urls)[urls_to_prune:])
                 if log_queue:
-                    log_queue.put({"type": "log", "message": f"  -> Memory management: trimmed processed URLs to {len(processed_urls)}"})
+                    log_queue.put(LogMessage(message=f"  -> Memory management: trimmed processed URLs to {len(processed_urls)}"))
 
             processed_urls.add(normalized_abs_link)
             urls_to_visit.put((abs_link, depth + 1))
@@ -141,12 +142,12 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
     """Crawls a website based on provided configuration."""
     driver = initialize_driver(config, log_queue, shutdown_event)
     if not driver:
-        error_msg = "ERROR: Could not find a compatible web browser or its driver.\nPlease ensure a supported browser (Edge, Chrome, or Firefox) is installed."
-        log_queue.put({"type": "status", "status": "error", "message": error_msg})
+        error_msg = StatusMessage(status=StatusType.ERROR, message="ERROR: Could not find a compatible web browser or its driver.\nPlease ensure a supported browser (Edge, Chrome, or Firefox) is installed.")
+        log_queue.put(error_msg)
         return
 
     driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
-    log_queue.put({"type": "log", "message": "Starting web crawl..."})
+    log_queue.put(LogMessage(message="Starting web crawl..."))
 
     url_cache = {}
     filename_cache = {}
@@ -170,8 +171,9 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
                 break
 
             if not shutdown_event.is_set():
-                log_queue.put({"type": "progress", "value": pages_saved, "max_value": config.max_pages})
-                log_queue.put({"type": "log", "message": f"GET (Depth {depth}): {current_url}"})
+                progress_msg = ProgressMessage(value=pages_saved, max_value=config.max_pages)
+                log_queue.put(progress_msg)
+                log_queue.put(LogMessage(message=f"GET (Depth {depth}): {current_url}"))
 
             try:
                 page_data, error_msg = _process_page(driver, config, current_url, filename_cache)
@@ -181,7 +183,7 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
 
                 if error_msg:
                     if not shutdown_event.is_set():
-                        log_queue.put({"type": "log", "message": error_msg})
+                        log_queue.put(LogMessage(message=error_msg))
                     continue
 
                 if page_data:
@@ -191,39 +193,38 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
 
                     pages_saved += 1
                     if not shutdown_event.is_set():
-                        log_queue.put(
-                            {
-                                "type": "file_saved",
-                                "url": final_url,
-                                "path": str(output_path),
-                                "filename": filename,
-                                "pages_saved": pages_saved,
-                                "max_pages": config.max_pages,
-                                "queue_size": urls_to_visit.qsize(),
-                            }
+                        file_saved_msg = FileSavedMessage(
+                            url=final_url,
+                            path=str(output_path),
+                            filename=filename,
+                            pages_saved=pages_saved,
+                            max_pages=config.max_pages,
+                            queue_size=urls_to_visit.qsize(),
                         )
+                        log_queue.put(file_saved_msg)
 
                     if depth < config.crawl_depth:
                         _filter_and_queue_links(soup, final_url, config, processed_urls, urls_to_visit, depth, url_cache, max_processed_urls, log_queue)
 
             except TimeoutException:
                 if not shutdown_event.is_set():
-                    log_queue.put({"type": "log", "message": f"  -> TIMEOUT after {PAGE_LOAD_TIMEOUT_SECONDS}s on: {current_url}"})
+                    log_queue.put(LogMessage(message=f"  -> TIMEOUT after {PAGE_LOAD_TIMEOUT_SECONDS}s on: {current_url}"))
             except WebDriverException as e:
                 if not shutdown_event.is_set():
-                    log_queue.put({"type": "log", "message": f"  -> SELENIUM ERROR on {current_url}: {e.msg}"})
+                    log_queue.put(LogMessage(message=f"  -> SELENIUM ERROR on {current_url}: {e.msg}"))
             except Exception as e:
                 if not shutdown_event.is_set():
-                    log_queue.put({"type": "log", "message": f"  -> PROCESSING ERROR on {current_url}: {e}"})
+                    log_queue.put(LogMessage(message=f"  -> PROCESSING ERROR on {current_url}: {e}"))
 
     finally:
         if driver:
             cleanup_driver(driver, timeout=10, log_queue=log_queue)
 
     if not cancel_event.is_set() and not shutdown_event.is_set() and pages_saved >= config.max_pages:
-        log_queue.put({"type": "progress", "value": pages_saved, "max_value": config.max_pages})
+        progress_msg = ProgressMessage(value=pages_saved, max_value=config.max_pages)
+        log_queue.put(progress_msg)
 
-    status_key = "cancelled" if cancel_event.is_set() else "source_complete"
+    status_key = StatusType.CANCELLED if cancel_event.is_set() else StatusType.SOURCE_COMPLETE
     message = "Process cancelled by user." if cancel_event.is_set() else f"\nWeb scrape finished. Saved {pages_saved} pages."
     if not shutdown_event.is_set():
-        log_queue.put({"type": "status", "status": status_key, "message": message})
+        log_queue.put(StatusMessage(status=status_key, message=message))

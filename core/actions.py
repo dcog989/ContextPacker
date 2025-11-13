@@ -1,4 +1,3 @@
-import re
 import threading
 import shutil
 from pathlib import Path
@@ -6,12 +5,13 @@ from datetime import datetime
 import logging
 import fnmatch
 import queue
+import re
 
 from .packager import run_repomix
 from .utils import get_app_data_dir, get_downloads_folder
 from .error_handling import WorkerErrorHandler, create_process_with_flags, safe_stream_enqueue, validate_tool_availability, create_tool_missing_error
 from .constants import UNLIMITED_DEPTH_VALUE, UNLIMITED_DEPTH_REPLACEMENT, LARGE_DIRECTORY_THRESHOLD
-from .types import StatusMessage, ProgressMessage, LogMessage, StatusType, FileType, FileInfo, message_to_dict, file_info_to_dict, dict_to_file_info
+from .types import StatusMessage, ProgressMessage, LogMessage, StatusType, FileType, FileInfo, file_info_to_dict, dict_to_file_info
 
 
 def _create_session_dir():
@@ -66,13 +66,10 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
         return
 
     # Security: Validate and sanitize git URL
-    import re
-
-    # Allow common git URL patterns but prevent command injection
     git_url_pattern = r"^(https?://|git@|ssh://|file://)[a-zA-Z0-9._/-]+(:[0-9]+)?(/.*)?$"
     if not re.match(git_url_pattern, url.strip()):
         error_msg = StatusMessage(status=StatusType.ERROR, message="Invalid or potentially malicious git URL provided.")
-        log_queue.put(message_to_dict(error_msg))
+        log_queue.put(error_msg)
         return
 
     # Security: Validate path to prevent directory traversal
@@ -81,11 +78,11 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
         # Ensure path is within expected temp directory structure
         if not any(parent.name == "Cache" for parent in resolved_path.parents):
             error_msg = StatusMessage(status=StatusType.ERROR, message="Invalid clone path detected.")
-            log_queue.put(message_to_dict(error_msg))
+            log_queue.put(error_msg)
             return
     except Exception:
         error_msg = StatusMessage(status=StatusType.ERROR, message="Invalid path provided.")
-        log_queue.put(message_to_dict(error_msg))
+        log_queue.put(error_msg)
         return
 
     # Initialize centralized error handler
@@ -101,7 +98,7 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
         if not process.stdout:
             process.wait()
             error_msg = StatusMessage(status=StatusType.ERROR, message="Failed to capture git clone output stream.")
-            log_queue.put(message_to_dict(error_msg))
+            log_queue.put(error_msg)
             return
 
         output_queue = queue.Queue()
@@ -112,37 +109,38 @@ def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
             if cancel_event.is_set() or shutdown_event.is_set():
                 error_handler.handle_process_cleanup(process)
                 cancel_msg = StatusMessage(status=StatusType.CANCELLED, message="Git clone cancelled.")
-                log_queue.put(message_to_dict(cancel_msg))
+                log_queue.put(cancel_msg)
                 return
 
             try:
                 line = output_queue.get(timeout=0.1)
                 if line and not shutdown_event.is_set():
-                    log_msg = LogMessage(message=line.strip())
-                    log_queue.put(message_to_dict(log_msg))
+                    # line is already a LogMessage object from safe_stream_enqueue
+                    log_queue.put(line)
             except queue.Empty:
                 continue
 
         while not output_queue.empty():
             line = output_queue.get_nowait()
             if line and not shutdown_event.is_set():
-                log_msg = LogMessage(message=line.strip())
-                log_queue.put(message_to_dict(log_msg))
+                # line is already a LogMessage object from safe_stream_enqueue
+                log_queue.put(line)
 
         if cancel_event.is_set() or shutdown_event.is_set():
             cancel_msg = StatusMessage(status=StatusType.CANCELLED, message="Git clone cancelled.")
-            log_queue.put(message_to_dict(cancel_msg))
+            log_queue.put(cancel_msg)
             return
 
         if process.returncode == 0:
             complete_msg = StatusMessage(status=StatusType.CLONE_COMPLETE, message="", path=path)
-            log_queue.put(message_to_dict(complete_msg))
+            log_queue.put(complete_msg)
         else:
             error_msg = StatusMessage(status=StatusType.ERROR, message="Git clone failed. Check the log for details.")
-            log_queue.put(message_to_dict(error_msg))
+            log_queue.put(error_msg)
 
     except Exception as e:
-        error_handler.handle_worker_exception(e, "git clone")
+        error_msg = error_handler.handle_worker_exception(e, "git clone")
+        log_queue.put(error_msg)
     finally:
         # Ensure proper cleanup of process resources using centralized utilities
         if process is not None:
@@ -238,11 +236,11 @@ def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, exten
                 # Only send progress updates if progress changed significantly or every batch_size files
                 if progress_value != self.last_progress_value or self.processed_count % self.batch_size == 0 or self.processed_count == self.total_files:
                     progress_msg = ProgressMessage(value=progress_value, max_value=100)
-                    self.log_queue.put(message_to_dict(progress_msg))
+                    self.log_queue.put(progress_msg)
                     self.last_progress_value = progress_value
 
             log_msg = LogMessage(message=msg)
-            self.log_queue.put(message_to_dict(log_msg))
+            self.log_queue.put(log_msg)
 
     total_files_for_progress = 0
     is_web_mode = app.main_panel.web_crawl_radio.isChecked()

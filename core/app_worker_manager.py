@@ -1,4 +1,3 @@
-# File: core/app_worker_manager.py
 import threading
 import queue
 import concurrent.futures
@@ -15,7 +14,6 @@ class WorkerManager:
         self.shutdown_event = threading.Event()
         self.queue_listener_thread = None
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count())
-        # FIXED: Track if we're in the middle of draining to prevent recursion
         self._draining = False
         self._drain_lock = threading.Lock()
 
@@ -37,15 +35,14 @@ class WorkerManager:
         self.queue_listener_shutdown.set()
 
         try:
-            # Put sentinel to unblock the thread waiting on get()
-            self.log_queue.put(None, timeout=1.0)
-        except queue.Full:
+            # Put sentinel to unblock the thread waiting on get().
+            self.log_queue.put_nowait(None)
+        except Exception:
             pass
 
         self.queue_listener_thread.join(timeout=timeout)
 
         if self.queue_listener_thread.is_alive():
-            self._drain_queue()
             return False
 
         self.queue_listener_thread = None
@@ -53,13 +50,12 @@ class WorkerManager:
 
     def _queue_listener_worker(self):
         """Worker thread that processes messages from log_queue."""
-        # Use a longer timeout to reduce unnecessary CPU usage when idle
         while not self.queue_listener_shutdown.is_set():
             try:
-                # Issue 14: Increased timeout from 0.5 to 5.0 seconds
                 msg_obj = self.log_queue.get(timeout=5.0)
 
                 if msg_obj is None:
+                    # Sentinel received, break the loop and proceed to drain/exit
                     break
 
                 self.app.signals.message.emit(msg_obj)
@@ -90,14 +86,7 @@ class WorkerManager:
                 try:
                     msg_obj = self.log_queue.get_nowait()
                     if msg_obj is not None:
-                        # Only emit if not shutting down and signal still exists
-                        if not self.shutdown_event.is_set():
-                            if hasattr(self.app, "signals") and hasattr(self.app.signals, "message"):
-                                try:
-                                    self.app.signals.message.emit(msg_obj)
-                                except RuntimeError:
-                                    # Signal may have been disconnected during shutdown
-                                    pass
+                        # We are draining during shutdown; do not emit signals to the UI to prevent main thread event loop hang.
                         self.log_queue.task_done()
                     attempts += 1
                 except queue.Empty:
@@ -138,4 +127,5 @@ class WorkerManager:
 
             is_worker_running = True
 
+        # FIXED: Don't clear shutdown event - let caller manage it
         return is_worker_running

@@ -6,9 +6,10 @@ Provides standardized error handling patterns for worker functions.
 import shutil
 import subprocess
 import traceback
-from typing import Optional, Dict, Any
+from typing import Optional
 
-from .types import StatusMessage, LogMessage, StatusType, message_to_dict
+# Union type for messages to simplify typing
+from .types import StatusMessage, LogMessage, StatusType
 
 
 class WorkerErrorHandler:
@@ -18,16 +19,12 @@ class WorkerErrorHandler:
         self.log_queue = log_queue
         self.shutdown_event = shutdown_event
 
-    def log_message(self, message: str, message_type: str = "log"):
+    def log_message(self, message: str):
         """Safely log a message if not shutting down."""
         if not self.shutdown_event.is_set():
-            if message_type == "log":
-                msg = LogMessage(message=message)
-            else:
-                msg = StatusMessage(status=StatusType.ERROR, message=message)
-            self.log_queue.put(message_to_dict(msg))
+            self.log_queue.put(LogMessage(message=message))
 
-    def handle_worker_exception(self, exception: Exception, context: str) -> Dict[str, Any]:
+    def handle_worker_exception(self, exception: Exception, context: str) -> StatusMessage:
         """
         Standardized exception handling for worker functions.
 
@@ -36,7 +33,7 @@ class WorkerErrorHandler:
             context: Context description for where the error occurred
 
         Returns:
-            Dictionary with error status and message
+            StatusMessage with error status and message
         """
         error_msg = f"An error occurred in {context}: {str(exception)}"
         tb_str = traceback.format_exc()
@@ -44,8 +41,7 @@ class WorkerErrorHandler:
         self.log_message(f"  -> ERROR in {context}: {str(exception)}")
         self.log_message(f"  -> Traceback: {tb_str}")
 
-        status_msg = StatusMessage(status=StatusType.ERROR, message=error_msg)
-        return message_to_dict(status_msg)
+        return StatusMessage(status=StatusType.ERROR, message=error_msg)
 
     def handle_process_cleanup(self, process, timeout: int = 2) -> bool:
         """
@@ -127,17 +123,21 @@ def safe_stream_enqueue(stream, queue, shutdown_event):
         queue: Queue to put messages into
         shutdown_event: Event to check for shutdown
     """
+    from .types import LogMessage
+
     try:
         for line in iter(stream.readline, b""):
             # Decode binary line to text for logging
             try:
                 decoded_line = line.decode("utf-8", errors="replace").rstrip()
                 if not shutdown_event.is_set():
-                    queue.put(decoded_line)
+                    msg = LogMessage(message=decoded_line)
+                    queue.put(msg)
             except (UnicodeDecodeError, AttributeError):
                 # Fallback for problematic binary data
                 if not shutdown_event.is_set():
-                    queue.put(f"[Binary data: {len(line)} bytes]")
+                    msg = LogMessage(message=f"[Binary data: {len(line)} bytes]")
+                    queue.put(msg)
     finally:
         # Ensure stream is always closed, even if an exception occurs
         try:
@@ -159,7 +159,7 @@ def validate_tool_availability(tool_name: str) -> bool:
     return shutil.which(tool_name) is not None
 
 
-def create_tool_missing_error(tool_name: str) -> Dict[str, Any]:
+def create_tool_missing_error(tool_name: str) -> StatusMessage:
     """
     Create a standardized error message for missing tools.
 
@@ -167,8 +167,7 @@ def create_tool_missing_error(tool_name: str) -> Dict[str, Any]:
         tool_name: Name of the missing tool
 
     Returns:
-        Dictionary with error status and message
+        StatusMessage with error status and message
     """
     error_msg = f"ERROR: {tool_name} is not installed or not found in your system's PATH. Please install {tool_name} to use this feature."
-    status_msg = StatusMessage(status=StatusType.ERROR, message=error_msg)
-    return message_to_dict(status_msg)
+    return StatusMessage(status=StatusType.ERROR, message=error_msg)

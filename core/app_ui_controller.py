@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt
 import threading
 
 import core.actions as actions
-from core.types import LocalScanCompleteMessage, message_to_dict, LogMessage
+from core.types import LocalScanCompleteMessage, LogMessage
 from core.app_message_handler import MessageHandler
 from ui.about_dialog import AboutDialog
 
@@ -130,15 +130,15 @@ class UiController:
             results = actions.get_local_files(*args)
             if not cancel_event.is_set() and not self.app.worker_manager.shutdown_event.is_set():
                 scan_msg = LocalScanCompleteMessage(results=results)
-                self.app.signals.message.emit(message_to_dict(scan_msg))
+                self.app.signals.message.emit(scan_msg)
         except Exception as e:
             if not self.app.worker_manager.shutdown_event.is_set():
                 error_msg = LogMessage(message=f"ERROR scanning directory: {e}")
-                self.app.signals.message.emit(message_to_dict(error_msg))
+                self.app.signals.message.emit(error_msg)
         finally:
             if cancel_event.is_set() and not self.app.worker_manager.shutdown_event.is_set():
                 scan_msg = LocalScanCompleteMessage(results=None)
-                self.app.signals.message.emit(message_to_dict(scan_msg))
+                self.app.signals.message.emit(scan_msg)
 
     def on_show_about_dialog(self):
         """Displays the About Dialog."""

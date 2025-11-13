@@ -1,16 +1,13 @@
 import os
-from pathlib import Path
-import ctypes
-import subprocess
-import platform
-import multiprocessing
-import sys
 import threading
-
+import platform
+import subprocess
+import sys
+import ctypes
+from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtCore import QTimer, Qt, QSize
 from PySide6.QtGui import QIcon, QFontDatabase, QPalette, QColor
-
 from ui.main_window import MainWindow
 from ui.styles import AppTheme
 from core.version import __version__
@@ -25,7 +22,6 @@ from core.constants import (
     MAX_BATCH_SIZE,
     UI_UPDATE_BATCH_SIZE,
 )
-
 from core.app_signals import WorkerSignals
 from core.app_worker_manager import WorkerManager
 from core.app_message_handler import MessageHandler
@@ -265,19 +261,24 @@ class App(QMainWindow):
         self.local_files_to_exclude.add(rel_path)
         self.log_verbose(f"Deleted from package: {rel_path}")
 
+    def _open_output_folder_blocking_task(self, output_dir_path):
+        """Blocking task to open the output folder in the OS."""
+        try:
+            if platform.system() == "Windows":
+                os.startfile(output_dir_path)
+            elif platform.system() == "Darwin":  # macOS
+                subprocess.run(["open", str(output_dir_path)], check=True)
+            else:  # Linux and other Unix-like
+                subprocess.run(["xdg-open", str(output_dir_path)], check=True)
+        except Exception as e:
+            self.log_verbose(f"ERROR: Could not open output folder: {e}")
+
     def _open_output_folder(self):
         """Opens the folder containing the final output file."""
         if self.final_output_path and self.Path(self.final_output_path).exists():
             output_dir = self.Path(self.final_output_path).parent
-            try:
-                if platform.system() == "Windows":
-                    os.startfile(output_dir)
-                elif platform.system() == "Darwin":  # macOS
-                    subprocess.run(["open", str(output_dir)])
-                else:  # Linux and other Unix-like
-                    subprocess.run(["xdg-open", str(output_dir)])
-            except Exception as e:
-                self.log_verbose(f"ERROR: Could not open output folder: {e}")
+            # Submit the blocking task to the thread pool to prevent UI hang
+            self.worker_manager.executor.submit(self._open_output_folder_blocking_task, output_dir)
         else:
             self.log_verbose("ERROR: No output file found to locate.")
 
@@ -290,6 +291,7 @@ class App(QMainWindow):
         config["v_sash_state"] = bytes(v_sash_qba.data()).decode("utf-8")
         save_config(config)
 
+        # FIXED: Correct shutdown order - cancel workers BEFORE setting shutdown event
         # 1. Cancel any running tasks first
         if self.cancel_event:
             self.cancel_event.set()
@@ -324,19 +326,31 @@ class App(QMainWindow):
 
 
 if __name__ == "__main__":
+    import multiprocessing
+
     multiprocessing.freeze_support()
 
-    if platform.system() == "Windows":
-        try:
-            # Set the DPI awareness context to Per_Monitor_Aware_V2.
-            ctypes.windll.shcore.SetProcessDpiAwarenessContext(-4)
-        except (AttributeError, OSError):
-            pass
+    try:
+        if platform.system() == "Windows":
+            try:
+                # Set the DPI awareness context to Per_Monitor_Aware_V2.
+                ctypes.windll.shcore.SetProcessDpiAwarenessContext(-4)
+            except (AttributeError, OSError):
+                pass
 
-    app_data_dir = get_app_data_dir()
-    log_dir = app_data_dir / "Logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
+        app_data_dir = get_app_data_dir()
+        log_dir = app_data_dir / "Logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
 
-    app = QApplication(sys.argv)
-    frame = App()
-    sys.exit(app.exec())
+        app = QApplication(sys.argv)
+        frame = App()
+        sys.exit(app.exec())
+    except Exception as e:
+        import traceback
+
+        print("--- CONTEXTPACKER FATAL ERROR ---")
+        print(f"Exception: {e}")
+        print("Traceback:")
+        traceback.print_exc()
+        print("---------------------------------")
+        sys.exit(1)
