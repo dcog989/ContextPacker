@@ -1,3 +1,4 @@
+# File: core/app_worker_manager.py
 import threading
 import queue
 import concurrent.futures
@@ -14,6 +15,7 @@ class WorkerManager:
         self.shutdown_event = threading.Event()
         self.queue_listener_thread = None
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count())
+        # FIXED: Track if we're in the middle of draining to prevent recursion
         self._draining = False
         self._drain_lock = threading.Lock()
 
@@ -51,9 +53,11 @@ class WorkerManager:
 
     def _queue_listener_worker(self):
         """Worker thread that processes messages from log_queue."""
+        # Use a longer timeout to reduce unnecessary CPU usage when idle
         while not self.queue_listener_shutdown.is_set():
             try:
-                msg_obj = self.log_queue.get(timeout=0.5)
+                # Issue 14: Increased timeout from 0.5 to 5.0 seconds
+                msg_obj = self.log_queue.get(timeout=5.0)
 
                 if msg_obj is None:
                     break
@@ -134,5 +138,4 @@ class WorkerManager:
 
             is_worker_running = True
 
-        # FIXED: Don't clear shutdown event - let caller manage it
         return is_worker_running

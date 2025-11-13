@@ -275,27 +275,49 @@ class MainWindow(QWidget):
         if not files_data:
             return
 
-        # Disable sorting temporarily for better performance
         self.standard_log_list.setSortingEnabled(False)
 
         # Block signals during bulk operations to prevent excessive updates
         self.standard_log_list.blockSignals(True)
 
-        try:
-            # Pre-allocate rows for better performance
-            start_row = self.standard_log_list.rowCount()
-            self.standard_log_list.setRowCount(start_row + len(files_data))
+        # Use a generator to yield data one by one for chunked insertion
+        def chunked_insertion_generator(data_list):
+            for i, file_data in enumerate(data_list):
+                yield file_data
 
-            # Bulk add files
-            for i, file_data in enumerate(files_data):
-                row = start_row + i
+        self.insertion_generator = chunked_insertion_generator(files_data)
+        self.batch_insert_step()
+
+    def batch_insert_step(self):
+        """
+        Issue 11: Inserts a small chunk of rows then yields control back
+        to the event loop using QTimer.singleShot(0).
+        """
+        from PySide6.QtCore import QTimer
+
+        rows_to_insert = 50  # Chunk size
+        data_inserted = 0
+
+        for _ in range(rows_to_insert):
+            try:
+                file_data = next(self.insertion_generator)
+                row = self.standard_log_list.rowCount()
+                self.standard_log_list.insertRow(row)
                 self.scraped_files.append(file_data)
                 self.standard_log_list.setItem(row, 0, QTableWidgetItem(file_data["url"]))
                 self.standard_log_list.setItem(row, 1, QTableWidgetItem(file_data["filename"]))
-        finally:
-            # Re-enable signals and sorting
-            self.standard_log_list.blockSignals(False)
-            self.standard_log_list.setSortingEnabled(True)
+                data_inserted += 1
+            except StopIteration:
+                # All data inserted, finalize
+                self.standard_log_list.blockSignals(False)
+                self.standard_log_list.setSortingEnabled(True)
+                self.update_file_count()
+                self.app._update_button_states()
+                return
+
+        # If the generator is not exhausted, schedule the next chunk
+        if data_inserted > 0:
+            QTimer.singleShot(0, self.batch_insert_step)
 
         self.update_file_count()
 

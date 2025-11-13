@@ -125,12 +125,13 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
             continue
 
         if normalized_abs_link not in processed_urls:
-            if max_processed_urls and len(processed_urls) >= max_processed_urls:
-                url_list = list(processed_urls)
-                processed_urls.clear()
-                processed_urls.update(url_list[-max_processed_urls // 2 :])
+            # Issue 12: Capped Set / Pruning for memory management
+            if max_processed_urls and len(processed_urls) >= max_processed_urls and max_processed_urls > MEMORY_MANAGEMENT_URL_LIMIT:
+                # Prune 50% of the oldest entries when the limit is hit
+                urls_to_prune = len(processed_urls) // 2
+                processed_urls = set(list(processed_urls)[urls_to_prune:])
                 if log_queue:
-                    log_queue.put({"type": "log", "message": f"  -> Memory management: trimmed processed URLs from {len(url_list)} to {len(processed_urls)}"})
+                    log_queue.put({"type": "log", "message": f"  -> Memory management: trimmed processed URLs to {len(processed_urls)}"})
 
             processed_urls.add(normalized_abs_link)
             urls_to_visit.put((abs_link, depth + 1))

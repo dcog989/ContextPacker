@@ -1,3 +1,4 @@
+import re
 import threading
 import shutil
 from pathlib import Path
@@ -284,11 +285,11 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
     files_to_show = []
     depth_excludes = set()
 
-    # Pre-compile patterns for better performance
-    compiled_patterns = []
+    # Issue 13: Pre-compile fnmatch patterns into regex for speed
+    compiled_regex_patterns = []
     for pattern in custom_excludes:
         try:
-            compiled_patterns.append((pattern, True))  # True for custom pattern
+            compiled_regex_patterns.append(re.compile(fnmatch.translate(pattern)))
         except Exception:
             continue
 
@@ -339,14 +340,14 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
     # Add binary excludes to compiled patterns
     for pattern in binary_excludes:
         try:
-            compiled_patterns.append((pattern, True))
+            compiled_regex_patterns.append(re.compile(fnmatch.translate(pattern)))
         except Exception:
             continue
 
     # Add root ignore patterns to compiled patterns
     for pattern in root_patterns:
         try:
-            compiled_patterns.append((pattern, True))
+            compiled_regex_patterns.append(re.compile(fnmatch.translate(pattern)))
         except Exception:
             continue
 
@@ -357,8 +358,8 @@ def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_
         if is_dir:
             path_str = path_str.rstrip("/") + "/"
 
-        for pattern, _ in compiled_patterns:
-            if fnmatch.fnmatch(path_str, pattern):
+        for regex in compiled_regex_patterns:
+            if regex.match(path_str):
                 return True
         return False
 
