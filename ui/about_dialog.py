@@ -1,5 +1,4 @@
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
-from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt, QSize
 from core.utils import resource_path
 from core.icon_utils import render_svg_to_pixmap

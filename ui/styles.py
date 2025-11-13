@@ -1,7 +1,4 @@
-import os
-from pathlib import Path
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QPen
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import QSize
 from core.utils import resource_path
 
 
