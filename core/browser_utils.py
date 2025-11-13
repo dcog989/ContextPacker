@@ -1,4 +1,3 @@
-# File: core/browser_utils.py
 """
 Browser initialization utilities to eliminate code duplication.
 Centralizes browser setup logic for Chrome, Edge, and Firefox.
@@ -27,14 +26,8 @@ def _create_base_options(user_agent):
     return options
 
 
-def _create_chrome_options(user_agent):
-    """Create Chrome-specific options."""
-    options = _create_base_options(user_agent)
-    return options
-
-
-def _create_edge_options(user_agent):
-    """Create Edge-specific options."""
+def _create_chromium_options(user_agent):
+    """Create options for Chromium-based browsers (Chrome and Edge)."""
     options = _create_base_options(user_agent)
     return options
 
@@ -114,8 +107,8 @@ def initialize_driver(config, log_queue, shutdown_event):
 
     # Define all browser configurations
     browser_configs = [
-        ("msedge", webdriver.Edge, _create_edge_options(config.user_agent), EdgeService),
-        ("chrome", webdriver.Chrome, _create_chrome_options(config.user_agent), ChromeService),
+        ("msedge", webdriver.Edge, _create_chromium_options(config.user_agent), EdgeService),
+        ("chrome", webdriver.Chrome, _create_chromium_options(config.user_agent), ChromeService),
         ("firefox", webdriver.Firefox, _create_firefox_options(config.user_agent), FirefoxService),
     ]
 
