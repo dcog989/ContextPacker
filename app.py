@@ -66,6 +66,7 @@ class App(QMainWindow):
         self.message_handler = MessageHandler(self)
         self.task_handler = TaskHandler(self)
         self.ui_controller = UiController(self)
+        self.log_message_batch = []
 
         self._setup_app_dirs_and_cleanup()
 
@@ -84,6 +85,11 @@ class App(QMainWindow):
         self._set_icon()
 
         # Timers
+        self.log_update_timer = QTimer(self)
+        self.log_update_timer.setInterval(100)  # Batch log updates to prevent UI lockup
+        self.log_update_timer.timeout.connect(self._process_log_batch)
+        self.log_update_timer.start()
+
         self.batch_update_timer = QTimer(self)
         self.batch_update_timer.setInterval(BATCH_UPDATE_INTERVAL_MS)
         self.batch_update_timer.timeout.connect(self.ui_controller.on_batch_update_timer)
@@ -153,41 +159,47 @@ class App(QMainWindow):
         self.ui_controller._update_button_states()
 
     def log_verbose(self, message):
-        # Don't log if shutting down or widget is being destroyed
+        """Adds a message to a queue for batch processing by a timer."""
+        # Don't log if shutting down
         if self._is_closing or self.shutdown_event.is_set():
             return
-        if not self.main_panel or not hasattr(self.main_panel, "verbose_log_widget"):
+
+        self.log_message_batch.append(message)
+
+    def _process_log_batch(self):
+        """Processes the queued log messages in a single batch to prevent UI freezes."""
+        if not self.log_message_batch:
+            return
+
+        if self._is_closing or self.shutdown_event.is_set() or not hasattr(self, "main_panel") or not self.main_panel:
+            self.log_message_batch.clear()
             return
 
         try:
-            # Get the text edit widget and paint filter
             log_widget = self.main_panel.verbose_log_widget
             paint_filter = self.main_panel._paint_filter
-            
-            # Suppress ALL updates and paint events
+            messages_to_process = "\n".join(self.log_message_batch)
+            self.log_message_batch.clear()
+
             if paint_filter:
                 paint_filter.suppressing = True
             log_widget.setUpdatesEnabled(False)
             log_widget.blockSignals(True)
-            
-            # Manage log size before adding new content
+
             self.main_panel._manage_log_size()
-            
-            # Append the message
-            log_widget.append(message)
-            
+            log_widget.append(messages_to_process)
+
         except RuntimeError:
-            # Widget is being destroyed, ignore
-            pass
+            pass  # Widget destroyed
         finally:
-            # Always restore in correct order
             try:
-                log_widget = self.main_panel.verbose_log_widget
-                paint_filter = self.main_panel._paint_filter
-                log_widget.blockSignals(False)
-                log_widget.setUpdatesEnabled(True)
-                if paint_filter:
-                    paint_filter.suppressing = False
+                if hasattr(self, "main_panel") and self.main_panel:
+                    log_widget = self.main_panel.verbose_log_widget
+                    paint_filter = self.main_panel._paint_filter
+                    log_widget.blockSignals(False)
+                    log_widget.setUpdatesEnabled(True)
+                    if paint_filter:
+                        paint_filter.suppressing = False
             except (RuntimeError, AttributeError):
                 pass  # Widget already destroyed
 
@@ -237,6 +249,7 @@ class App(QMainWindow):
             self.batch_update_timer.stop()
             self.exclude_update_timer.stop()
             self.ui_update_timer.stop()
+            self.log_update_timer.stop()
 
             # Disconnect all signals from workers to the UI thread.
             # This is CRITICAL to prevent any more UI updates.
