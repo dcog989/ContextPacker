@@ -63,18 +63,26 @@ class WorkerManager:
                     # Sentinel received, break the loop and proceed to drain/exit
                     break
 
-                if not self.shutdown_event.is_set():
-                    self.app.signals.message.emit(msg_obj)
+                # Only emit if not shutting down AND the app is still alive
+                if not self.shutdown_event.is_set() and not self.app._is_closing:
+                    try:
+                        self.app.signals.message.emit(msg_obj)
+                    except (RuntimeError, AttributeError):
+                        # Widget/signal was destroyed, ignore
+                        pass
 
                 self.log_queue.task_done()
 
             except queue.Empty:
                 continue
             except Exception as e:
-                print(f"Error processing queue message: {e}")
+                if not self.shutdown_event.is_set():
+                    print(f"Error processing queue message: {e}")
                 continue
 
-        self._drain_queue()
+        # Only drain if not already shutting down
+        if not self.shutdown_event.is_set():
+            self._drain_queue()
 
     def _drain_queue(self):
         """Process remaining messages with proper guards against recursion and hangs. (Uses max_drain_attempts to prevent infinite loop)."""

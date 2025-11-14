@@ -36,6 +36,8 @@ BINARY_FILE_PATTERNS = config.get("binary_file_patterns", [])
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
+        self._is_closing = False
+        self.shutdown_check_timer = None
         # Use Path from pathlib to avoid re-importing in every method
         self.Path = Path
 
@@ -151,10 +153,43 @@ class App(QMainWindow):
         self.ui_controller._update_button_states()
 
     def log_verbose(self, message):
-        # Check if we need to trim the log before adding new content
-        self.main_panel._manage_log_size()
+        # Don't log if shutting down or widget is being destroyed
+        if self._is_closing or self.shutdown_event.is_set():
+            return
+        if not self.main_panel or not hasattr(self.main_panel, "verbose_log_widget"):
+            return
 
-        self.main_panel.verbose_log_widget.append(message)
+        try:
+            # Get the text edit widget and paint filter
+            log_widget = self.main_panel.verbose_log_widget
+            paint_filter = self.main_panel._paint_filter
+            
+            # Suppress ALL updates and paint events
+            if paint_filter:
+                paint_filter.suppressing = True
+            log_widget.setUpdatesEnabled(False)
+            log_widget.blockSignals(True)
+            
+            # Manage log size before adding new content
+            self.main_panel._manage_log_size()
+            
+            # Append the message
+            log_widget.append(message)
+            
+        except RuntimeError:
+            # Widget is being destroyed, ignore
+            pass
+        finally:
+            # Always restore in correct order
+            try:
+                log_widget = self.main_panel.verbose_log_widget
+                paint_filter = self.main_panel._paint_filter
+                log_widget.blockSignals(False)
+                log_widget.setUpdatesEnabled(True)
+                if paint_filter:
+                    paint_filter.suppressing = False
+            except (RuntimeError, AttributeError):
+                pass  # Widget already destroyed
 
     def delete_scraped_file(self, filepath):
         try:
@@ -190,51 +225,66 @@ class App(QMainWindow):
 
     # --- Shutdown/Cleanup Methods ---
     def closeEvent(self, event):
-        config["window_size"] = [self.width(), self.height()]
-        h_sash_qba = self.main_panel.h_splitter.saveState().toBase64()
-        v_sash_qba = self.main_panel.v_splitter.saveState().toBase64()
-        config["h_sash_state"] = bytes(h_sash_qba.data()).decode("utf-8")
-        config["v_sash_state"] = bytes(v_sash_qba.data()).decode("utf-8")
-        save_config(config)
+        # 1. Initiate shutdown sequence only once.
+        if not self._is_closing:
+            self._is_closing = True
+            self.shutdown_event.set()
 
-        # Clean up the current session's temporary directory on graceful exit
-        if self.state.temp_dir and self.Path(self.state.temp_dir).is_dir():
+            # Hide window immediately to prevent paint events.
+            self.hide()
+
+            # Stop timers to halt any scheduled UI updates BEFORE disconnecting signals
+            self.batch_update_timer.stop()
+            self.exclude_update_timer.stop()
+            self.ui_update_timer.stop()
+
+            # Disconnect all signals from workers to the UI thread.
+            # This is CRITICAL to prevent any more UI updates.
             try:
-                shutil.rmtree(self.state.temp_dir)
-            except Exception as e:
-                # Log to console, as logger might be shutting down
-                print(f"Warning: Failed to clean up temp directory {self.state.temp_dir}: {e}")
+                self.signals.message.disconnect()
+            except (RuntimeError, TypeError):
+                pass
 
-        # 1. Cancel any running tasks first
-        if self.state.cancel_event:
-            self.state.cancel_event.set()
-        if self.state.local_scan_cancel_event:
-            self.state.local_scan_cancel_event.set()
+            # Stop the queue listener first to prevent any more messages
+            self.worker_manager.stop_queue_listener(timeout=1.0)
 
-        # 2. Check if workers need time to stop gracefully
-        workers_need_cleanup = self.worker_manager.cleanup_workers()
-        if workers_need_cleanup:
-            # Workers are still running, defer close
+            # Save state.
+            config["window_size"] = [self.width(), self.height()]
+            h_sash_qba = self.main_panel.h_splitter.saveState().toBase64()
+            v_sash_qba = self.main_panel.v_splitter.saveState().toBase64()
+            config["h_sash_state"] = bytes(h_sash_qba.data()).decode("utf-8")
+            config["v_sash_state"] = bytes(v_sash_qba.data()).decode("utf-8")
+            save_config(config)
+
+            # Clean up temp dir.
+            if self.state.temp_dir and self.Path(self.state.temp_dir).is_dir():
+                try:
+                    shutil.rmtree(self.state.temp_dir)
+                except Exception as e:
+                    print(f"Warning: Failed to clean up temp directory {self.state.temp_dir}: {e}")
+
+            # Signal running tasks to cancel.
+            if self.state.cancel_event and not self.state.cancel_event.is_set():
+                self.state.cancel_event.set()
+            if self.state.local_scan_cancel_event and not self.state.local_scan_cancel_event.is_set():
+                self.state.local_scan_cancel_event.set()
+
+        # 2. Check if workers are still running.
+        if self.worker_manager.cleanup_workers():
+            # If workers are running, defer the close and start a timer to re-check.
+            if not self.shutdown_check_timer:
+                self.shutdown_check_timer = QTimer(self)
+                self.shutdown_check_timer.setInterval(100)  # Check every 100ms
+                self.shutdown_check_timer.timeout.connect(self.close)
+                self.shutdown_check_timer.start()
             event.ignore()
             return
 
-        # 3. NOW set global shutdown event (after workers stopped)
-        self.worker_manager.shutdown_event.set()
+        # 3. Final cleanup: This block is reached only when no workers are running.
+        if self.shutdown_check_timer:
+            self.shutdown_check_timer.stop()
 
-        # 4. Shutdown executor non-blocking
-        self.worker_manager.executor.shutdown(wait=False)
-
-        # 5. Disconnect signals
-        try:
-            self.signals.message.disconnect()
-        except RuntimeError:
-            pass
-
-        # 6. Stop queue listener thread with timeout
-        queue_stopped = self.worker_manager.stop_queue_listener(timeout=5.0)
-        if not queue_stopped:
-            print("Warning: Queue listener did not stop cleanly")
-
+        self.worker_manager.executor.shutdown(wait=False, cancel_futures=True)
         event.accept()
 
 

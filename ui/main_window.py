@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QGroupBox, QLabel, QLineEdit, QRadioButton, QComboBox, QSpinBox, QTextEdit, QCheckBox, QPushButton, QTableWidget, QProgressBar, QTableWidgetItem
-from PySide6.QtCore import Qt, QByteArray
+from PySide6.QtCore import Qt, QByteArray, QObject, QEvent
 
 from core.config import CrawlerConfig
 from core.config_manager import get_config
@@ -11,6 +11,18 @@ from ui.output_panels import OutputPanelFactory
 config = get_config()
 
 
+class PaintEventFilter(QObject):
+    """Event filter to suppress paint events during updates."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.suppressing = False
+    
+    def eventFilter(self, obj, event):
+        if self.suppressing and event.type() == QEvent.Type.Paint:
+            return True  # Block the paint event
+        return super().eventFilter(obj, event)
+
+
 class MainWindow(QWidget):
     def __init__(self, parent_app):
         super().__init__()
@@ -18,6 +30,8 @@ class MainWindow(QWidget):
         self.scraped_files = []
         self.local_files = []
         self.discovered_url_count = 0
+        self._managing_log_size = False  # Guard against recursive calls
+        self._paint_filter = None  # Will be initialized after widgets are created
 
         # Initialize Factory instances
         self.input_factory = InputPanelFactory(self)
@@ -75,6 +89,11 @@ class MainWindow(QWidget):
 
         self.create_widgets()
         self.create_layout()
+        
+        # Install paint event filter on verbose log widget
+        self._paint_filter = PaintEventFilter(self)
+        self.verbose_log_widget.installEventFilter(self._paint_filter)
+        
         self.create_connections()
         self.create_context_menus()
         self.toggle_output_view(is_web_mode=True)
@@ -382,25 +401,45 @@ class MainWindow(QWidget):
 
     def _manage_log_size(self):
         """Manage verbose log size accurately using QTextDocument."""
-        document = self.verbose_log_widget.document()
-        current_line_count = document.blockCount()
+        # Safety check during shutdown
+        if not self.verbose_log_widget or self.app._is_closing:
+            return
+        
+        # Prevent recursive calls
+        if self._managing_log_size:
+            return
+        
+        self._managing_log_size = True
+        
+        try:
+            document = self.verbose_log_widget.document()
+            if not document:
+                return
 
-        if current_line_count > self.max_log_lines:
-            # Calculate how many lines to remove (remove 25% when limit exceeded)
-            lines_to_remove = current_line_count // 4
+            current_line_count = document.blockCount()
 
-            # Use QTextCursor to accurately remove blocks from the beginning
-            cursor = self.verbose_log_widget.textCursor()
-            cursor.movePosition(cursor.MoveOperation.Start)
+            if current_line_count > self.max_log_lines:
+                # Already blocked by caller, just do the work
+                # Calculate how many lines to remove (remove 25% when limit exceeded)
+                lines_to_remove = current_line_count // 4
 
-            for _ in range(lines_to_remove):
-                cursor.select(cursor.SelectionType.BlockUnderCursor)
-                cursor.removeSelectedText()
-                cursor.deleteChar()  # Remove the newline/block separator
+                # Use QTextCursor to accurately remove blocks from the beginning
+                cursor = self.verbose_log_widget.textCursor()
+                cursor.movePosition(cursor.MoveOperation.Start)
 
-                # Safety check - if document is somehow empty, break
-                if document.blockCount() == 0:
-                    break
+                for _ in range(lines_to_remove):
+                    cursor.select(cursor.SelectionType.BlockUnderCursor)
+                    cursor.removeSelectedText()
+                    cursor.deleteChar()  # Remove the newline/block separator
+
+                    # Safety check - if document is somehow empty, break
+                    if document.blockCount() == 0:
+                        break
+        except RuntimeError:
+            # Widget is being destroyed, ignore
+            pass
+        finally:
+            self._managing_log_size = False
 
     def update_discovered_count(self, count):
         self.discovered_url_count = count

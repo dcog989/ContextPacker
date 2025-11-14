@@ -77,21 +77,27 @@ class UiController:
     def _update_timestamp_label(self):
         from datetime import datetime
 
-        if not self.app.state.is_task_running:
-            ts = datetime.now().strftime("-%y%m%d-%H%M%S")
-            self.app.main_panel.output_timestamp_label.setText(ts)
+        try:
+            if not self.app.state.is_task_running:
+                ts = datetime.now().strftime("-%y%m%d-%H%M%S")
+                self.app.main_panel.output_timestamp_label.setText(ts)
+        except (RuntimeError, AttributeError):
+            pass  # Widget being destroyed
 
     def _update_button_states(self):
-        is_web_mode = self.app.main_panel.web_crawl_radio.isChecked()
-        package_ready = False
-        copy_ready = bool(self.app.state.final_output_path and self.app.Path(self.app.state.final_output_path).exists())
+        try:
+            is_web_mode = self.app.main_panel.web_crawl_radio.isChecked()
+            package_ready = False
+            copy_ready = bool(self.app.state.final_output_path and self.app.Path(self.app.state.final_output_path).exists())
 
-        if is_web_mode:
-            package_ready = bool(self.app.main_panel.scraped_files)
-        else:
-            package_ready = bool(self.app.main_panel.local_dir_ctrl.text() and self.app.Path(self.app.main_panel.local_dir_ctrl.text()).is_dir())
-        self.app.main_panel.package_button.setEnabled(package_ready)
-        self.app.main_panel.copy_button.setEnabled(copy_ready)
+            if is_web_mode:
+                package_ready = bool(self.app.main_panel.scraped_files)
+            else:
+                package_ready = bool(self.app.main_panel.local_dir_ctrl.text() and self.app.Path(self.app.main_panel.local_dir_ctrl.text()).is_dir())
+            self.app.main_panel.package_button.setEnabled(package_ready)
+            self.app.main_panel.copy_button.setEnabled(copy_ready)
+        except (RuntimeError, AttributeError):
+            pass  # Widget being destroyed
 
     def start_local_file_scan(self):
         """Initiates the local file scanning process in a worker thread."""

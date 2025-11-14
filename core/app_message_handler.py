@@ -18,31 +18,38 @@ class MessageHandler:
     def process_log_queue_message(self, typed_msg):
         """Processes a single message received from the worker queue."""
         # Ignore messages during shutdown to prevent race conditions
-        if self.app.shutdown_event.is_set():
+        if self.app.shutdown_event.is_set() or self.app._is_closing:
             return
 
-        if isinstance(typed_msg, LogMessage):
-            self.app.log_verbose(typed_msg.message)
-        elif isinstance(typed_msg, FileSavedMessage):
-            self._handle_file_saved(typed_msg)
-        elif isinstance(typed_msg, ProgressMessage):
-            self.app.main_panel.progress_gauge.setValue(typed_msg.value)
-            self.app.main_panel.progress_gauge.setMaximum(typed_msg.max_value)
-        elif isinstance(typed_msg, StatusMessage):
-            self.app.task_handler.handle_status(typed_msg)
-        elif isinstance(typed_msg, UITaskMessage):
-            self._handle_ui_task_start(typed_msg.task.value)
-        elif isinstance(typed_msg, UITaskStoppingMessage):
-            self._handle_ui_task_stopping()
-        elif isinstance(typed_msg, UITaskStopMessage):
-            self._handle_ui_task_stop(typed_msg.was_cancelled)
-        elif isinstance(typed_msg, GitCloneDoneMessage):
-            self._handle_git_clone_done(typed_msg.path)
-        elif isinstance(typed_msg, LocalScanCompleteMessage):
-            self._handle_local_scan_complete(typed_msg)
-        else:
-            # Fallback for unknown message types
-            self.app.log_verbose(str(typed_msg))
+        try:
+            if isinstance(typed_msg, LogMessage):
+                self.app.log_verbose(typed_msg.message)
+            elif isinstance(typed_msg, FileSavedMessage):
+                self._handle_file_saved(typed_msg)
+            elif isinstance(typed_msg, ProgressMessage):
+                try:
+                    self.app.main_panel.progress_gauge.setValue(typed_msg.value)
+                    self.app.main_panel.progress_gauge.setMaximum(typed_msg.max_value)
+                except (RuntimeError, AttributeError):
+                    pass  # Widget being destroyed
+            elif isinstance(typed_msg, StatusMessage):
+                self.app.task_handler.handle_status(typed_msg)
+            elif isinstance(typed_msg, UITaskMessage):
+                self._handle_ui_task_start(typed_msg.task.value)
+            elif isinstance(typed_msg, UITaskStoppingMessage):
+                self._handle_ui_task_stopping()
+            elif isinstance(typed_msg, UITaskStopMessage):
+                self._handle_ui_task_stop(typed_msg.was_cancelled)
+            elif isinstance(typed_msg, GitCloneDoneMessage):
+                self._handle_git_clone_done(typed_msg.path)
+            elif isinstance(typed_msg, LocalScanCompleteMessage):
+                self._handle_local_scan_complete(typed_msg)
+            else:
+                # Fallback for unknown message types
+                self.app.log_verbose(str(typed_msg))
+        except RuntimeError:
+            # Widget destroyed during processing, safely ignore
+            pass
 
     def _handle_file_saved(self, typed_msg):
         """Handles the FileSavedMessage, batching UI updates."""
@@ -74,13 +81,19 @@ class MessageHandler:
     def on_batch_update_timer(self):
         """Processes the batch of scraped files on a timer tick."""
         if self.scraped_files_batch:
-            self.app.main_panel.add_scraped_files_batch(self.scraped_files_batch)
-            self.scraped_files_batch.clear()
-            self.app._update_button_states()
+            try:
+                self.app.main_panel.add_scraped_files_batch(self.scraped_files_batch)
+                self.scraped_files_batch.clear()
+                self.app._update_button_states()
+            except (RuntimeError, AttributeError):
+                pass  # Widget being destroyed
 
         # Update discovered count on timer to ensure final count is displayed
         if self.discovered_count_batch > 0:
-            self.app.main_panel.update_discovered_count(self.discovered_count_batch)
+            try:
+                self.app.main_panel.update_discovered_count(self.discovered_count_batch)
+            except (RuntimeError, AttributeError):
+                pass  # Widget being destroyed
 
         # Reset counters
         self.ui_update_counter = 0
@@ -136,16 +149,10 @@ class MessageHandler:
             except Exception:
                 pass  # Already logged, just ensure we clean up the future reference
 
-        self.app.worker_manager.stop_queue_listener(timeout=2.0)
-
-        self.app._toggle_ui_controls(True)
-
         self.app.state.worker_future = None
         self.app.state.cancel_event = None
 
-        if self.app.shutdown_event.is_set():
-            self.app.close()
-            return
+        self.app._toggle_ui_controls(True)
 
         dl_button = self.app.main_panel.download_button
         dl_button.setText("Download && Convert")

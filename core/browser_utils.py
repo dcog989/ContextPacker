@@ -130,7 +130,7 @@ def initialize_driver(config, log_queue, shutdown_event):
     return None
 
 
-def cleanup_driver(driver, timeout=DRIVER_CLEANUP_TIMEOUT_SECONDS, log_queue=None):
+def cleanup_driver(driver, timeout=DRIVER_CLEANUP_TIMEOUT_SECONDS, log_queue=None, shutdown_event=None):
     """
     Clean up driver with actual timeout enforcement to prevent hanging.
 
@@ -138,8 +138,10 @@ def cleanup_driver(driver, timeout=DRIVER_CLEANUP_TIMEOUT_SECONDS, log_queue=Non
         driver: WebDriver instance to clean up
         timeout: Timeout in seconds for cleanup operations
         log_queue: Queue for logging messages (optional)
+        shutdown_event: Event to check if app is shutting down (optional)
     """
-    if log_queue:
+    # Don't log if shutting down
+    if log_queue and (not shutdown_event or not shutdown_event.is_set()):
         log_queue.put(LogMessage(message="Cleaning up browser driver..."))
 
     cleanup_complete = threading.Event()
@@ -160,6 +162,10 @@ def cleanup_driver(driver, timeout=DRIVER_CLEANUP_TIMEOUT_SECONDS, log_queue=Non
 
     # Wait for cleanup with timeout
     cleanup_complete.wait(timeout=timeout)
+
+    # Don't log if shutting down
+    if shutdown_event and shutdown_event.is_set():
+        return
 
     if cleanup_complete.is_set():
         if cleanup_exception:

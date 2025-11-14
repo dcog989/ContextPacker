@@ -224,7 +224,7 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
 
     finally:
         if driver:
-            cleanup_driver(driver, timeout=10, log_queue=log_queue)
+            cleanup_driver(driver, timeout=10, log_queue=log_queue, shutdown_event=shutdown_event)
 
     if not cancel_event.is_set() and not shutdown_event.is_set() and pages_saved >= config.max_pages:
         progress_msg = ProgressMessage(value=pages_saved, max_value=config.max_pages)
