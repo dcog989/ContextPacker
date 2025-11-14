@@ -1,9 +1,14 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from PySide6.QtWidgets import QFileDialog, QApplication
 from PySide6.QtCore import Qt
 import threading
 
-import core.actions as actions
-from core.types import LocalScanCompleteMessage, LogMessage
+from core import actions
+from core.types import LocalScanCompleteMessage, LogMessage, AppState
 from core.app_message_handler import MessageHandler
 from ui.about_dialog import AboutDialog
 
@@ -16,9 +21,7 @@ class UiController:
         self.message_handler: MessageHandler = self.app.message_handler
 
     def on_toggle_theme(self):
-        """Toggles the theme mode's visual state (for icons) and updates colors."""
         self.app.theme_manager.toggle_theme()
-        self.app.log_verbose(f"Theme toggled to: {'Dark' if self.app.theme_manager.is_dark_mode_visual_state else 'Light'}")
 
     def on_toggle_input_mode(self):
         self.toggle_input_mode()
@@ -46,13 +49,13 @@ class UiController:
         self.app.exclude_update_timer.start()
 
     def on_download_button_click(self):
-        if self.app.state.is_task_running:
+        if self.app.state.current_state == AppState.TASK_RUNNING:
             self.app.task_handler.stop_current_task()
         else:
             self.app.task_handler.start_download_task()
 
     def on_package_button_click(self):
-        if self.app.state.is_task_running:
+        if self.app.state.current_state == AppState.TASK_RUNNING:
             self.app.task_handler.stop_current_task()
         else:
             file_list = self.app.main_panel.scraped_files if self.app.main_panel.web_crawl_radio.isChecked() else self.app.main_panel.local_files
@@ -71,36 +74,60 @@ class UiController:
             self.app.log_verbose(f"ERROR: Failed to copy to clipboard: {e}")
 
     def on_batch_update_timer(self):
-        """Delegates to message handler for batch processing."""
         self.message_handler.on_batch_update_timer()
 
     def _update_timestamp_label(self):
         from datetime import datetime
 
         try:
-            if not self.app.state.is_task_running:
+            if self.app.state.current_state == AppState.IDLE:
                 ts = datetime.now().strftime("-%y%m%d-%H%M%S")
                 self.app.main_panel.output_timestamp_label.setText(ts)
         except (RuntimeError, AttributeError):
-            pass  # Widget being destroyed
+            pass
 
     def _update_button_states(self):
         try:
+            print(f"[DIAG] UiController._update_button_states: Entered. Current state: {self.app.state.current_state.name}")
+            state = self.app.state.current_state
             is_web_mode = self.app.main_panel.web_crawl_radio.isChecked()
-            package_ready = False
-            copy_ready = bool(self.app.state.final_output_path and self.app.Path(self.app.state.final_output_path).exists())
 
-            if is_web_mode:
-                package_ready = bool(self.app.main_panel.scraped_files)
-            else:
-                package_ready = bool(self.app.main_panel.local_dir_ctrl.text() and self.app.Path(self.app.main_panel.local_dir_ctrl.text()).is_dir())
-            self.app.main_panel.package_button.setEnabled(package_ready)
+            # Default to disabled unless explicitly enabled
+            dl_enabled = False
+            pkg_enabled = False
+
+            if state == AppState.IDLE:
+                dl_enabled = is_web_mode
+                package_ready = False
+                if is_web_mode:
+                    package_ready = bool(self.app.main_panel.scraped_files)
+                else:
+                    package_ready = bool(self.app.main_panel.local_dir_ctrl.text() and self.app.Path(self.app.main_panel.local_dir_ctrl.text()).is_dir())
+                pkg_enabled = package_ready
+
+            elif state == AppState.TASK_RUNNING:
+                # Only the button that initiated the task is enabled, as a 'Stop' button
+                if self.app.main_panel.download_button.text() == "Stop!":
+                    dl_enabled = True
+                elif self.app.main_panel.package_button.text() == "Stop!":
+                    pkg_enabled = True
+
+            # For all other states (TASK_STOPPING, TASK_FINISHING, UI_RESETTING), buttons remain disabled.
+
+            self.app.main_panel.download_button.setEnabled(dl_enabled)
+            self.app.main_panel.package_button.setEnabled(pkg_enabled)
+            print(f"[DIAG] UiController._update_button_states: dl_enabled={dl_enabled}, pkg_enabled={pkg_enabled}")
+
+            copy_ready = bool(self.app.state.final_output_path and self.app.Path(self.app.state.final_output_path).exists())
             self.app.main_panel.copy_button.setEnabled(copy_ready)
+            print(f"[DIAG] UiController._update_button_states: copy_button.enabled = {copy_ready}")
+
+            print("[DIAG] UiController._update_button_states: Exiting.")
         except (RuntimeError, AttributeError):
-            pass  # Widget being destroyed
+            print("[DIAG] UiController._update_button_states: Caught exception.")
+            pass
 
     def start_local_file_scan(self):
-        """Initiates the local file scanning process in a worker thread."""
         if self.app.state.local_scan_future and not self.app.state.local_scan_future.done():
             if self.app.state.local_scan_cancel_event:
                 self.app.state.local_scan_cancel_event.set()
@@ -122,11 +149,9 @@ class UiController:
 
         args = (input_dir, self.app.main_panel.dir_level_ctrl.value(), self.app.main_panel.use_gitignore_check.isChecked(), custom_excludes, binary_excludes, self.app.state.local_scan_cancel_event, self.app.state.gitignore_cache, self.app.state.gitignore_cache_lock)
 
-        # Submit task to ThreadPoolExecutor
         self.app.state.local_scan_future = self.app.worker_manager.executor.submit(self._local_scan_worker, *args)
 
     def _local_scan_worker(self, *args):
-        """Worker wrapper for get_local_files to emit results back to main thread."""
         cancel_event = args[5]
         try:
             results = actions.get_local_files(*args)
@@ -143,10 +168,5 @@ class UiController:
                 self.app.signals.message.emit(scan_msg)
 
     def on_show_about_dialog(self):
-        """Displays the About Dialog."""
-        # Note: This version is the actual logic, called internally.
         dialog = AboutDialog(self.app, self.app.version)
         dialog.exec()
-
-    def on_show_about_dialog_wrapper(self, event):
-        """Wrapper to call the about dialog method from a mousePressEvent (with event arg)."""

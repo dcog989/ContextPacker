@@ -11,20 +11,17 @@ python = ">=3.10, <3.14"
 beautifulsoup4 = "^4.14.2"
 markdownify = "^1.2.0"
 repomix = "^0.3.4"
-selenium = "^4.38.0"
+requests = "^2.32.5"
 pyside6 = { version = "^6.10.0" }
 lxml = "^6.0.2"
 
 [tool.poetry.group.dev.dependencies]
 pyinstaller = "^6.16.0"
 nox = "^2025.10.16"
-# webdriver-manager intentionally omitted from dev dependencies to avoid triggering
-# Poetry to re-resolve binary wheels during CI/dev installs. Install locally if required.
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
-# Placeholder for future linter configuration
 line-length = 120

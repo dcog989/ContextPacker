@@ -1,7 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_data_files
 
-selenium_datas = collect_data_files('selenium')
 app_assets = [
     ('assets/icons/ContextPacker.ico', 'assets/icons'),
     ('assets/icons/copy.svg', 'assets/icons'),
@@ -13,17 +12,15 @@ app_assets = [
     ('assets/fonts/SourceCodePro-Italic-VariableFont_wght.ttf', 'assets/fonts'),
 ]
 
-all_datas = selenium_datas + app_assets
-
 a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=all_datas,
+    datas=app_assets,
     hiddenimports=['tiktoken_ext.openai_public'],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=['pyi_rth_selenium.py'],
+    runtime_hooks=[],
     excludes=[],
     noarchive=False,
     optimize=0,

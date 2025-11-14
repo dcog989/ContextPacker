@@ -6,16 +6,13 @@ CONFIG_FILENAME = "config.json"
 
 DEFAULT_CONFIG = {
     "user_agents": [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.3351.121",
-        "Mozilla/5.0 (iPhone17,1; CPU iPhone OS 18_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Mohegan Sun/4.7.4",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Linux; Android 7.0; SM-T827R4 Build/NRD90M) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.116 Safari/537.36",
-        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:141.0) Gecko/20100101 Firefox/141.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+        "python-requests/2.31.0",
+        "ContextPacker-Bot/1.0",
     ],
     "default_output_format": ".md",
-    "default_browser": "msedge",
     "default_local_excludes": [".archive/", ".git/", ".testing/", "*node_modules*", "build/", "dist/"],
     "binary_file_patterns": [
         "*.png",
@@ -57,8 +54,8 @@ DEFAULT_CONFIG = {
     "max_build_logs": 21,
     "max_age_logs": 21,
     "window_size": [-1, -1],
-    "h_sash_state": None,  # Add horizontal splitter state
-    "v_sash_state": None,  # Add vertical splitter state
+    "h_sash_state": None,
+    "v_sash_state": None,
 }
 
 _config = None
@@ -67,10 +64,8 @@ _config = None
 def get_base_path():
     """Gets the base path for data files, handling PyInstaller."""
     if getattr(sys, "frozen", False):
-        # Running as a PyInstaller bundle
         return Path(sys.executable).parent
     else:
-        # Running from source (development)
         return Path(".")
 
 
@@ -95,7 +90,6 @@ def get_config():
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             loaded_config = json.load(f)
-            # Ensure all default keys are present
             _config = DEFAULT_CONFIG.copy()
             _config.update(loaded_config)
     except Exception as e:

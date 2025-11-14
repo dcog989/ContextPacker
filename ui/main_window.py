@@ -11,19 +11,6 @@ from ui.output_panels import OutputPanelFactory
 config = get_config()
 
 
-class PaintEventFilter(QObject):
-    """Event filter to suppress paint events during updates."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.suppressing = False
-
-    def eventFilter(self, obj, event):
-        if self.suppressing and event.type() == QEvent.Type.Paint:
-            return True  # Block the paint event
-        return super().eventFilter(obj, event)
-
-
 class MainWindow(QWidget):
     def __init__(self, parent_app):
         super().__init__()
@@ -32,7 +19,6 @@ class MainWindow(QWidget):
         self.local_files = []
         self.discovered_url_count = 0
         self._managing_log_size = False  # Guard against recursive calls
-        self._paint_filter = None  # Will be initialized after widgets are created
 
         # Initialize Factory instances
         self.input_factory = InputPanelFactory(self)
@@ -90,10 +76,6 @@ class MainWindow(QWidget):
 
         self.create_widgets()
         self.create_layout()
-
-        # Install paint event filter on verbose log widget
-        self._paint_filter = PaintEventFilter(self)
-        self.verbose_log_widget.installEventFilter(self._paint_filter)
 
         self.create_connections()
         self.create_context_menus()

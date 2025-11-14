@@ -6,7 +6,7 @@ import ctypes
 import shutil
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMainWindow
-from PySide6.QtCore import QTimer, Qt, QSize
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QIcon, QFontDatabase
 from ui.main_window import MainWindow
 from core.version import __version__
@@ -38,7 +38,6 @@ class App(QMainWindow):
         super().__init__()
         self._is_closing = False
         self.shutdown_check_timer = None
-        # Use Path from pathlib to avoid re-importing in every method
         self.Path = Path
 
         w, h = config.get("window_size", [-1, -1])
@@ -52,14 +51,13 @@ class App(QMainWindow):
         self.version = __version__
         self.state = StateManager()
 
-        # Constants used by MessageHandler
         self.max_batch_size = MAX_BATCH_SIZE
         self.ui_update_batch_size = UI_UPDATE_BATCH_SIZE
         self.BINARY_FILE_PATTERNS = BINARY_FILE_PATTERNS
 
         # Initialize Services
         self.worker_manager = WorkerManager(self)
-        self.shutdown_event = self.worker_manager.shutdown_event  # Alias for easier access
+        self.shutdown_event = self.worker_manager.shutdown_event
         self.log_queue = self.worker_manager.log_queue
         self.executor = self.worker_manager.executor
         self.signals = WorkerSignals()
@@ -70,29 +68,25 @@ class App(QMainWindow):
 
         self._setup_app_dirs_and_cleanup()
 
-        # Connect Signals
         self.signals.message.connect(self.message_handler.process_log_queue_message)
 
-        # UI Setup
         self.main_panel = MainWindow(self)
         self.setCentralWidget(self.main_panel)
 
-        # Theme Manager (must be after main_panel is created)
         self.theme_manager = ThemeManager(self)
-
         self._load_custom_font()
         self.theme_manager.apply_theme()
         self._set_icon()
 
         # Timers
         self.log_update_timer = QTimer(self)
-        self.log_update_timer.setInterval(100)  # Batch log updates to prevent UI lockup
-        self.log_update_timer.timeout.connect(self._process_log_batch)
+        self.log_update_timer.setInterval(100)
+        self.log_update_timer.timeout.connect(lambda: self._process_log_batch())
         self.log_update_timer.start()
 
         self.batch_update_timer = QTimer(self)
         self.batch_update_timer.setInterval(BATCH_UPDATE_INTERVAL_MS)
-        self.batch_update_timer.timeout.connect(self.ui_controller.on_batch_update_timer)
+        self.batch_update_timer.timeout.connect(lambda: self.ui_controller.on_batch_update_timer())
         self.batch_update_timer.start()
 
         self.exclude_update_timer = QTimer(self)
@@ -118,7 +112,7 @@ class App(QMainWindow):
             if font_path.exists():
                 font_id = QFontDatabase.addApplicationFont(str(font_path))
                 if font_id == -1:
-                    self.log_verbose(f"Warning: Failed to load font from {font_path}")
+                    print(f"Warning: Failed to load font from {font_path}")
 
     def _setup_app_dirs_and_cleanup(self):
         app_data_dir = get_app_data_dir()
@@ -136,6 +130,7 @@ class App(QMainWindow):
             self.setWindowIcon(QIcon(str(icon_path)))
 
     def _toggle_ui_controls(self, enable=True, widget_to_keep_enabled=None):
+        print(f"[DIAG] _toggle_ui_controls: Setting enabled state to {enable}")
         widgets_to_toggle = [
             self.main_panel.system_panel,
             self.main_panel.web_crawl_radio,
@@ -154,22 +149,27 @@ class App(QMainWindow):
                 widget.setEnabled(enable)
         if not enable and widget_to_keep_enabled:
             widget_to_keep_enabled.setEnabled(True)
+        print(f"[DIAG] _toggle_ui_controls: Finished setting state to {enable}")
 
     def _update_button_states(self):
+        print("[DIAG] App._update_button_states: Calling controller.")
         self.ui_controller._update_button_states()
 
     def log_verbose(self, message):
-        """Adds a message to a queue for batch processing by a timer."""
-        # Don't log if shutting down
         if self._is_closing or self.shutdown_event.is_set():
             return
+
+        if "[DIAG]" in message:
+            print(message)
 
         self.log_message_batch.append(message)
 
     def _process_log_batch(self):
-        """Processes the queued log messages in a single batch to prevent UI freezes."""
         if not self.log_message_batch:
             return
+
+        if "[DIAG]" in self.log_message_batch[0]:
+            print(f"[DIAG] _process_log_batch: Entered for {len(self.log_message_batch)} messages.")
 
         if self._is_closing or self.shutdown_event.is_set() or not hasattr(self, "main_panel") or not self.main_panel:
             self.log_message_batch.clear()
@@ -177,12 +177,9 @@ class App(QMainWindow):
 
         try:
             log_widget = self.main_panel.verbose_log_widget
-            paint_filter = self.main_panel._paint_filter
             messages_to_process = "\n".join(self.log_message_batch)
             self.log_message_batch.clear()
 
-            if paint_filter:
-                paint_filter.suppressing = True
             log_widget.setUpdatesEnabled(False)
             log_widget.blockSignals(True)
 
@@ -190,18 +187,15 @@ class App(QMainWindow):
             log_widget.append(messages_to_process)
 
         except RuntimeError:
-            pass  # Widget destroyed
+            pass
         finally:
             try:
                 if hasattr(self, "main_panel") and self.main_panel:
                     log_widget = self.main_panel.verbose_log_widget
-                    paint_filter = self.main_panel._paint_filter
                     log_widget.blockSignals(False)
                     log_widget.setUpdatesEnabled(True)
-                    if paint_filter:
-                        paint_filter.suppressing = False
             except (RuntimeError, AttributeError):
-                pass  # Widget already destroyed
+                pass
 
     def delete_scraped_file(self, filepath):
         try:
@@ -215,53 +209,41 @@ class App(QMainWindow):
         self.log_verbose(f"Deleted from package: {rel_path}")
 
     def _open_output_folder_blocking_task(self, output_dir_path):
-        """Blocking task to open the output folder in the OS."""
         try:
             if platform.system() == "Windows":
                 os.startfile(output_dir_path)
-            elif platform.system() == "Darwin":  # macOS
+            elif platform.system() == "Darwin":
                 subprocess.run(["open", str(output_dir_path)], check=True)
-            else:  # Linux and other Unix-like
+            else:
                 subprocess.run(["xdg-open", str(output_dir_path)], check=True)
         except Exception as e:
             self.log_verbose(f"ERROR: Could not open output folder: {e}")
 
     def _open_output_folder(self):
-        """Opens the folder containing the final output file."""
         if self.state.final_output_path and self.Path(self.state.final_output_path).exists():
             output_dir = self.Path(self.state.final_output_path).parent
-            # Submit the blocking task to the thread pool to prevent UI hang
             self.worker_manager.executor.submit(self._open_output_folder_blocking_task, output_dir)
         else:
             self.log_verbose("ERROR: No output file found to locate.")
 
-    # --- Shutdown/Cleanup Methods ---
     def closeEvent(self, event):
-        # 1. Initiate shutdown sequence only once.
         if not self._is_closing:
             self._is_closing = True
             self.shutdown_event.set()
-
-            # Hide window immediately to prevent paint events.
             self.hide()
 
-            # Stop timers to halt any scheduled UI updates BEFORE disconnecting signals
             self.batch_update_timer.stop()
             self.exclude_update_timer.stop()
             self.ui_update_timer.stop()
             self.log_update_timer.stop()
 
-            # Disconnect all signals from workers to the UI thread.
-            # This is CRITICAL to prevent any more UI updates.
             try:
                 self.signals.message.disconnect()
             except (RuntimeError, TypeError):
                 pass
 
-            # Stop the queue listener first to prevent any more messages
             self.worker_manager.stop_queue_listener(timeout=1.0)
 
-            # Save state.
             config["window_size"] = [self.width(), self.height()]
             h_sash_qba = self.main_panel.h_splitter.saveState().toBase64()
             v_sash_qba = self.main_panel.v_splitter.saveState().toBase64()
@@ -269,31 +251,26 @@ class App(QMainWindow):
             config["v_sash_state"] = bytes(v_sash_qba.data()).decode("utf-8")
             save_config(config)
 
-            # Clean up temp dir.
             if self.state.temp_dir and self.Path(self.state.temp_dir).is_dir():
                 try:
                     shutil.rmtree(self.state.temp_dir)
-                except Exception as e:
-                    print(f"Warning: Failed to clean up temp directory {self.state.temp_dir}: {e}")
+                except Exception:
+                    pass
 
-            # Signal running tasks to cancel.
             if self.state.cancel_event and not self.state.cancel_event.is_set():
                 self.state.cancel_event.set()
             if self.state.local_scan_cancel_event and not self.state.local_scan_cancel_event.is_set():
                 self.state.local_scan_cancel_event.set()
 
-        # 2. Check if workers are still running.
         if self.worker_manager.cleanup_workers():
-            # If workers are running, defer the close and start a timer to re-check.
             if not self.shutdown_check_timer:
                 self.shutdown_check_timer = QTimer(self)
-                self.shutdown_check_timer.setInterval(100)  # Check every 100ms
+                self.shutdown_check_timer.setInterval(100)
                 self.shutdown_check_timer.timeout.connect(self.close)
                 self.shutdown_check_timer.start()
             event.ignore()
             return
 
-        # 3. Final cleanup: This block is reached only when no workers are running.
         if self.shutdown_check_timer:
             self.shutdown_check_timer.stop()
 
@@ -309,7 +286,6 @@ if __name__ == "__main__":
     try:
         if platform.system() == "Windows":
             try:
-                # Set the DPI awareness context to Per_Monitor_Aware_V2.
                 ctypes.windll.shcore.SetProcessDpiAwarenessContext(-4)
             except (AttributeError, OSError):
                 pass
@@ -322,11 +298,4 @@ if __name__ == "__main__":
         frame = App()
         sys.exit(app.exec())
     except Exception as e:
-        import traceback
-
-        print("--- CONTEXTPACKER FATAL ERROR ---")
-        print(f"Exception: {e}")
-        print("Traceback:")
-        traceback.print_exc()
-        print("---------------------------------")
         sys.exit(1)

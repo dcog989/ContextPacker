@@ -1,11 +1,17 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import threading
+from core.types import AppState
 
 
 class StateManager:
     """Manages the application's runtime state."""
 
     def __init__(self):
-        self.is_task_running: bool = False
+        self.current_state: AppState = AppState.IDLE
         self.temp_dir: str | None = None
         self.final_output_path: str | None = None
         self.local_files_to_exclude: set = set()

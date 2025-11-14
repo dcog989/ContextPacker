@@ -41,6 +41,16 @@ class StatusType(Enum):
     CLONE_COMPLETE = "clone_complete"
 
 
+class AppState(Enum):
+    """Enumeration of application states."""
+
+    IDLE = "idle"
+    TASK_RUNNING = "task_running"
+    TASK_STOPPING = "task_stopping"
+    TASK_FINISHING = "task_finishing"
+    UI_RESETTING = "ui_resetting"
+
+
 class FileType(Enum):
     """Enumeration of file types."""
 

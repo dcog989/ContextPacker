@@ -1,5 +1,5 @@
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from bs4 import BeautifulSoup, Tag
+import requests
+from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 from pathlib import Path
 import queue
@@ -7,12 +7,8 @@ import time
 import random
 import re
 from markdownify import markdownify as md
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
 
-from .browser_utils import initialize_driver, cleanup_driver
-from .constants import PAGE_LOAD_TIMEOUT_SECONDS, MEMORY_MANAGEMENT_URL_LIMIT, PROCESSED_URLS_MEMORY_FACTOR
+from .constants import MEMORY_MANAGEMENT_URL_LIMIT, PROCESSED_URLS_MEMORY_FACTOR
 from .types import LogMessage, StatusMessage, ProgressMessage, FileSavedMessage, StatusType
 
 
@@ -47,7 +43,7 @@ def _normalize_url(url):
 
 
 def _url_matches_any_pattern(url, patterns):
-    """FIXED: Case-insensitive URL pattern matching for better user experience."""
+    """Case-insensitive URL pattern matching."""
     parsed_url_path = urlparse(url).path.lower()
     url_lower = url.lower()
 
@@ -61,28 +57,38 @@ def _url_matches_any_pattern(url, patterns):
     return False
 
 
-def _process_page(driver, config, current_url, filename_cache=None):
-    """Fetches, processes, and saves a single web page."""
+def _process_page(session, config, current_url, filename_cache=None):
+    """Fetches, processes, and saves a single web page using requests."""
     try:
-        driver.get(current_url)
-        # Explicitly wait for the body tag to ensure the DOM is ready for processing.
-        WebDriverWait(driver, PAGE_LOAD_TIMEOUT_SECONDS).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        headers = {"User-Agent": config.user_agent}
+        response = session.get(current_url, headers=headers, timeout=10)
 
+        if response.status_code == 404:
+            return None, f"  -> Skipping (404 Not Found): {current_url}"
+
+        if response.status_code != 200:
+            return None, f"  -> Skipping (Status {response.status_code}): {current_url}"
+
+        # Pause for politeness
         pause_duration = random.uniform(config.min_pause, config.max_pause)
         time.sleep(pause_duration)
 
-        final_url = driver.current_url
+        # Check content type
+        content_type = response.headers.get("Content-Type", "").lower()
+        if "text/html" not in content_type:
+            return None, f"  -> Skipping non-HTML content ({content_type}): {current_url}"
+
+        final_url = response.url
         if config.ignore_queries:
             final_url = final_url.split("?")[0]
 
-        if "404" in driver.title or "Not Found" in driver.title:
-            return None, f"  -> Skipping (404 Not Found): {final_url}"
+        html_content = response.text
+        soup = BeautifulSoup(html_content, "html.parser")
 
-        html_content = driver.page_source
-        soup = BeautifulSoup(html_content, "lxml")
-
-        for tag in soup(["script", "style"]):
+        # Clean up HTML
+        for tag in soup(["script", "style", "nav", "footer", "iframe"]):
             tag.decompose()
+
         cleaned_html = str(soup)
 
         filename = sanitize_filename(final_url, filename_cache) + ".md"
@@ -93,6 +99,9 @@ def _process_page(driver, config, current_url, filename_cache=None):
             f.write(md_content)
 
         return (soup, final_url, output_path, filename), None
+
+    except requests.RequestException as e:
+        return None, f"  -> Network Error on {current_url}: {str(e)}"
     except Exception as e:
         return None, f"  -> Error processing {current_url}: {str(e)}"
 
@@ -106,11 +115,8 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
     links = soup.find_all("a", href=True)
 
     for link in links:
-        if not isinstance(link, Tag):
-            continue
-
         href_attr = link.get("href")
-        if not isinstance(href_attr, str) or not href_attr or href_attr.startswith(("mailto:", "javascript:", "#")):
+        if not href_attr or href_attr.startswith(("mailto:", "javascript:", "#", "tel:")):
             continue
 
         abs_link = urljoin(base_url, href_attr)
@@ -132,9 +138,8 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
             continue
 
         if normalized_abs_link not in processed_urls:
-            # Issue 12: Capped Set / Pruning for memory management
+            # Memory management
             if max_processed_urls and len(processed_urls) >= max_processed_urls and max_processed_urls > MEMORY_MANAGEMENT_URL_LIMIT:
-                # Prune 50% of the oldest entries when the limit is hit
                 urls_to_prune = len(processed_urls) // 2
                 processed_urls = set(list(processed_urls)[urls_to_prune:])
                 if log_queue:
@@ -145,20 +150,13 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
 
 
 def crawl_website(config, log_queue, cancel_event, shutdown_event):
-    """Crawls a website based on provided configuration."""
-    driver = initialize_driver(config, log_queue, shutdown_event)
-    if not driver:
-        error_msg = StatusMessage(status=StatusType.ERROR, message="ERROR: Could not find a compatible web browser or its driver.\nPlease ensure a supported browser (Edge, Chrome, or Firefox) is installed.")
-        log_queue.put(error_msg)
-        return
-
-    driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
-    log_queue.put(LogMessage(message="Starting web crawl..."))
+    """Crawls a website using requests and BeautifulSoup."""
+    log_queue.put(LogMessage(message="Starting web crawl (Lightweight Mode)..."))
 
     url_cache = {}
     filename_cache = {}
-
     urls_to_visit = queue.Queue()
+
     normalized_start_url = _normalize_url(config.start_url)
     urls_to_visit.put((config.start_url, 0))
     processed_urls = {normalized_start_url}
@@ -166,23 +164,21 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
 
     max_processed_urls = max(config.max_pages * PROCESSED_URLS_MEMORY_FACTOR, MEMORY_MANAGEMENT_URL_LIMIT)
 
-    try:
-        while not urls_to_visit.empty() and pages_saved < config.max_pages:
-            if cancel_event.is_set() or shutdown_event.is_set():
-                break
+    # Create a session for connection pooling
+    with requests.Session() as session:
+        try:
+            while not urls_to_visit.empty() and pages_saved < config.max_pages:
+                if cancel_event.is_set() or shutdown_event.is_set():
+                    break
 
-            current_url, depth = urls_to_visit.get()
+                current_url, depth = urls_to_visit.get()
 
-            if cancel_event.is_set() or shutdown_event.is_set():
-                break
+                if not shutdown_event.is_set():
+                    progress_msg = ProgressMessage(value=pages_saved, max_value=config.max_pages)
+                    log_queue.put(progress_msg)
+                    log_queue.put(LogMessage(message=f"GET (Depth {depth}): {current_url}"))
 
-            if not shutdown_event.is_set():
-                progress_msg = ProgressMessage(value=pages_saved, max_value=config.max_pages)
-                log_queue.put(progress_msg)
-                log_queue.put(LogMessage(message=f"GET (Depth {depth}): {current_url}"))
-
-            try:
-                page_data, error_msg = _process_page(driver, config, current_url, filename_cache)
+                page_data, error_msg = _process_page(session, config, current_url, filename_cache)
 
                 if cancel_event.is_set() or shutdown_event.is_set():
                     break
@@ -212,19 +208,9 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
                     if depth < config.crawl_depth:
                         _filter_and_queue_links(soup, final_url, config, processed_urls, urls_to_visit, depth, url_cache, max_processed_urls, log_queue)
 
-            except TimeoutException:
-                if not shutdown_event.is_set():
-                    log_queue.put(LogMessage(message=f"  -> TIMEOUT after {PAGE_LOAD_TIMEOUT_SECONDS}s on: {current_url}"))
-            except WebDriverException as e:
-                if not shutdown_event.is_set():
-                    log_queue.put(LogMessage(message=f"  -> SELENIUM ERROR on {current_url}: {e.msg}"))
-            except Exception as e:
-                if not shutdown_event.is_set():
-                    log_queue.put(LogMessage(message=f"  -> PROCESSING ERROR on {current_url}: {e}"))
-
-    finally:
-        if driver:
-            cleanup_driver(driver, timeout=10, log_queue=log_queue, shutdown_event=shutdown_event)
+        except Exception as e:
+            if not shutdown_event.is_set():
+                log_queue.put(LogMessage(message=f"  -> CRITICAL CRAWLER ERROR: {e}"))
 
     if not cancel_event.is_set() and not shutdown_event.is_set() and pages_saved >= config.max_pages:
         progress_msg = ProgressMessage(value=pages_saved, max_value=config.max_pages)
@@ -232,5 +218,6 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
 
     status_key = StatusType.CANCELLED if cancel_event.is_set() else StatusType.SOURCE_COMPLETE
     message = "Process cancelled by user." if cancel_event.is_set() else f"\nWeb scrape finished. Saved {pages_saved} pages."
+
     if not shutdown_event.is_set():
         log_queue.put(StatusMessage(status=status_key, message=message))
