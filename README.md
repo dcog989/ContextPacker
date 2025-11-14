@@ -27,7 +27,7 @@ ContextPacker is a desktop application designed to scrape websites, clone Git re
 
 The application operates in two main modes, selected via radio buttons:
 
-### 1\. Web Crawl Mode (for online content)
+### Web Crawl Mode (for online content)
 
 1. Select **"Web Crawl"**.
 2. Enter the **Start URL**.
@@ -36,7 +36,7 @@ The application operates in two main modes, selected via radio buttons:
 3. Adjust crawling options (ignored for Git URLs).
 4. Click **"Download & Convert"**.
 
-### 2\. Local Directory Mode (for local files)
+### Local Directory Mode (for local files)
 
 1. Select **"Local Directory"**.
 2. Choose the **Input Directory**.
@@ -52,9 +52,8 @@ The application operates in two main modes, selected via radio buttons:
 
 To use all features, ensure you have the following installed:
 
-1. **Web Browser:** Microsoft Edge, Google Chrome, **or** Mozilla Firefox (required for web crawling).
-2. **Git:** Must be installed and accessible in your system's PATH (required for Git cloning).
-3. **Python and Poetry:** A modern version of **Python (3.12+)** and **Poetry** (used for dependency management).
+1. **Git:** Must be installed and accessible in your system's PATH (required for Git cloning).
+2. **Python and Poetry:** A modern version of **Python (3.12+)** and **Poetry** (used for dependency management).
 
 ### Steps to Run from Source
 
@@ -73,28 +72,7 @@ To use all features, ensure you have the following installed:
 
 -----
 
-## 🛠️ Developer Troubleshooting
-
-### Selenium Drivers
-
-The web crawler requires a matching browser driver. Choose one of the following methods:
-
-1. **Use the Helper Script** (requires network access):
-
-    ```sh
-    poetry run python scripts/get_driver.py --browser edge   # for Edge
-    poetry run python scripts/get_driver.py --browser chrome # for Chrome
-    poetry run python scripts/get_driver.py --browser firefox # for Firefox
-    ```
-
-2. **Download Manually** (if the script fails): Manually download and extract the appropriate driver (e.g., for Edge, use PowerShell to find the version, download the driver from `https://msedgedriver.microsoft.com/`, and extract it to a `.drivers/edge/<version>` folder).
-3. **Check Environment:** Validate the browser/driver setup:
-
-    ```sh
-    poetry run python scripts/check_env.py
-    ```
-
-### Building from Source
+## 🛠️ Building from Source
 
 This project uses **Nox** for task automation. Ensure Nox is installed (`poetry install`). Run these commands from the project root:
 

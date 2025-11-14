@@ -6,7 +6,7 @@ import ctypes
 import shutil
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMainWindow
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon, QFontDatabase
 from ui.main_window import MainWindow
 from core.version import __version__
@@ -297,5 +297,5 @@ if __name__ == "__main__":
         app = QApplication(sys.argv)
         frame = App()
         sys.exit(app.exec())
-    except Exception as e:
+    except Exception:
         sys.exit(1)
