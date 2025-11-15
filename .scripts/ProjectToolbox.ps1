@@ -200,25 +200,6 @@ function Invoke-ActionBuildProduction {
         $result = & poetry run nox -s build
         Write-Host $result
 
-        # --- Move changelog.md to dist directory ---
-        $distDir = Join-Path $Config.ProjectRoot "dist"
-        $changelogSource = Join-Path $Config.ProjectRoot "changelog.md"
-        $changelogDest = Join-Path $distDir "CHANGELOG.md" # Fixed filename case
-
-        if (Test-Path $changelogSource) {
-            try {
-                Move-Item -Path $changelogSource -Destination $changelogDest -Force
-            }
-            catch {
-                Write-Host "Warning: Failed to move changelog.md to $distDir : $($_.Exception.Message)" -ForegroundColor Yellow
-                Write-Log "Failed to move changelog.md to $distDir : $($_.Exception.Message)" "WARN"
-            }
-        }
-        else {
-            # Optionally log if changelog.md doesn't exist
-            Write-Verbose "changelog.md not found at source ($changelogSource), skipping move."
-        }
-        # ---
     }
     catch {
         $exitCode = 1
