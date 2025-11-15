@@ -60,7 +60,7 @@ class ConfigService:
             "window_pos": [-1, -1],
             "h_sash_state": None,
             "v_sash_state": None,
-            "logging_level": "DEBUG",
+            "logging_level": "INFO",
             "log_max_size_mb": 3,
             "log_backup_count": 5,
         }
