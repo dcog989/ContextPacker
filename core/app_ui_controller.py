@@ -44,6 +44,7 @@ class UiController:
         self.gitignore_cache_lock = threading.Lock()
         self.local_files_to_exclude = set()
         self.local_depth_excludes = set()
+        self._crawl_limit_reached = False
 
         logging.debug(f"[{threading.current_thread().name}] UiController initialized.")
 
@@ -66,7 +67,7 @@ class UiController:
         mw.theme_switch_button.clicked.connect(self.theme_manager.toggle_theme)
 
         # Connections to trigger button state updates
-        mw.start_url_widget.textChanged.connect(self._update_button_states)
+        mw.start_url_widget.textChanged.connect(self.update_button_states)
 
         # Connections for local file scanning triggers
         mw.use_gitignore_check.stateChanged.connect(self.exclude_update_timer.start)
@@ -118,7 +119,7 @@ class UiController:
         self.main_window.toggle_output_view(is_web_mode=is_url_mode)
         if not is_url_mode:
             self.start_local_file_scan()
-        self._update_button_states()
+        self.update_button_states()
 
     def on_browse(self):
         path = QFileDialog.getExistingDirectory(self.main_window, "Choose a directory:")
@@ -176,8 +177,8 @@ class UiController:
             list_widget.removeRow(row)
 
         mw.update_delete_button_state()
-        mw.update_file_count()
-        self._update_button_states()
+        mw.update_stats_label()
+        self.update_button_states()
 
     def on_show_about_dialog(self):
         from core.version import __version__
@@ -189,6 +190,8 @@ class UiController:
 
     def start_download_task(self):
         self.main_window.clear_logs()
+        self.main_window.progress_gauge.setValue(0)  # Reset progress bar
+        self._crawl_limit_reached = False  # Reset the flag for a new task
         start_url = self.main_window.start_url_widget.text().strip()
         if not start_url:
             QMessageBox.critical(self.main_window, "Input Error", "Start URL is required.")
@@ -246,6 +249,7 @@ class UiController:
             exclude_patterns=exclude_patterns,
             total_files=total_files,
         )
+        logging.debug(f"Packaging task started for source: {source_dir}")
 
     def start_local_file_scan(self):
         if self.task_service.is_task_running():  # Don't scan if another task is running
@@ -254,7 +258,7 @@ class UiController:
         input_dir = self.main_window.local_dir_ctrl.text()
         if not input_dir or not Path(input_dir).is_dir():
             self.main_window.populate_local_file_list([])
-            self._update_button_states()  # Ensure package button is disabled if path becomes invalid
+            self.update_button_states()  # Ensure package button is disabled if path becomes invalid
             return
 
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -263,6 +267,10 @@ class UiController:
         self.local_depth_excludes.clear()
 
         binary_excludes = self.config_service.get("binary_file_patterns", []) if self.main_window.hide_binaries_check.isChecked() else []
+        custom_excludes = [p.strip() for p in self.main_window.local_exclude_ctrl.toPlainText().splitlines() if p.strip()]
+
+        logging.debug(f"Starting local file scan for directory: {input_dir}")
+        logging.debug(f"Scan params: depth={self.main_window.dir_level_ctrl.value()}, use_gitignore={self.main_window.use_gitignore_check.isChecked()}")
 
         # This task does not use the main state machine, as it's a lightweight UI feedback task.
         # We manually manage UI feedback (cursor, panel enabled state).
@@ -271,7 +279,7 @@ class UiController:
             root_dir=input_dir,
             max_depth=self.main_window.dir_level_ctrl.value(),
             use_gitignore=self.main_window.use_gitignore_check.isChecked(),
-            custom_excludes=[p.strip() for p in self.main_window.local_exclude_ctrl.toPlainText().splitlines() if p.strip()],
+            custom_excludes=custom_excludes,
             binary_excludes=binary_excludes,
             gitignore_cache=self.gitignore_cache,
             gitignore_cache_lock=self.gitignore_cache_lock,
@@ -295,20 +303,49 @@ class UiController:
             logging.info(status_msg.message)
 
         if status_msg.status in [StatusType.SOURCE_COMPLETE, StatusType.PACKAGE_COMPLETE, StatusType.CANCELLED, StatusType.ERROR, StatusType.CLONE_COMPLETE]:
+            # For packaging, we set the progress to 100% on completion.
             if status_msg.status == StatusType.PACKAGE_COMPLETE:
+                self.main_window.progress_gauge.setMaximum(100)
                 self.main_window.progress_gauge.setValue(100)
                 if self.state_service.final_output_path:
                     output_dir = Path(self.state_service.final_output_path).parent
                     self.task_service.submit_task(actions.open_folder_worker, folder_path=str(output_dir))
+            # For crawl completion, the progress is already handled by the last on_file_saved event.
+            # On failure or cancellation, reset the progress bar.
+            elif status_msg.status in [StatusType.CANCELLED, StatusType.ERROR]:
+                self.main_window.progress_gauge.setValue(0)
+
             self.state_service.set_state(AppState.IDLE)
 
     def on_task_progress(self, progress_msg):
+        # This signal is now primarily for the packaging step.
         self.main_window.progress_gauge.setValue(progress_msg.value)
         self.main_window.progress_gauge.setMaximum(progress_msg.max_value)
 
     def on_file_saved(self, file_msg):
+        saved_count = file_msg.pages_saved
+        queue_size = file_msg.queue_size
+        max_pages = file_msg.max_pages
+        total_known = saved_count + queue_size
+
+        # Determine the total number to display for the "discovered" count.
+        # This prevents the number from flickering once the max_pages limit is reached.
+        if not self._crawl_limit_reached:
+            if total_known >= max_pages:
+                self._crawl_limit_reached = True
+            display_total = max_pages if self._crawl_limit_reached else total_known
+        else:
+            display_total = max_pages
+
+        # Update the text label, e.g., "15 saved / 25 discovered"
+        self.main_window.update_web_crawl_stats(saved_count, display_total)
+
+        # Update the progress bar using the same stable total.
+        self.main_window.progress_gauge.setMaximum(display_total)
+        self.main_window.progress_gauge.setValue(saved_count)
+
+        # Add the file to the UI list for batch updating.
         self.scraped_files_batch.append(file_msg.__dict__)
-        self.main_window.update_discovered_count(file_msg.queue_size)
 
     def on_git_clone_done(self, done_msg):
         self.main_window.local_dir_ctrl.setText(done_msg.path)
@@ -324,7 +361,7 @@ class UiController:
             self.main_window.populate_local_file_list(files)
             self.local_depth_excludes = depth_excludes
         # Explicitly update button states now that the scan is complete and the list is populated.
-        self._update_button_states()
+        self.update_button_states()
 
     # --- UI Update and Helpers ---
 
@@ -332,7 +369,7 @@ class UiController:
         if self.scraped_files_batch:
             self.main_window.add_scraped_files_batch(self.scraped_files_batch)
             self.scraped_files_batch.clear()
-            self._update_button_states()
+            self.update_button_states()
 
     def _update_timestamp_label(self):
         if self.state_service.current_state == AppState.IDLE:
@@ -362,7 +399,7 @@ class UiController:
             mw.download_button.setEnabled(False)
             mw.package_button.setEnabled(False)
 
-        self._update_button_states()
+        self.update_button_states()
 
     def _toggle_all_controls(self, enable):
         widgets = [
@@ -381,7 +418,7 @@ class UiController:
         for widget in widgets:
             widget.setEnabled(enable)
 
-    def _update_button_states(self):
+    def update_button_states(self):
         state = self.state_service.current_state
         mw = self.main_window
         is_web_mode = mw.web_crawl_radio.isChecked()

@@ -122,6 +122,7 @@ def clone_repo_worker(url, path, message_queue: queue.Queue, cancel_event: threa
 
 def packaging_worker(source_dir, output_path, repomix_style, exclude_patterns, total_files, message_queue: queue.Queue, cancel_event: threading.Event):
     """Worker that wraps run_repomix and handles progress reporting."""
+    logging.debug(f"Packaging worker started. Source: {source_dir}, Output: {output_path}")
 
     class RepomixProgressHandler(logging.Handler):
         def __init__(self, msg_queue, total_files_count):
@@ -165,6 +166,7 @@ def packaging_worker(source_dir, output_path, repomix_style, exclude_patterns, t
     finally:
         repomix_logger.removeHandler(progress_handler)
         repomix_logger.setLevel(original_level)
+        logging.debug(f"Packaging worker finished for source: {source_dir}")
 
 
 # --- Local File Scanning ---
@@ -252,7 +254,10 @@ def _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event):
 def _sort_results(results):
     import heapq
 
-    sort_key = lambda item: (0 if item["type"] == FileType.FOLDER.value else 1, item["name"].lower())
+    def sort_key(item):
+        """Provides a sort key for file/folder items: folders first, then by name."""
+        return (0 if item["type"] == FileType.FOLDER.value else 1, item["name"].lower())
+
     if len(results) > LARGE_DIRECTORY_THRESHOLD:
         heap = [(sort_key(item), item) for item in results]
         heapq.heapify(heap)
@@ -263,6 +268,7 @@ def _sort_results(results):
 def get_local_files_worker(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, gitignore_cache, gitignore_cache_lock, message_queue: queue.Queue, cancel_event: threading.Event):
     """Worker to scan local files and report back via message queue."""
     try:
+        logging.debug(f"Local file scan worker started for: {root_dir}")
         base_path = Path(root_dir)
         if not base_path.is_dir():
             message_queue.put(LocalScanCompleteMessage(results=([], set())))
@@ -271,11 +277,14 @@ def get_local_files_worker(root_dir, max_depth, use_gitignore, custom_excludes, 
         is_ignored_func = _prepare_filters(root_dir, use_gitignore, custom_excludes, binary_excludes, gitignore_cache, gitignore_cache_lock)
         scan_results, depth_excludes = _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event)
         if cancel_event.is_set():
+            logging.debug("Local file scan cancelled by user.")
             message_queue.put(LocalScanCompleteMessage(results=None))
             return
 
+        logging.debug(f"Scan found {len(scan_results)} items before sorting.")
         sorted_results = _sort_results(scan_results)
         message_queue.put(LocalScanCompleteMessage(results=(sorted_results, depth_excludes)))
+        logging.debug(f"Local file scan worker finished for: {root_dir}")
     except Exception as e:
         logging.error(f"Error scanning directory: {e}", exc_info=True)
         message_queue.put(LocalScanCompleteMessage(results=None))

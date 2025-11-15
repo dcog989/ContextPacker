@@ -78,9 +78,6 @@ class App(QMainWindow):
         self._setup_app_dirs_and_cleanup()
         self.show()
 
-    def __del__(self):
-        logging.debug(f"[{threading.current_thread().name}] App object being destroyed.")
-
     def on_shutdown_finished(self):
         """Called when the TaskService confirms all background threads are stopped."""
         logging.debug(f"[{threading.current_thread().name}] Received shutdown finished signal. Quitting application.")

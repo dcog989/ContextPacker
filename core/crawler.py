@@ -78,29 +78,57 @@ def _process_page(session, config, current_url, filename_cache=None):
 
         # Check content type
         content_type = response.headers.get("Content-Type", "").lower()
-        if "text/html" not in content_type:
-            return None, f"  -> Skipping non-HTML content ({content_type}): {current_url}"
+        is_html = "text/html" in content_type
+        # Loosen check to include any text-based content
+        is_text = "text/" in content_type or "application/json" in content_type or "application/xml" in content_type
+
+        if not is_text:
+            return None, f"  -> Skipping non-text content ({content_type}): {current_url}"
 
         final_url = response.url
         if config.ignore_queries:
             final_url = final_url.split("?")[0]
 
-        html_content = response.text
-        soup = BeautifulSoup(html_content, "html.parser")
+        sanitized_base_filename = sanitize_filename(final_url, filename_cache)
 
-        # Clean up HTML
-        for tag in soup(["script", "style", "nav", "footer", "iframe"]):
-            tag.decompose()
+        soup = None
+        output_content = ""
+        extension = ".txt"  # A safe default
 
-        cleaned_html = str(soup)
+        if is_html:
+            html_content = response.text
+            soup = BeautifulSoup(html_content, "html.parser")
 
-        filename = sanitize_filename(final_url, filename_cache) + ".md"
-        md_content = md(cleaned_html)
+            # Clean up HTML before converting to Markdown
+            for tag in soup(["script", "style", "nav", "footer", "iframe"]):
+                tag.decompose()
+            cleaned_html = str(soup)
 
+            output_content = md(cleaned_html)
+            extension = ".md"
+        else:  # Handle other text-based formats
+            output_content = response.text
+            # Try to determine a better file extension from the URL or content type
+            path_suffix = Path(urlparse(final_url).path).suffix
+            if path_suffix and len(path_suffix) < 7:  # e.g., .md, .js, .css, .json
+                extension = path_suffix
+            elif "markdown" in content_type:
+                extension = ".md"
+            elif "css" in content_type:
+                extension = ".css"
+            elif "javascript" in content_type:
+                extension = ".js"
+            elif "json" in content_type:
+                extension = ".json"
+            elif "xml" in content_type:
+                extension = ".xml"
+
+        filename = sanitized_base_filename + extension
         output_path = Path(config.output_dir) / filename
         with open(output_path, "w", encoding="utf-8") as f:
-            f.write(md_content)
+            f.write(output_content)
 
+        # We only return a soup object if we parsed HTML, which is where we'll look for more links.
         return (soup, final_url, output_path, filename), None
 
     except requests.RequestException as e:
@@ -109,8 +137,12 @@ def _process_page(session, config, current_url, filename_cache=None):
         return None, f"  -> Error processing {current_url}: {str(e)}"
 
 
-def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visit, depth, url_cache=None, max_processed_urls=None, message_queue=None):
-    """Finds, filters, and queues new links from a parsed page."""
+def _filter_and_queue_links(soup, pages_saved: int, base_url: str, config: CrawlerConfig, processed_urls, urls_to_visit, depth: int, url_cache=None, max_processed_urls=None, message_queue=None):
+    """Finds, filters, and queues new links from a parsed page, respecting the max_pages limit."""
+    # We only find links in HTML content. If the page was not HTML, soup will be None.
+    if soup is None:
+        return
+
     if url_cache is None:
         url_cache = {}
 
@@ -118,6 +150,11 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
     links = soup.find_all("a", href=True)
 
     for link in links:
+        # Check if we have already queued enough URLs to meet the max_pages limit.
+        if pages_saved + urls_to_visit.qsize() >= config.max_pages:
+            logging.debug(f"Max pages limit ({config.max_pages}) reached in queue. Halting link discovery.")
+            break
+
         href_attr = link.get("href")
         if not href_attr or href_attr.startswith(("mailto:", "javascript:", "#", "tel:")):
             continue
@@ -154,7 +191,7 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
 
 def crawl_website(config: CrawlerConfig, message_queue: queue.Queue, cancel_event: threading.Event):
     """Crawls a website using requests and BeautifulSoup."""
-    logging.info("Starting web crawl (Lightweight Mode)...")
+    logging.info("Starting web crawl...")
 
     url_cache = {}
     filename_cache = {}
@@ -176,8 +213,6 @@ def crawl_website(config: CrawlerConfig, message_queue: queue.Queue, cancel_even
 
                 current_url, depth = urls_to_visit.get()
 
-                progress_msg = ProgressMessage(value=pages_saved, max_value=config.max_pages)
-                message_queue.put(progress_msg)
                 logging.info(f"GET (Depth {depth}): {current_url}")
 
                 page_data, error_msg = _process_page(session, config, current_url, filename_cache)
@@ -195,6 +230,12 @@ def crawl_website(config: CrawlerConfig, message_queue: queue.Queue, cancel_even
                     processed_urls.add(normalized_final_url)
 
                     pages_saved += 1
+
+                    # Discover links BEFORE sending the progress update to ensure the queue size is accurate.
+                    if depth < config.crawl_depth:
+                        _filter_and_queue_links(soup, pages_saved, final_url, config, processed_urls, urls_to_visit, depth, url_cache, max_processed_urls, message_queue)
+
+                    # Now that the queue is updated, send the message.
                     file_saved_msg = FileSavedMessage(
                         url=final_url,
                         path=str(output_path),
@@ -205,16 +246,25 @@ def crawl_website(config: CrawlerConfig, message_queue: queue.Queue, cancel_even
                     )
                     message_queue.put(file_saved_msg)
 
-                    if depth < config.crawl_depth:
-                        _filter_and_queue_links(soup, final_url, config, processed_urls, urls_to_visit, depth, url_cache, max_processed_urls, message_queue)
-
         except Exception as e:
             logging.critical(f"CRITICAL CRAWLER ERROR: {e}", exc_info=True)
 
-    if not cancel_event.is_set() and pages_saved >= config.max_pages:
+    # After the loop, determine the reason for stopping and log it.
+    if cancel_event.is_set():
+        status_key = StatusType.CANCELLED
+        message = "Process cancelled by user."
+    elif pages_saved >= config.max_pages:
+        status_key = StatusType.SOURCE_COMPLETE
+        message = f"\nWeb scrape finished: Reached 'Max Pages' limit of {config.max_pages}."
+        # Final progress update to ensure the bar is full
         progress_msg = ProgressMessage(value=pages_saved, max_value=config.max_pages)
         message_queue.put(progress_msg)
+    elif urls_to_visit.empty():
+        status_key = StatusType.SOURCE_COMPLETE
+        message = f"\nWeb scrape finished: Explored all reachable links within the specified 'Crawl Depth' ({config.crawl_depth}). Saved {pages_saved} pages."
+    else:
+        # This case handles when the loop breaks for a reason other than the main conditions.
+        status_key = StatusType.SOURCE_COMPLETE
+        message = f"\nWeb scrape finished. Saved {pages_saved} pages."
 
-    status_key = StatusType.CANCELLED if cancel_event.is_set() else StatusType.SOURCE_COMPLETE
-    message = "Process cancelled by user." if cancel_event.is_set() else f"\nWeb scrape finished. Saved {pages_saved} pages."
     message_queue.put(StatusMessage(status=status_key, message=message))

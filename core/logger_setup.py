@@ -46,21 +46,22 @@ def setup_logging(log_level_str: str, log_max_size_mb: int, log_backup_count: in
         The QtLogEmitter instance whose signal can be connected to the UI.
     """
     log_level = getattr(logging, log_level_str.upper(), logging.INFO)
-    log_formatter = logging.Formatter("[%(asctime)s] [%(levelname)-8s] - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    log_formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
     # --- File Handler ---
     app_data_dir = get_app_data_dir()
     log_dir = app_data_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file_path = log_dir / "app.log"
-    # Use RotatingFileHandler to prevent log files from growing indefinitely
     file_handler = RotatingFileHandler(log_file_path, maxBytes=log_max_size_mb * 1024 * 1024, backupCount=log_backup_count, encoding="utf-8")
     file_handler.setFormatter(log_formatter)
+    file_handler.setLevel(log_level)  # Set level on the handler
 
     # --- UI Emitter and Handler ---
     qt_log_emitter = QtLogEmitter()
     qt_handler = QtLogHandler(qt_log_emitter)
     qt_handler.setFormatter(log_formatter)
+    qt_handler.setLevel(log_level)  # Set level on the handler
 
     # --- Root Logger Configuration ---
     root_logger = logging.getLogger()

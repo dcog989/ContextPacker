@@ -31,7 +31,6 @@ class MainWindow(QWidget):
         self.config_service = config_service
         self.scraped_files = []
         self.local_files = []
-        self.discovered_url_count = 0
         self._managing_log_size = False  # Guard against recursive calls
 
         # Initialize Factory instances, passing config data
@@ -183,7 +182,7 @@ class MainWindow(QWidget):
         self.progress_gauge.setValue(0)
         self.progress_gauge.setVisible(is_web_mode)
         self.update_delete_button_state()
-        self.update_file_count()
+        self.update_stats_label()
 
     def add_scraped_files_batch(self, files_data):
         if not files_data:
@@ -205,10 +204,10 @@ class MainWindow(QWidget):
             except StopIteration:
                 self.standard_log_list.blockSignals(False)
                 self.standard_log_list.setSortingEnabled(True)
-                self.update_file_count()
+                self.update_stats_label()
                 return
         QTimer.singleShot(0, self.batch_insert_step)
-        self.update_file_count()
+        self.update_stats_label()
 
     def populate_local_file_list(self, files):
         self.local_file_list.setSortingEnabled(False)
@@ -224,7 +223,7 @@ class MainWindow(QWidget):
             self.local_file_list.setItem(row, 2, size_item)
         self.local_file_list.setSortingEnabled(True)
         self.local_file_list.sortByColumn(1, Qt.SortOrder.DescendingOrder)
-        self.update_file_count()
+        self.update_stats_label()
 
     def update_delete_button_state(self):
         list_widget = self.standard_log_list if self.standard_log_list.isVisible() else self.local_file_list
@@ -235,9 +234,8 @@ class MainWindow(QWidget):
         self.verbose_log_widget.clear()
         self.standard_log_list.setRowCount(0)
         self.scraped_files.clear()
-        self.discovered_url_count = 0
         self.update_delete_button_state()
-        self.update_file_count()
+        self.update_stats_label()
 
     def manage_log_size(self):
         if self._managing_log_size:
@@ -254,19 +252,25 @@ class MainWindow(QWidget):
         finally:
             self._managing_log_size = False
 
-    def update_discovered_count(self, count):
-        self.discovered_url_count = count
-        self.update_file_count()
+    def update_web_crawl_stats(self, saved_count, total_count):
+        """Updates the label with web crawl specific stats."""
+        if total_count > 0:
+            label = f"{saved_count} saved / {total_count} discovered"
+            self.file_count_label.setText(label)
+        else:
+            self.file_count_label.setText("")
 
-    def update_file_count(self):
-        label = ""
-        if self.standard_log_list.isVisible():
-            saved = len(self.scraped_files)
-            total = saved + self.discovered_url_count
-            if total > 0:
-                label = f"{saved} saved / {total} discovered"
-        elif self.local_file_list.isVisible():
+    def update_stats_label(self):
+        """Updates the file count label based on the current view mode."""
+        if self.local_file_list.isVisible():
             count = len(self.local_files)
             if count > 0:
                 label = f"{count} item(s)"
-        self.file_count_label.setText(label)
+                self.file_count_label.setText(label)
+            else:
+                self.file_count_label.setText("")
+        else:
+            # For web crawl, the stats are pushed from the controller,
+            # so we only clear it if there are no files.
+            if not self.scraped_files:
+                self.file_count_label.setText("")
