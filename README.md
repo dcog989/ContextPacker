@@ -18,7 +18,7 @@ ContextPacker is a desktop application designed to scrape websites, clone Git re
   * **Smart Filtering:** Automatically respects **`.gitignore`** rules and allows hiding common binary and image files.
 * **Customisability:**
   * **Customisable Settings:** Configure scraping options (depth, paths, speed) and file exclusions.
-  * **External Configuration:** Key settings (`user_agents`, `default_local_excludes`, `binary_file_patterns`) can be modified in a **`config.json`** file created on first run.
+  * **External Configuration:** Key settings (`user_agents`, `default_local_excludes`, `binary_file_patterns`) can be modified in a **`settings.json`** file created on first run.
 * **Cross-Platform:** Supports Light and Dark themes (detects system theme on Windows, macOS, and Linux).
 
 -----
@@ -43,6 +43,25 @@ The application operates in two main modes, selected via radio buttons:
 3. Use the **Excludes** text area for patterns to exclude (combined with `.gitignore` rules).
 4. Use checkboxes to include subdirectories or hide common binary/image files.
 5. Click **"Package"**. The packaged file will be saved in your Downloads folder using the selected output format.
+
+-----
+
+## 🔧 Advanced Configuration (`settings.json`)
+
+The application creates a `settings.json` file on first run in the application data directory (e.g., `%APPDATA%\ContextPacker` on Windows). This file contains settings that are only read once on startup and are intended to be user-managed.
+
+| Key | Description | Default Value | Notes |
+| :--- | :--- | :--- | :--- |
+| `logging_level` | Sets the verbosity of the internal log output. | `"INFO"` | Options: `"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`, `"CRITICAL"`. |
+| `log_max_size_mb` | Maximum size (in megabytes) of the `app.log` file before log rotation occurs. | `3` | |
+| `log_backup_count` | Number of backup log files to keep during rotation. | `5` | |
+| `user_agents` | A list of strings used by the web crawler to identify itself. | `[...]` | The application cycles through these. |
+| `default_output_format` | The default file extension selected in the Output panel. | `".md"` | Options: `".md"`, `".txt"`, `".xml"`. |
+| `default_local_excludes` | A list of global `fnmatch` patterns automatically applied to local directory scans. | `[".archive/", ".git/", ...]` | These are visible and editable in the 'Excludes' text area. |
+| `binary_file_patterns` | A list of `fnmatch` patterns that are considered binary/image files and can be toggled via the 'Hide Images + Binaries' checkbox. | `[*.png, *.jpg, ...]` | |
+| `max_age_cache_days` | The number of days after which old, temporary session and cache directories are automatically deleted on startup. | `7` | Set to a high number to keep all cache files indefinitely. |
+
+The file also contains window-state keys (`window_size`, `h_sash_state`, etc.) which are managed automatically by the application on close.
 
 -----
 

@@ -63,10 +63,15 @@ class WorkerErrorHandler:
                     self.log_message("Process terminated gracefully.")
                     return True
                 except subprocess.TimeoutExpired:
+                    # Graceful terminate failed, force kill
                     process.kill()
-                    process.wait(timeout=PROCESS_FORCE_KILL_WAIT_SECONDS)
-                    self.log_message("Process killed forcefully.")
-                    return True
+                    try:
+                        process.wait(timeout=PROCESS_FORCE_KILL_WAIT_SECONDS)
+                        self.log_message("Process killed forcefully.")
+                        return True
+                    except subprocess.TimeoutExpired:
+                        self.log_message("Process force-kill timed out. Process may be a zombie.")
+                        return False  # Indicate that cleanup failed
         except Exception as e:
             self.log_message(f"Warning during process cleanup: {e}")
             return False

@@ -62,6 +62,7 @@ class MainWindow(QWidget):
         self.hide_binaries_check: QCheckBox
         self.dir_level_ctrl: QSpinBox
         self.list_group: QGroupBox
+        self.list_stack_layout: QVBoxLayout
         self.standard_log_list: QTableWidget
         self.local_file_list: QTableWidget
         self.progress_gauge: QProgressBar

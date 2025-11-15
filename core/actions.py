@@ -59,8 +59,10 @@ def clone_repo_worker(url, path, message_queue: queue.Queue, cancel_event: threa
 
     try:
         resolved_path = Path(path).resolve()
-        if not any(parent.name == "cache" for parent in resolved_path.parents):
-            message_queue.put(StatusMessage(status=StatusType.ERROR, message="Invalid clone path detected."))
+        app_cache_dir = Path(get_app_data_dir()) / "cache"
+        # Ensure the resolved path is a sub-path of the application's cache directory
+        if not resolved_path.is_relative_to(app_cache_dir):
+            message_queue.put(StatusMessage(status=StatusType.ERROR, message="Invalid clone path detected: Path is outside the application cache directory."))
             return
     except Exception:
         message_queue.put(StatusMessage(status=StatusType.ERROR, message="Invalid path provided."))
@@ -116,6 +118,8 @@ def clone_repo_worker(url, path, message_queue: queue.Queue, cancel_event: threa
         if process:
             if reader_thread and reader_thread.is_alive():
                 reader_thread.join(timeout=GIT_READER_THREAD_JOIN_TIMEOUT_SECONDS)
+                if reader_thread.is_alive():
+                    error_handler.log_message("Warning: Git output reader thread did not terminate in time.")
             error_handler.handle_process_cleanup(process)
             error_handler.handle_stream_cleanup(process)
 
@@ -125,16 +129,17 @@ def packaging_worker(source_dir, output_path, repomix_style, exclude_patterns, t
     logging.debug(f"Packaging worker started. Source: {source_dir}, Output: {output_path}")
 
     class RepomixProgressHandler(logging.Handler):
-        def __init__(self, msg_queue, total_files_count):
+        def __init__(self, msg_queue, total_files_count, cancel_event: threading.Event):
             super().__init__()
             self.msg_queue = msg_queue
             self.total_files = total_files_count
             self.processed_count = 0
+            self.cancel_event = cancel_event
             self.batch_size = REPOMIX_PROGRESS_UPDATE_BATCH_SIZE
             self.last_progress_value = -1
 
         def emit(self, record):
-            if cancel_event.is_set():
+            if self.cancel_event.is_set():
                 return
 
             msg = self.format(record)
@@ -150,10 +155,11 @@ def packaging_worker(source_dir, output_path, repomix_style, exclude_patterns, t
 
     repomix_logger = logging.getLogger("repomix")
     original_level = repomix_logger.level
-    progress_handler = RepomixProgressHandler(message_queue, total_files)
+    progress_handler = None
 
     try:
         repomix_logger.setLevel(logging.INFO)
+        progress_handler = RepomixProgressHandler(message_queue, total_files, cancel_event)
         repomix_logger.addHandler(progress_handler)
         run_repomix(
             source_dir,
@@ -164,7 +170,8 @@ def packaging_worker(source_dir, output_path, repomix_style, exclude_patterns, t
             exclude_patterns=exclude_patterns,
         )
     finally:
-        repomix_logger.removeHandler(progress_handler)
+        if progress_handler:
+            repomix_logger.removeHandler(progress_handler)
         repomix_logger.setLevel(original_level)
         logging.debug(f"Packaging worker finished for source: {source_dir}")
 
