@@ -116,7 +116,7 @@ class App(QMainWindow):
 
     def _setup_app_dirs_and_cleanup(self):
         app_data_dir = get_app_data_dir()
-        cache_dir = app_data_dir / "Cache"
+        cache_dir = app_data_dir / "cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
         try:
             days_threshold = self.config_service.get("max_age_cache_days", 7)

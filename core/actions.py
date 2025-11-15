@@ -37,7 +37,7 @@ from .config import CrawlerConfig
 def create_session_dir():
     """Creates a new timestamped directory for a session in the app data cache."""
     app_data_path = get_app_data_dir()
-    cache_path = app_data_path / "Cache"
+    cache_path = app_data_path / "cache"
     cache_path.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
@@ -59,7 +59,7 @@ def clone_repo_worker(url, path, message_queue: queue.Queue, cancel_event: threa
 
     try:
         resolved_path = Path(path).resolve()
-        if not any(parent.name == "Cache" for parent in resolved_path.parents):
+        if not any(parent.name == "cache" for parent in resolved_path.parents):
             message_queue.put(StatusMessage(status=StatusType.ERROR, message="Invalid clone path detected."))
             return
     except Exception:
