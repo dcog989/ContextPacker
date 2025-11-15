@@ -17,18 +17,8 @@ class MessageType(Enum):
     STATUS = "status"
     PROGRESS = "progress"
     FILE_SAVED = "file_saved"
-    UI_TASK_START = "ui_task_start"
-    UI_TASK_STOP = "ui_task_stop"
-    UI_TASK_STOPPING = "ui_task_stopping"
     GIT_CLONE_DONE = "git_clone_done"
     LOCAL_SCAN_COMPLETE = "local_scan_complete"
-
-
-class TaskType(Enum):
-    """Enumeration of task types."""
-
-    DOWNLOAD = "download"
-    PACKAGE = "package"
 
 
 class StatusType(Enum):
@@ -99,29 +89,6 @@ class FileSavedMessage:
 
 
 @dataclass
-class UITaskMessage:
-    """Structured UI task message."""
-
-    type: MessageType = MessageType.UI_TASK_START
-    task: TaskType = TaskType.DOWNLOAD
-
-
-@dataclass
-class UITaskStopMessage:
-    """Structured UI task stop message."""
-
-    type: MessageType = MessageType.UI_TASK_STOP
-    was_cancelled: bool = False
-
-
-@dataclass
-class UITaskStoppingMessage:
-    """Structured UI task stopping message."""
-
-    type: MessageType = MessageType.UI_TASK_STOPPING
-
-
-@dataclass
 class GitCloneDoneMessage:
     """Structured git clone completion message."""
 
@@ -151,7 +118,7 @@ class FileInfo:
 
 
 # Type alias for union of all message types
-Message = LogMessage | StatusMessage | ProgressMessage | FileSavedMessage | UITaskMessage | UITaskStopMessage | UITaskStoppingMessage | GitCloneDoneMessage | LocalScanCompleteMessage
+Message = LogMessage | StatusMessage | ProgressMessage | FileSavedMessage | GitCloneDoneMessage | LocalScanCompleteMessage
 
 
 def file_info_to_dict(file_info: FileInfo) -> Dict[str, Any]:

@@ -4,9 +4,6 @@ from PySide6.QtCore import Qt, QSize
 from core.utils import resource_path
 from core.icon_utils import render_svg_to_pixmap
 from core.constants import DEFAULT_MIN_PAUSE_MS, DEFAULT_MAX_PAUSE_MS
-from core.config_manager import get_config
-
-config = get_config()
 
 
 class InputPanelFactory:
@@ -15,9 +12,9 @@ class InputPanelFactory:
     returning a dictionary of initialized widgets.
     """
 
-    def __init__(self, parent_window):
-        # We store parent for access to properties like parent_window.app.version
+    def __init__(self, parent_window, config):
         self.parent = parent_window
+        self.config = config
 
     def create_crawler_panel(self):
         """Creates and configures the Web Crawl input panel, returning the panel and its controls."""
@@ -33,7 +30,7 @@ class InputPanelFactory:
         widgets = {"crawler_panel": panel}
 
         start_url_widget = QLineEdit()
-        user_agents = config.get("user_agents", [])
+        user_agents = self.config.get("user_agents", [])
         user_agent_widget = QComboBox()
         user_agent_widget.addItems(user_agents)
         user_agent_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -151,7 +148,7 @@ class InputPanelFactory:
         dir_layout.setSpacing(6)
         form_layout.addRow("Input Directory:", dir_layout)
 
-        default_excludes = config.get("default_local_excludes", [])
+        default_excludes = self.config.get("default_local_excludes", [])
         local_exclude_ctrl = QTextEdit()
         local_exclude_ctrl.setPlainText("\n".join(default_excludes))  # Use setPlainText instead of constructor
         local_exclude_ctrl.setMinimumHeight(80)  # Minimum height, but allow it to grow

@@ -1,7 +1,4 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QTextEdit, QPushButton, QTableWidget, QProgressBar, QHeaderView, QSizePolicy
-from core.config_manager import get_config
-
-config = get_config()
 
 
 class OutputPanelFactory:
@@ -10,8 +7,9 @@ class OutputPanelFactory:
     returning a dictionary of initialized widgets.
     """
 
-    def __init__(self, parent_window):
+    def __init__(self, parent_window, config):
         self.parent = parent_window
+        self.config = config
 
     def create_list_log_widgets(self):
         """
@@ -94,7 +92,7 @@ class OutputPanelFactory:
 
         output_format_choice = QComboBox()
         output_format_choice.addItems([".md", ".txt", ".xml"])
-        default_format = config.get("default_output_format", ".md")
+        default_format = self.config.get("default_output_format", ".md")
         output_format_choice.setCurrentText(default_format)
 
         package_button = QPushButton("Package")

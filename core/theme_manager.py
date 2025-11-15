@@ -3,7 +3,7 @@ from PySide6.QtGui import QPalette, QColor
 from PySide6.QtCore import Qt, QSize
 
 from ui.styles import AppTheme
-from core.utils import resource_path, set_title_bar_theme
+from core.utils import resource_path, set_title_bar_theme, get_app_data_dir
 from core.icon_utils import create_themed_svg_icon
 
 
@@ -13,7 +13,14 @@ class ThemeManager:
     def __init__(self, app_instance):
         self.app = app_instance
         self.main_panel = self.app.main_panel
+        self._setup_icons_dir()
         self.is_dark_mode_visual_state = self._check_if_system_is_dark()
+
+    def _setup_icons_dir(self):
+        """Creates and stores the path to the persistent icons directory."""
+        app_data_dir = get_app_data_dir()
+        self.icons_dir_path = app_data_dir / "icons"
+        self.icons_dir_path.mkdir(parents=True, exist_ok=True)
 
     def _check_if_system_is_dark(self) -> bool:
         """Checks if the system/Qt palette is currently in a dark mode."""
@@ -62,7 +69,7 @@ class ThemeManager:
         app.setPalette(palette)
 
         # 2. Apply the custom stylesheet for accent colors and component specifics
-        theme = AppTheme(is_dark=is_dark)
+        theme = AppTheme(is_dark=is_dark, icons_dir_path=self.icons_dir_path)
         app.setStyleSheet(theme.get_stylesheet())
 
         # 3. Update Windows title bar theme (only if running on Windows)

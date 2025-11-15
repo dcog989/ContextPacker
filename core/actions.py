@@ -6,6 +6,7 @@ import logging
 import fnmatch
 import queue
 import re
+import os
 
 from .packager import run_repomix
 from .utils import get_app_data_dir, get_downloads_folder
@@ -18,10 +19,22 @@ from .constants import (
     GIT_READER_THREAD_JOIN_TIMEOUT_SECONDS,
     REPOMIX_PROGRESS_UPDATE_BATCH_SIZE,
 )
-from .types import StatusMessage, ProgressMessage, LogMessage, StatusType, FileType, FileInfo, file_info_to_dict, dict_to_file_info
+from .types import (
+    StatusMessage,
+    ProgressMessage,
+    LogMessage,
+    StatusType,
+    FileType,
+    FileInfo,
+    file_info_to_dict,
+    dict_to_file_info,
+    GitCloneDoneMessage,
+    LocalScanCompleteMessage,
+)
+from .config import CrawlerConfig
 
 
-def _create_session_dir():
+def create_session_dir():
     """Creates a new timestamped directory for a session in the app data cache."""
     app_data_path = get_app_data_dir()
     cache_path = app_data_path / "Cache"
@@ -33,173 +46,118 @@ def _create_session_dir():
     return str(session_dir)
 
 
-def start_download(app, cancel_event):
-    """Initializes the temporary directory and is called before the web crawling process."""
-    app.main_panel.clear_logs()
-    app.main_panel.progress_gauge.setValue(0)
-
-    if app.state.temp_dir and Path(app.state.temp_dir).is_dir():
-        shutil.rmtree(app.state.temp_dir)
-
-    app.state.temp_dir = _create_session_dir()
-    app.log_verbose(f"Created temporary directory: {app.state.temp_dir}")
-    app.log_verbose("Starting url conversion...")
-
-    # The actual crawl_website call is submitted by task_handler.py to the executor.
-
-
-def start_git_clone(app, url, cancel_event):
-    """Initializes the temporary directory for git clone.
-
-    Returns:
-        str: The path to the created temporary directory.
-    """
-    app.main_panel.clear_logs()
-
-    if app.state.temp_dir and Path(app.state.temp_dir).is_dir():
-        shutil.rmtree(app.state.temp_dir)
-
-    app.state.temp_dir = _create_session_dir()
-    app.log_verbose(f"Created temporary directory for git clone: {app.state.temp_dir}")
-    app.log_verbose(f"Starting git clone for {url}...")
-    return app.state.temp_dir
-
-
-def _clone_repo_worker(url, path, log_queue, cancel_event, shutdown_event):
+def clone_repo_worker(url, path, message_queue: queue.Queue, cancel_event: threading.Event):
     """Worker function to perform a git clone and stream output."""
-    # Validate git availability using centralized utility
     if not validate_tool_availability("git"):
-        log_queue.put(create_tool_missing_error("git"))
+        message_queue.put(create_tool_missing_error("git"))
         return
 
-    # Security: Validate and sanitize git URL
     git_url_pattern = r"^(https?://|git@|ssh://|file://)[a-zA-Z0-9._/-]+(:[0-9]+)?(/.*)?$"
     if not re.match(git_url_pattern, url.strip()):
-        error_msg = StatusMessage(status=StatusType.ERROR, message="Invalid or potentially malicious git URL provided.")
-        log_queue.put(error_msg)
+        message_queue.put(StatusMessage(status=StatusType.ERROR, message="Invalid or potentially malicious git URL provided."))
         return
 
-    # Security: Validate path to prevent directory traversal
     try:
         resolved_path = Path(path).resolve()
-        # Ensure path is within expected temp directory structure
         if not any(parent.name == "Cache" for parent in resolved_path.parents):
-            error_msg = StatusMessage(status=StatusType.ERROR, message="Invalid clone path detected.")
-            log_queue.put(error_msg)
+            message_queue.put(StatusMessage(status=StatusType.ERROR, message="Invalid clone path detected."))
             return
     except Exception:
-        error_msg = StatusMessage(status=StatusType.ERROR, message="Invalid path provided.")
-        log_queue.put(error_msg)
+        message_queue.put(StatusMessage(status=StatusType.ERROR, message="Invalid path provided."))
         return
 
-    # Initialize centralized error handler
-    error_handler = WorkerErrorHandler(log_queue, shutdown_event)
+    error_handler = WorkerErrorHandler(message_queue, cancel_event)  # shutdown_event is cancel_event now
     process = None
-    output_queue = None
+    output_queue = queue.Queue()
     reader_thread = None
 
     try:
-        # Create process with centralized utility
         process = create_process_with_flags(["git", "clone", "--depth", "1", url, path])
-
         if not process.stdout:
             process.wait()
-            error_msg = StatusMessage(status=StatusType.ERROR, message="Failed to capture git clone output stream.")
-            log_queue.put(error_msg)
+            message_queue.put(StatusMessage(status=StatusType.ERROR, message="Failed to capture git clone output stream."))
             return
 
-        output_queue = queue.Queue()
-        reader_thread = threading.Thread(target=safe_stream_enqueue, args=(process.stdout, output_queue, shutdown_event), daemon=True)
+        reader_thread = threading.Thread(target=safe_stream_enqueue, args=(process.stdout, output_queue, cancel_event), daemon=True)
         reader_thread.start()
 
         while process.poll() is None:
-            if cancel_event.is_set() or shutdown_event.is_set():
+            if cancel_event.is_set():
                 error_handler.handle_process_cleanup(process)
-                cancel_msg = StatusMessage(status=StatusType.CANCELLED, message="Git clone cancelled.")
-                log_queue.put(cancel_msg)
+                message_queue.put(StatusMessage(status=StatusType.CANCELLED, message="Git clone cancelled."))
                 return
 
             try:
                 line = output_queue.get(timeout=GIT_CLONE_OUTPUT_POLL_SECONDS)
-                if line and not shutdown_event.is_set():
-                    # line is already a LogMessage object from safe_stream_enqueue
-                    log_queue.put(line)
+                if line and isinstance(line, LogMessage):
+                    # The stream enqueue still produces LogMessage objects
+                    logging.info(line.message.strip())
             except queue.Empty:
                 continue
 
         while not output_queue.empty():
             line = output_queue.get_nowait()
-            if line and not shutdown_event.is_set():
-                # line is already a LogMessage object from safe_stream_enqueue
-                log_queue.put(line)
+            if line and isinstance(line, LogMessage):
+                logging.info(line.message.strip())
 
-        if cancel_event.is_set() or shutdown_event.is_set():
-            cancel_msg = StatusMessage(status=StatusType.CANCELLED, message="Git clone cancelled.")
-            log_queue.put(cancel_msg)
+        if cancel_event.is_set():
+            message_queue.put(StatusMessage(status=StatusType.CANCELLED, message="Git clone cancelled."))
             return
 
         if process.returncode == 0:
-            complete_msg = StatusMessage(status=StatusType.CLONE_COMPLETE, message="", path=path)
-            log_queue.put(complete_msg)
+            message_queue.put(GitCloneDoneMessage(path=path))
+            message_queue.put(StatusMessage(status=StatusType.CLONE_COMPLETE, message="✔ Git clone successful."))
         else:
-            error_msg = StatusMessage(status=StatusType.ERROR, message="Git clone failed. Check the log for details.")
-            log_queue.put(error_msg)
+            message_queue.put(StatusMessage(status=StatusType.ERROR, message="Git clone failed. Check the log for details."))
 
     except Exception as e:
-        error_msg = error_handler.handle_worker_exception(e, "git clone")
-        log_queue.put(error_msg)
+        message_queue.put(error_handler.handle_worker_exception(e, "git clone"))
     finally:
-        # Ensure proper cleanup of process resources using centralized utilities
-        if process is not None:
-            # Wait for reader thread to finish processing the stream
-            if reader_thread is not None and reader_thread.is_alive():
+        if process:
+            if reader_thread and reader_thread.is_alive():
                 reader_thread.join(timeout=GIT_READER_THREAD_JOIN_TIMEOUT_SECONDS)
-
-            # Use centralized process cleanup
             error_handler.handle_process_cleanup(process)
-
-            # Use centralized stream cleanup
             error_handler.handle_stream_cleanup(process)
 
 
-def start_packaging(app, cancel_event, file_list=None):
-    """Initializes and starts the packaging process in a new thread."""
-    is_web_mode = app.main_panel.web_crawl_radio.isChecked()
-    app.filename_prefix = app.main_panel.output_filename_ctrl.text().strip() or "ContextPacker-package"
-    source_dir = ""
-    effective_excludes = []
+def packaging_worker(source_dir, output_path, repomix_style, exclude_patterns, total_files, message_queue: queue.Queue, cancel_event: threading.Event):
+    """Worker that wraps run_repomix and handles progress reporting."""
 
-    if is_web_mode:
-        if not app.state.temp_dir or not any(Path(app.state.temp_dir).iterdir()):
-            app.log_verbose("ERROR: No downloaded content to package. Please run 'Download & Convert' first.")
-            return
-        source_dir = app.state.temp_dir
-        effective_excludes = []
-    else:
-        source_dir = app.main_panel.local_dir_ctrl.text()
-        default_excludes = [p.strip() for p in app.main_panel.local_exclude_ctrl.toPlainText().splitlines() if p.strip()]
-        effective_excludes = list(set(default_excludes) | app.state.local_files_to_exclude | app.state.local_depth_excludes)
+    class RepomixProgressHandler(logging.Handler):
+        def __init__(self, msg_queue, total_files_count):
+            super().__init__()
+            self.msg_queue = msg_queue
+            self.total_files = total_files_count
+            self.processed_count = 0
+            self.batch_size = REPOMIX_PROGRESS_UPDATE_BATCH_SIZE
+            self.last_progress_value = -1
 
-    extension = app.main_panel.output_format_choice.currentText()
-    style_map = {".md": "markdown", ".txt": "plain", ".xml": "xml"}
-    repomix_style = style_map.get(extension, "markdown")
+        def emit(self, record):
+            if cancel_event.is_set():
+                return
 
-    app.main_panel.progress_gauge.setValue(0)
+            msg = self.format(record)
+            if "Processing file:" in msg:
+                self.processed_count += 1
+                if self.total_files > 0:
+                    progress_value = min(int((self.processed_count / self.total_files) * 100), 100)
+                    if progress_value != self.last_progress_value or self.processed_count % self.batch_size == 0:
+                        self.msg_queue.put(ProgressMessage(value=progress_value, max_value=100))
+                        self.last_progress_value = progress_value
 
-    _run_packaging_thread(app, source_dir, app.filename_prefix, effective_excludes, extension, repomix_style, cancel_event, file_list)
+            logging.info(msg)
 
-
-def _packaging_worker(source_dir, output_path, log_queue, cancel_event, repomix_style, exclude_patterns, progress_handler):
-    """Worker function that wraps run_repomix to handle logging setup/teardown."""
     repomix_logger = logging.getLogger("repomix")
     original_level = repomix_logger.level
-    repomix_logger.setLevel(logging.INFO)
-    repomix_logger.addHandler(progress_handler)
+    progress_handler = RepomixProgressHandler(message_queue, total_files)
+
     try:
+        repomix_logger.setLevel(logging.INFO)
+        repomix_logger.addHandler(progress_handler)
         run_repomix(
             source_dir,
             output_path,
-            log_queue,
+            message_queue,
             cancel_event,
             repomix_style=repomix_style,
             exclude_patterns=exclude_patterns,
@@ -209,89 +167,20 @@ def _packaging_worker(source_dir, output_path, log_queue, cancel_event, repomix_
         repomix_logger.setLevel(original_level)
 
 
-def _run_packaging_thread(app, source_dir, filename_prefix, exclude_paths, extension, repomix_style, cancel_event, file_list=None):
-    """Configures and runs the repomix packager in a worker thread."""
-    timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
-    downloads_path = get_downloads_folder()
-    output_basename = f"{filename_prefix}-{timestamp}{extension}"
-    app.state.final_output_path = str(Path(downloads_path) / output_basename)
-
-    app.log_verbose("\nStarting packaging process...")
-    app.log_verbose(f"Output file will be saved to: {app.state.final_output_path}")
-
-    class RepomixProgressHandler(logging.Handler):
-        def __init__(self, log_queue_ref, total_files_ref, shutdown_event_ref):
-            super(RepomixProgressHandler, self).__init__()
-            self.log_queue = log_queue_ref
-            self.processed_count = 0
-            self.total_files = total_files_ref
-            self.shutdown_event = shutdown_event_ref
-            self.batch_size = REPOMIX_PROGRESS_UPDATE_BATCH_SIZE  # Update progress every 10 files
-            self.last_progress_value = 0
-
-        def emit(self, record):
-            # Don't emit during shutdown to prevent race conditions
-            if self.shutdown_event.is_set():
-                return
-
-            msg = self.format(record)
-            if "Processing file:" in msg:
-                self.processed_count += 1
-                progress_value = int((self.processed_count / self.total_files) * 100) if self.total_files > 0 else 0
-                progress_value = min(progress_value, 100)  # Clamp at 100%
-
-                # Only send progress updates if progress changed significantly or every batch_size files
-                if progress_value != self.last_progress_value or self.processed_count % self.batch_size == 0 or self.processed_count == self.total_files:
-                    progress_msg = ProgressMessage(value=progress_value, max_value=100)
-                    self.log_queue.put(progress_msg)
-                    self.last_progress_value = progress_value
-
-            log_msg = LogMessage(message=msg)
-            self.log_queue.put(log_msg)
-
-    total_files_for_progress = 0
-    is_web_mode = app.main_panel.web_crawl_radio.isChecked()
-    if file_list is not None:
-        if is_web_mode:
-            total_files_for_progress = len(file_list)
-        else:
-            total_files_for_progress = len([f for f in file_list if dict_to_file_info(f).type == FileType.FILE])
-
-    progress_handler = RepomixProgressHandler(app.log_queue, total_files_for_progress, app.shutdown_event)
-    progress_handler.setLevel(logging.INFO)
-
-    args = (
-        source_dir,
-        app.state.final_output_path,
-        app.log_queue,
-        cancel_event,
-        repomix_style,
-        exclude_paths,
-        progress_handler,
-    )
-    app.state.worker_future = app.executor.submit(_packaging_worker, *args)
+# --- Local File Scanning ---
 
 
-# --- Local File Scanning Refactor ---
 def _load_ignore_patterns(ignore_file_path, cache, cache_lock):
     """Load and cache ignore patterns efficiently."""
-    if cache is None or cache_lock is None:
-        return []
-
     cache_key = str(ignore_file_path)
     with cache_lock:
         try:
             stat_info = ignore_file_path.stat()
             mtime = stat_info.st_mtime
-
-            if cache_key in cache:
-                cached = cache[cache_key]
-                if cached.get("mtime") == mtime:
-                    return cached["patterns"]
-
+            if cache_key in cache and cache[cache_key].get("mtime") == mtime:
+                return cache[cache_key]["patterns"]
             with open(ignore_file_path, "r", encoding="utf-8") as f:
                 patterns = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
-
             cache[cache_key] = {"mtime": mtime, "patterns": patterns}
             return patterns
         except Exception:
@@ -303,145 +192,102 @@ def _load_ignore_patterns(ignore_file_path, cache, cache_lock):
 def _prepare_filters(root_dir, use_gitignore, custom_excludes, binary_excludes, gitignore_cache, gitignore_cache_lock):
     """Loads all ignore patterns and returns a compiled filter function."""
     base_path = Path(root_dir)
-    all_patterns = []
+    all_patterns = set(custom_excludes) | set(binary_excludes)
 
-    # 1. Load gitignore patterns
     if use_gitignore:
-        ignore_files_to_check = [".repomixignore", ".gitignore"]
-        for filename in ignore_files_to_check:
+        for filename in [".repomixignore", ".gitignore"]:
             ignore_file_path = base_path / filename
             if ignore_file_path.is_file():
-                all_patterns.extend(_load_ignore_patterns(ignore_file_path, gitignore_cache, gitignore_cache_lock))
+                all_patterns.update(_load_ignore_patterns(ignore_file_path, gitignore_cache, gitignore_cache_lock))
 
-    # 2. Add custom and binary excludes
-    all_patterns.extend(custom_excludes)
-    all_patterns.extend(binary_excludes)
+    compiled_patterns = [re.compile(fnmatch.translate(p)) for p in all_patterns if p]
 
-    # 3. Compile patterns to regex
-    compiled_regex_patterns = []
-    for pattern in all_patterns:
-        try:
-            compiled_regex_patterns.append(re.compile(fnmatch.translate(pattern)))
-        except re.error:
-            continue
-
-    # 4. Return a callable that checks against the compiled patterns
     def is_ignored(rel_path, is_dir=False):
-        path_str = rel_path.as_posix()
-        if is_dir:
-            path_str = path_str.rstrip("/") + "/"
-
-        for regex in compiled_regex_patterns:
-            if regex.match(path_str):
-                return True
-        return False
+        path_str = rel_path.as_posix() + ("/" if is_dir else "")
+        return any(regex.match(path_str) for regex in compiled_patterns)
 
     return is_ignored
 
 
 def _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event):
-    """
-    Scans a directory, applies filters, and formats file/folder info.
-    Returns a list of FileInfo dictionaries and a set of paths excluded due to depth.
-    """
     from collections import deque
 
     base_path = Path(root_dir)
-    files_to_show = []
-    depth_excludes = set()
-
+    files_to_show, depth_excludes = [], set()
     if max_depth == UNLIMITED_DEPTH_VALUE:
         max_depth = UNLIMITED_DEPTH_REPLACEMENT
 
-    queue = deque([(base_path, Path("."), 0)])  # current_path, rel_path, depth
-
+    queue = deque([(base_path, Path("."), 0)])
     while queue:
-        if cancel_event and cancel_event.is_set():
+        if cancel_event.is_set():
             return [], set()
-
         current_path, rel_path, current_depth = queue.popleft()
-
         try:
-            entries = list(current_path.iterdir())
-        except (OSError, PermissionError):
-            continue
-
-        for entry in entries:
-            if cancel_event and cancel_event.is_set():
-                return [], set()
-
-            entry_rel_path = rel_path / entry.name
-            is_dir = entry.is_dir()
-
-            if is_ignored_func(entry_rel_path, is_dir):
-                continue
-
-            if is_dir:
-                rel_path_str = entry_rel_path.as_posix() + "/"
-                folder_info = FileInfo(name=rel_path_str, type=FileType.FOLDER, size=0, size_str="", rel_path=rel_path_str)
-                files_to_show.append(file_info_to_dict(folder_info))
-
-                if current_depth < max_depth:
-                    queue.append((entry, entry_rel_path, current_depth + 1))
-                else:
-                    depth_excludes.add(rel_path_str)
-            else:  # is file
-                try:
-                    stat_info = entry.stat()
-                    size = stat_info.st_size
-                    size_str = f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
-                    rel_path_str = entry_rel_path.as_posix()
-
-                    file_info = FileInfo(name=rel_path_str, type=FileType.FILE, size=size, size_str=size_str, rel_path=rel_path_str)
-                    files_to_show.append(file_info_to_dict(file_info))
-                except (OSError, ValueError):
+            for entry in current_path.iterdir():
+                if cancel_event.is_set():
+                    return [], set()
+                entry_rel_path = rel_path / entry.name
+                if is_ignored_func(entry_rel_path, entry.is_dir()):
                     continue
 
+                rel_path_str = entry_rel_path.as_posix()
+                if entry.is_dir():
+                    files_to_show.append(file_info_to_dict(FileInfo(name=f"{rel_path_str}/", type=FileType.FOLDER, rel_path=f"{rel_path_str}/")))
+                    if current_depth < max_depth:
+                        queue.append((entry, entry_rel_path, current_depth + 1))
+                    else:
+                        depth_excludes.add(f"{rel_path_str}/")
+                else:
+                    try:
+                        stat = entry.stat()
+                        size_str = f"{stat.st_size / 1024:.1f} KB" if stat.st_size >= 1024 else f"{stat.st_size} B"
+                        files_to_show.append(file_info_to_dict(FileInfo(name=rel_path_str, type=FileType.FILE, size=stat.st_size, size_str=size_str, rel_path=rel_path_str)))
+                    except (OSError, ValueError):
+                        continue
+        except (OSError, PermissionError):
+            continue
     return files_to_show, depth_excludes
 
 
-def _sort_key_func(item):
-    """Provides a sort key for file/folder items: folders first, then by name."""
-    return (0 if item["type"] == FileType.FOLDER.value else 1, item["name"].lower())
-
-
-def _format_and_sort_results(scan_results):
-    """Sorts the list of file info dictionaries, using a heap for large lists."""
+def _sort_results(results):
     import heapq
 
-    if not scan_results:
-        return []
-
-    if len(scan_results) > LARGE_DIRECTORY_THRESHOLD:
-        # Use heap for efficient sorting of large lists
-        heap = [(_sort_key_func(item), item) for item in scan_results]
+    sort_key = lambda item: (0 if item["type"] == FileType.FOLDER.value else 1, item["name"].lower())
+    if len(results) > LARGE_DIRECTORY_THRESHOLD:
+        heap = [(sort_key(item), item) for item in results]
         heapq.heapify(heap)
         return [heapq.heappop(heap)[1] for _ in range(len(heap))]
-    else:
-        # Use regular sort for smaller lists
-        scan_results.sort(key=_sort_key_func)
-        return scan_results
+    return sorted(results, key=sort_key)
 
 
-def get_local_files(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, cancel_event=None, gitignore_cache=None, gitignore_cache_lock=None):
-    """
-    Scans a directory and returns a filtered, formatted, and sorted list of files and folders.
-    This function orchestrates the scanning, filtering, and sorting process.
-    """
-    base_path = Path(root_dir)
-    if not base_path.is_dir():
-        return [], set()
+def get_local_files_worker(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, gitignore_cache, gitignore_cache_lock, message_queue: queue.Queue, cancel_event: threading.Event):
+    """Worker to scan local files and report back via message queue."""
+    try:
+        base_path = Path(root_dir)
+        if not base_path.is_dir():
+            message_queue.put(LocalScanCompleteMessage(results=([], set())))
+            return
 
-    # 1. Prepare filter function from all exclusion sources
-    is_ignored_func = _prepare_filters(root_dir, use_gitignore, custom_excludes, binary_excludes, gitignore_cache, gitignore_cache_lock)
+        is_ignored_func = _prepare_filters(root_dir, use_gitignore, custom_excludes, binary_excludes, gitignore_cache, gitignore_cache_lock)
+        scan_results, depth_excludes = _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event)
+        if cancel_event.is_set():
+            message_queue.put(LocalScanCompleteMessage(results=None))
+            return
 
-    # 2. Scan directory, applying filters as we go to prune branches
-    scan_results, depth_excludes = _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event)
+        sorted_results = _sort_results(scan_results)
+        message_queue.put(LocalScanCompleteMessage(results=(sorted_results, depth_excludes)))
+    except Exception as e:
+        logging.error(f"Error scanning directory: {e}", exc_info=True)
+        message_queue.put(LocalScanCompleteMessage(results=None))
 
-    if cancel_event and cancel_event.is_set():
-        return [], set()
 
-    # 3. Sort the collected results
-    sorted_results = _format_and_sort_results(scan_results)
+def open_folder_worker(folder_path: str, message_queue: queue.Queue, cancel_event: threading.Event):
+    """Simple worker to open a folder without blocking the UI."""
+    from .utils import open_folder
 
-    return sorted_results, depth_excludes
+    if cancel_event.is_set():
+        return
+    try:
+        open_folder(folder_path)
+    except Exception as e:
+        logging.error(f"Failed to open folder {folder_path}: {e}")

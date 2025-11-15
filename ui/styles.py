@@ -1,10 +1,12 @@
 from PySide6.QtCore import QSize
 from core.utils import resource_path
+from pathlib import Path
 
 
 class AppTheme:
-    def __init__(self, is_dark=True):
+    def __init__(self, is_dark=True, icons_dir_path=None):
         self.is_dark = is_dark
+        self.icons_dir = Path(icons_dir_path) if icons_dir_path else None
         self.accent_color = "#2E8B57"  # Darker green from logo
         self.accent_color_lighter = "#3CB371"  # Lighter green from logo
         self.accent_color_darker = "#153E27"  # Darker green
@@ -52,12 +54,15 @@ class AppTheme:
         self._setup_themed_icons()
 
     def _setup_themed_icons(self):
-        """Generates and saves themed icons required by the stylesheet."""
+        """
+        Ensures themed icons exist in a persistent directory, generating them only if they are missing.
+        This improves performance by avoiding icon generation on every run.
+        """
         from core.icon_utils import colorize_svg, render_svg_to_pixmap
-        from core.utils import get_app_data_dir
 
-        temp_dir = get_app_data_dir() / "temp"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        if not self.icons_dir or not self.icons_dir.is_dir():
+            return
+
         theme_suffix = "_dark" if self.is_dark else "_light"
 
         icons_to_generate = {
@@ -67,13 +72,15 @@ class AppTheme:
         }
 
         for name, (path, size) in icons_to_generate.items():
-            themed_svg_bytes = colorize_svg(path, self.text_color)
-            pixmap = render_svg_to_pixmap(themed_svg_bytes, size)
-
-            # Save to a temporary file and store its path on the instance
-            icon_path = temp_dir / f"{name}{theme_suffix}.png"
-            pixmap.save(str(icon_path))
+            icon_path = self.icons_dir / f"{name}{theme_suffix}.png"
+            # Set the path attribute regardless of whether the file exists.
             setattr(self, f"{name}_icon_path", icon_path)
+
+            # Only generate and save the icon if it does not already exist.
+            if not icon_path.exists():
+                themed_svg_bytes = colorize_svg(path, self.text_color)
+                pixmap = render_svg_to_pixmap(themed_svg_bytes, size)
+                pixmap.save(str(icon_path))
 
     def get_stylesheet(self):
         # Convert path to use forward slashes for Qt stylesheet

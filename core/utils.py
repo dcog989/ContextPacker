@@ -1,3 +1,4 @@
+import os
 import platform
 from pathlib import Path
 import ctypes
@@ -27,13 +28,16 @@ def resource_path(relative_path):
 
 
 def get_app_data_dir():
-    """Gets the platform-specific application data directory."""
+    """Gets the platform-specific application data directory for persistent data."""
     if platform.system() == "Windows":
-        return Path.home() / "AppData" / "Local" / "ContextPacker"
+        # APPDATA/Roaming
+        return Path.home() / "AppData" / "Roaming" / "ContextPacker"
     elif platform.system() == "Darwin":
+        # ~/Library/Application Support
         return Path.home() / "Library" / "Application Support" / "ContextPacker"
-    else:  # Linux
-        return Path.home() / ".local" / "share" / "ContextPacker"
+    else:  # Linux and other Unix-like systems
+        # ~/.config
+        return Path.home() / ".config" / "ContextPacker"
 
 
 def cleanup_old_directories(base_dir, days_threshold):
@@ -96,3 +100,23 @@ def get_downloads_folder() -> str:
             # Fallback to the default if any Windows-specific API call fails
             pass
     return str(Path.home() / "Downloads")
+
+
+def open_folder(folder_path: str):
+    """Opens a folder in the default file explorer in a cross-platform way."""
+    import subprocess
+
+    path = Path(folder_path)
+    if not path.is_dir():
+        print(f"Error: Cannot open folder. Path is not a directory: {folder_path}")
+        return
+
+    try:
+        if platform.system() == "Windows":
+            os.startfile(path)
+        elif platform.system() == "Darwin":
+            subprocess.run(["open", str(path)], check=True)
+        else:
+            subprocess.run(["xdg-open", str(path)], check=True)
+    except Exception as e:
+        print(f"Error: Could not open output folder: {e}")

@@ -6,10 +6,13 @@ import queue
 import time
 import random
 import re
+import threading
+import logging
 from markdownify import markdownify as md
 
 from .constants import MEMORY_MANAGEMENT_URL_LIMIT, PROCESSED_URLS_MEMORY_FACTOR
 from .types import LogMessage, StatusMessage, ProgressMessage, FileSavedMessage, StatusType
+from .config import CrawlerConfig
 
 
 def sanitize_filename(url, filename_cache=None):
@@ -106,7 +109,7 @@ def _process_page(session, config, current_url, filename_cache=None):
         return None, f"  -> Error processing {current_url}: {str(e)}"
 
 
-def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visit, depth, url_cache=None, max_processed_urls=None, log_queue=None):
+def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visit, depth, url_cache=None, max_processed_urls=None, message_queue=None):
     """Finds, filters, and queues new links from a parsed page."""
     if url_cache is None:
         url_cache = {}
@@ -142,16 +145,16 @@ def _filter_and_queue_links(soup, base_url, config, processed_urls, urls_to_visi
             if max_processed_urls and len(processed_urls) >= max_processed_urls and max_processed_urls > MEMORY_MANAGEMENT_URL_LIMIT:
                 urls_to_prune = len(processed_urls) // 2
                 processed_urls = set(list(processed_urls)[urls_to_prune:])
-                if log_queue:
-                    log_queue.put(LogMessage(message=f"  -> Memory management: trimmed processed URLs to {len(processed_urls)}"))
+                if message_queue:
+                    logging.debug(f"Memory management: trimmed processed URLs to {len(processed_urls)}")
 
             processed_urls.add(normalized_abs_link)
             urls_to_visit.put((abs_link, depth + 1))
 
 
-def crawl_website(config, log_queue, cancel_event, shutdown_event):
+def crawl_website(config: CrawlerConfig, message_queue: queue.Queue, cancel_event: threading.Event):
     """Crawls a website using requests and BeautifulSoup."""
-    log_queue.put(LogMessage(message="Starting web crawl (Lightweight Mode)..."))
+    logging.info("Starting web crawl (Lightweight Mode)...")
 
     url_cache = {}
     filename_cache = {}
@@ -168,24 +171,22 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
     with requests.Session() as session:
         try:
             while not urls_to_visit.empty() and pages_saved < config.max_pages:
-                if cancel_event.is_set() or shutdown_event.is_set():
+                if cancel_event.is_set():
                     break
 
                 current_url, depth = urls_to_visit.get()
 
-                if not shutdown_event.is_set():
-                    progress_msg = ProgressMessage(value=pages_saved, max_value=config.max_pages)
-                    log_queue.put(progress_msg)
-                    log_queue.put(LogMessage(message=f"GET (Depth {depth}): {current_url}"))
+                progress_msg = ProgressMessage(value=pages_saved, max_value=config.max_pages)
+                message_queue.put(progress_msg)
+                logging.info(f"GET (Depth {depth}): {current_url}")
 
                 page_data, error_msg = _process_page(session, config, current_url, filename_cache)
 
-                if cancel_event.is_set() or shutdown_event.is_set():
+                if cancel_event.is_set():
                     break
 
                 if error_msg:
-                    if not shutdown_event.is_set():
-                        log_queue.put(LogMessage(message=error_msg))
+                    logging.warning(error_msg)
                     continue
 
                 if page_data:
@@ -194,30 +195,26 @@ def crawl_website(config, log_queue, cancel_event, shutdown_event):
                     processed_urls.add(normalized_final_url)
 
                     pages_saved += 1
-                    if not shutdown_event.is_set():
-                        file_saved_msg = FileSavedMessage(
-                            url=final_url,
-                            path=str(output_path),
-                            filename=filename,
-                            pages_saved=pages_saved,
-                            max_pages=config.max_pages,
-                            queue_size=urls_to_visit.qsize(),
-                        )
-                        log_queue.put(file_saved_msg)
+                    file_saved_msg = FileSavedMessage(
+                        url=final_url,
+                        path=str(output_path),
+                        filename=filename,
+                        pages_saved=pages_saved,
+                        max_pages=config.max_pages,
+                        queue_size=urls_to_visit.qsize(),
+                    )
+                    message_queue.put(file_saved_msg)
 
                     if depth < config.crawl_depth:
-                        _filter_and_queue_links(soup, final_url, config, processed_urls, urls_to_visit, depth, url_cache, max_processed_urls, log_queue)
+                        _filter_and_queue_links(soup, final_url, config, processed_urls, urls_to_visit, depth, url_cache, max_processed_urls, message_queue)
 
         except Exception as e:
-            if not shutdown_event.is_set():
-                log_queue.put(LogMessage(message=f"  -> CRITICAL CRAWLER ERROR: {e}"))
+            logging.critical(f"CRITICAL CRAWLER ERROR: {e}", exc_info=True)
 
-    if not cancel_event.is_set() and not shutdown_event.is_set() and pages_saved >= config.max_pages:
+    if not cancel_event.is_set() and pages_saved >= config.max_pages:
         progress_msg = ProgressMessage(value=pages_saved, max_value=config.max_pages)
-        log_queue.put(progress_msg)
+        message_queue.put(progress_msg)
 
     status_key = StatusType.CANCELLED if cancel_event.is_set() else StatusType.SOURCE_COMPLETE
     message = "Process cancelled by user." if cancel_event.is_set() else f"\nWeb scrape finished. Saved {pages_saved} pages."
-
-    if not shutdown_event.is_set():
-        log_queue.put(StatusMessage(status=status_key, message=message))
+    message_queue.put(StatusMessage(status=status_key, message=message))

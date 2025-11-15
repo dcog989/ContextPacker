@@ -14,8 +14,6 @@ DEFAULT_WINDOW_HEIGHT = 950
 UI_TABLE_INSERT_CHUNK_SIZE = 50  # Number of rows to insert into file list tables at a time to keep UI responsive
 
 # Crawler Constants
-PAGE_LOAD_TIMEOUT_SECONDS = 15  # Selenium page load timeout
-DRIVER_CLEANUP_TIMEOUT_SECONDS = 10  # Max seconds to wait for Selenium driver to quit gracefully
 MEMORY_MANAGEMENT_URL_LIMIT = 1000  # Minimum processed URLs to keep in memory before pruning
 PROCESSED_URLS_MEMORY_FACTOR = 10  # Multiplier for max_pages to determine max processed URLs to keep in memory (max_pages * factor)
 

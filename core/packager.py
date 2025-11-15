@@ -1,21 +1,25 @@
 from repomix import RepoProcessor, RepomixConfig
 from pathlib import Path
+import queue
+import threading
+import logging
+
 from .types import LogMessage, StatusMessage, StatusType
 
 
-def run_repomix(source_dir, output_filepath, log_queue, cancel_event, repomix_style="markdown", exclude_patterns=None):
+def run_repomix(source_dir, output_filepath, message_queue: queue.Queue, cancel_event: threading.Event, repomix_style="markdown", exclude_patterns=None):
     """
     Runs the repomix packaging process with the specified configuration.
 
     This function is designed to be run in a separate thread.
     """
     if cancel_event.is_set():
-        log_queue.put(StatusMessage(status=StatusType.CANCELLED, message="Skipping packaging because process was cancelled."))
+        message_queue.put(StatusMessage(status=StatusType.CANCELLED, message="Skipping packaging because process was cancelled."))
         return
 
     source_path = Path(source_dir)
     if not source_path.is_dir():
-        log_queue.put(StatusMessage(status=StatusType.ERROR, message="ERROR: Source directory for packaging is missing."))
+        message_queue.put(StatusMessage(status=StatusType.ERROR, message="ERROR: Source directory for packaging is missing."))
         return
 
     output_path = Path(output_filepath)
@@ -25,8 +29,8 @@ def run_repomix(source_dir, output_filepath, log_queue, cancel_event, repomix_st
     if exclude_patterns:
         all_excludes.extend(exclude_patterns)
 
-    log_queue.put(LogMessage(message=f"Running repomix packager on {source_dir}..."))
-    log_queue.put(LogMessage(message=f"Output will be saved to: {output_filepath}"))
+    logging.info(f"Running repomix packager on {source_dir}...")
+    logging.info(f"Output will be saved to: {output_filepath}")
 
     try:
         config = RepomixConfig()
@@ -41,17 +45,18 @@ def run_repomix(source_dir, output_filepath, log_queue, cancel_event, repomix_st
 
         # Check for cancellation before starting the processor
         if cancel_event.is_set():
-            log_queue.put(StatusMessage(status=StatusType.CANCELLED, message="Packaging cancelled by user."))
+            message_queue.put(StatusMessage(status=StatusType.CANCELLED, message="Packaging cancelled by user."))
             return
 
         result = processor.process()
 
         # Check for cancellation after processing
         if cancel_event.is_set():
-            log_queue.put(StatusMessage(status=StatusType.CANCELLED, message="Packaging cancelled by user."))
+            message_queue.put(StatusMessage(status=StatusType.CANCELLED, message="Packaging cancelled by user."))
             return
 
-        log_queue.put(StatusMessage(status=StatusType.PACKAGE_COMPLETE, message=f"✔ Repomix finished successfully. Output: {result.config.output.file_path}"))
+        message_queue.put(StatusMessage(status=StatusType.PACKAGE_COMPLETE, message=f"✔ Repomix finished successfully. Output: {result.config.output.file_path}"))
 
     except Exception as e:
-        log_queue.put(StatusMessage(status=StatusType.ERROR, message=f"ERROR: An unexpected packaging error occurred: {e}"))
+        logging.error(f"An unexpected packaging error occurred: {e}", exc_info=True)
+        message_queue.put(StatusMessage(status=StatusType.ERROR, message=f"ERROR: An unexpected packaging error occurred: {e}"))
