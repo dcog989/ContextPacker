@@ -50,11 +50,10 @@ def create_themed_svg_icon(svg_path: Path, color: str, size: Optional[QSize] = N
     if not modified_svg_bytes:
         return QIcon()
 
-    renderer = QSvgRenderer(QByteArray(modified_svg_bytes))
-
     if size is None:
-        # If no size is provided, use the default size from the SVG
+        renderer = QSvgRenderer(QByteArray(modified_svg_bytes))
         size = renderer.defaultSize()
+        # renderer is discarded — only used to get default size
 
     pixmap = render_svg_to_pixmap(modified_svg_bytes, size)
     return QIcon(pixmap)

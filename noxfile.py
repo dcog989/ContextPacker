@@ -1,7 +1,8 @@
-import nox
 import shutil
-from pathlib import Path
 import subprocess
+from pathlib import Path
+
+import nox
 
 # --- Configuration ---
 APP_NAME = "ContextPacker"
@@ -113,9 +114,11 @@ def archive(session, exe_path):
     changelog_path = build_dir / "CHANGELOG.md"
     session.log(f"Generating changelog at {changelog_path}")
     try:
-        git_log = subprocess.run(["git", "log", "--pretty=format:- %s (%h)"], capture_output=True, text=True, check=True).stdout
+        git_log = subprocess.run(
+            ["git", "log", "--pretty=format:- %s (%h)"], capture_output=True, text=True, check=True
+        ).stdout
         changelog_path.write_text(git_log, encoding="utf-8")
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except subprocess.CalledProcessError, FileNotFoundError:
         session.warn("Failed to generate changelog. Is Git installed?")
 
     if shutil.which("7za"):

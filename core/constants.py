@@ -17,6 +17,9 @@ UI_TABLE_INSERT_CHUNK_SIZE = 50  # Number of rows to insert into file list table
 DEFAULT_MIN_PAUSE_MS = 53
 DEFAULT_MAX_PAUSE_MS = 735
 
+# Crawler Concurrency
+NUM_CRAWL_WORKERS = 5  # Threads for parallel page fetching
+
 # Depth Constants
 UNLIMITED_DEPTH_VALUE = 9  # Value that represents "unlimited" depth
 UNLIMITED_DEPTH_REPLACEMENT = float("inf")  # What to replace unlimited depth with internally

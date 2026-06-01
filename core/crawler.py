@@ -11,8 +11,9 @@ import logging
 from markdownify import markdownify as md
 
 
-from .types import LogMessage, StatusMessage, ProgressMessage, FileSavedMessage, StatusType
+from .types import StatusMessage, ProgressMessage, FileSavedMessage, StatusType
 from .config import CrawlerConfig
+from .constants import NUM_CRAWL_WORKERS
 
 
 def sanitize_filename(url, filename_cache=None):
@@ -136,9 +137,8 @@ def _process_page(session, config, current_url, filename_cache=None):
         return None, f"  -> Error processing {current_url}: {str(e)}"
 
 
-def _filter_and_queue_links(soup, pages_saved: int, base_url: str, config: CrawlerConfig, processed_urls, urls_to_visit, depth: int, url_cache=None, message_queue=None):
+def _filter_and_queue_links(soup, pages_saved: int, base_url: str, config: CrawlerConfig, processed_urls, urls_to_visit, depth: int, url_cache=None, message_queue=None, processed_urls_lock=None):
     """Finds, filters, and queues new links from a parsed page, respecting the max_pages limit."""
-    # We only find links in HTML content. If the page was not HTML, soup will be None.
     if soup is None:
         return
 
@@ -149,7 +149,6 @@ def _filter_and_queue_links(soup, pages_saved: int, base_url: str, config: Crawl
     links = soup.find_all("a", href=True)
 
     for link in links:
-        # Check if we have already queued enough URLs to meet the max_pages limit.
         if pages_saved + urls_to_visit.qsize() >= config.max_pages:
             logging.debug(f"Max pages limit ({config.max_pages}) reached in queue. Halting link discovery.")
             break
@@ -176,85 +175,103 @@ def _filter_and_queue_links(soup, pages_saved: int, base_url: str, config: Crawl
         if config.include_paths and not _url_matches_any_pattern(abs_link, config.include_paths):
             continue
 
-        if normalized_abs_link not in processed_urls:
-            processed_urls.add(normalized_abs_link)
-            urls_to_visit.put((abs_link, depth + 1))
+        if processed_urls_lock:
+            with processed_urls_lock:
+                if normalized_abs_link not in processed_urls:
+                    processed_urls.add(normalized_abs_link)
+                    urls_to_visit.put((abs_link, depth + 1))
+        else:
+            if normalized_abs_link not in processed_urls:
+                processed_urls.add(normalized_abs_link)
+                urls_to_visit.put((abs_link, depth + 1))
 
 
 def crawl_website(config: CrawlerConfig, message_queue: queue.Queue, cancel_event: threading.Event):
-    """Crawls a website using requests and BeautifulSoup."""
+    """Crawls a website using multiple parallel worker threads."""
     logging.info("Starting web crawl...")
 
-    url_cache = {}
-    filename_cache = {}
     urls_to_visit = queue.Queue()
+    processed_urls_lock = threading.Lock()
+    pages_saved_lock = threading.Lock()
+    pages_saved = 0
 
     normalized_start_url = _normalize_url(config.start_url)
     urls_to_visit.put((config.start_url, 0))
-    processed_urls = {normalized_start_url}
-    pages_saved = 0
+    with processed_urls_lock:
+        processed_urls = {normalized_start_url}
 
-    # Create a session for connection pooling
-    with requests.Session() as session:
-        try:
-            while not urls_to_visit.empty() and pages_saved < config.max_pages:
+    def worker():
+        nonlocal pages_saved
+        filename_cache = {}
+        url_cache = {}
+        with requests.Session() as session:
+            while not cancel_event.is_set():
+                try:
+                    current_url, depth = urls_to_visit.get(timeout=3)
+                except queue.Empty:
+                    return
+
                 if cancel_event.is_set():
-                    break
+                    urls_to_visit.task_done()
+                    return
 
-                current_url, depth = urls_to_visit.get()
-
-                logging.info(f"GET (Depth {depth}): {current_url}")
+                with pages_saved_lock:
+                    if pages_saved >= config.max_pages:
+                        urls_to_visit.task_done()
+                        return
 
                 page_data, error_msg = _process_page(session, config, current_url, filename_cache)
 
                 if cancel_event.is_set():
-                    break
+                    urls_to_visit.task_done()
+                    return
 
                 if error_msg:
                     logging.warning(error_msg)
+                    urls_to_visit.task_done()
                     continue
 
                 if page_data:
                     soup, final_url, output_path, filename = page_data
-                    normalized_final_url = _normalize_url(final_url)
-                    processed_urls.add(normalized_final_url)
 
-                    pages_saved += 1
+                    with pages_saved_lock:
+                        if pages_saved >= config.max_pages:
+                            urls_to_visit.task_done()
+                            return
+                        local_pages_saved = pages_saved + 1
+                        pages_saved = local_pages_saved
 
-                    # Discover links BEFORE sending the progress update to ensure the queue size is accurate.
                     if depth < config.crawl_depth:
-                        _filter_and_queue_links(soup, pages_saved, final_url, config, processed_urls, urls_to_visit, depth, url_cache, message_queue)
+                        _filter_and_queue_links(
+                            soup, local_pages_saved, final_url, config,
+                            processed_urls, urls_to_visit, depth,
+                            url_cache, message_queue, processed_urls_lock,
+                        )
 
-                    # Now that the queue is updated, send the message.
-                    file_saved_msg = FileSavedMessage(
+                    message_queue.put(FileSavedMessage(
                         url=final_url,
                         path=str(output_path),
                         filename=filename,
-                        pages_saved=pages_saved,
+                        pages_saved=local_pages_saved,
                         max_pages=config.max_pages,
                         queue_size=urls_to_visit.qsize(),
-                    )
-                    message_queue.put(file_saved_msg)
+                    ))
 
-        except Exception as e:
-            logging.critical(f"CRITICAL CRAWLER ERROR: {e}", exc_info=True)
+                urls_to_visit.task_done()
 
-    # After the loop, determine the reason for stopping and log it.
+    threads = [threading.Thread(target=worker, daemon=True) for _ in range(NUM_CRAWL_WORKERS)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    with pages_saved_lock:
+        final_pages_saved = pages_saved
+
     if cancel_event.is_set():
-        status_key = StatusType.CANCELLED
-        message = "Process cancelled by user."
-    elif pages_saved >= config.max_pages:
-        status_key = StatusType.SOURCE_COMPLETE
-        message = f"\nWeb scrape finished: Reached 'Max Pages' limit of {config.max_pages}."
-        # Final progress update to ensure the bar is full
-        progress_msg = ProgressMessage(value=pages_saved, max_value=config.max_pages)
-        message_queue.put(progress_msg)
-    elif urls_to_visit.empty():
-        status_key = StatusType.SOURCE_COMPLETE
-        message = f"\nWeb scrape finished: Explored all reachable links within the specified 'Crawl Depth' ({config.crawl_depth}). Saved {pages_saved} pages."
+        message_queue.put(StatusMessage(status=StatusType.CANCELLED, message="Process cancelled by user."))
+    elif final_pages_saved >= config.max_pages:
+        message_queue.put(ProgressMessage(value=final_pages_saved, max_value=config.max_pages))
+        message_queue.put(StatusMessage(status=StatusType.SOURCE_COMPLETE, message=f"\nWeb scrape finished: Reached 'Max Pages' limit of {config.max_pages}."))
     else:
-        # This case handles when the loop breaks for a reason other than the main conditions.
-        status_key = StatusType.SOURCE_COMPLETE
-        message = f"\nWeb scrape finished. Saved {pages_saved} pages."
-
-    message_queue.put(StatusMessage(status=status_key, message=message))
+        message_queue.put(StatusMessage(status=StatusType.SOURCE_COMPLETE, message=f"\nWeb scrape finished: Explored all reachable links within the specified 'Crawl Depth' ({config.crawl_depth}). Saved {final_pages_saved} pages."))

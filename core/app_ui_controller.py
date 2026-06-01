@@ -39,6 +39,12 @@ class UiController:
         self.batch_update_timer = QTimer()
         self.batch_update_timer.setInterval(250)
 
+        # Log batching
+        self._pending_log_messages = []
+        self.log_debounce_timer = QTimer()
+        self.log_debounce_timer.setSingleShot(True)
+        self.log_debounce_timer.setInterval(50)
+
         # State for local file scanning
         self.gitignore_cache = {}
         self.gitignore_cache_lock = threading.Lock()
@@ -82,6 +88,7 @@ class UiController:
         self.exclude_update_timer.timeout.connect(self.start_local_file_scan)
         self.timestamp_timer.timeout.connect(self._update_timestamp_label)
         self.batch_update_timer.timeout.connect(self.on_batch_update_timer)
+        self.log_debounce_timer.timeout.connect(self._flush_log_batch)
 
         # --- Connect Service Signals to Controller Slots ---
         self._app_signals.state_changed.connect(self.on_state_changed)
@@ -93,7 +100,7 @@ class UiController:
 
         # --- Initial Setup ---
         self.timestamp_timer.start()
-        self.batch_update_timer.start()
+        self.batch_update_timer.stop()  # Only started during download tasks
         self.toggle_input_mode()
         self.state_service.set_state(AppState.IDLE)  # Set initial state
 
@@ -190,6 +197,7 @@ class UiController:
         self.main_window.clear_logs()
         self.main_window.progress_gauge.setValue(0)  # Reset progress bar
         self._crawl_limit_reached = False  # Reset the flag for a new task
+        self.batch_update_timer.start()
         start_url = self.main_window.start_url_widget.text().strip()
         if not start_url:
             QMessageBox.critical(self.main_window, "Input Error", "Start URL is required.")
@@ -303,8 +311,17 @@ class UiController:
         self._update_ui_for_state(new_state)
 
     def on_log_message(self, message: str):
+        self._pending_log_messages.append(message)
+        if not self.log_debounce_timer.isActive():
+            self.log_debounce_timer.start()
+
+    def _flush_log_batch(self):
+        if not self._pending_log_messages:
+            return
         mw = self.main_window
-        mw.verbose_log_widget.append(message)
+        for msg in self._pending_log_messages:
+            mw.verbose_log_widget.append(msg)
+        self._pending_log_messages.clear()
         mw.manage_log_size()
 
     def on_task_status(self, status_msg):
@@ -349,12 +366,11 @@ class UiController:
         else:
             display_total = max_pages
 
-        # Update the text label, e.g., "15 saved / 25 discovered"
-        self.main_window.update_web_crawl_stats(saved_count, display_total)
-
-        # Update the progress bar using the same stable total.
-        self.main_window.progress_gauge.setMaximum(display_total)
-        self.main_window.progress_gauge.setValue(saved_count)
+        # Throttle UI updates: only update progress/label every 5 saves or on the last one
+        if saved_count % 5 == 0 or saved_count == 1 or saved_count >= max_pages:
+            self.main_window.update_web_crawl_stats(saved_count, display_total)
+            self.main_window.progress_gauge.setMaximum(display_total)
+            self.main_window.progress_gauge.setValue(saved_count)
 
         # Add the file to the UI list for batch updating.
         self.scraped_files_batch.append(file_msg.__dict__)
@@ -391,6 +407,7 @@ class UiController:
     def _update_ui_for_state(self, new_state: AppState):
         mw = self.main_window
         if new_state == AppState.IDLE:
+            self.batch_update_timer.stop()
             self._active_task_type = None
             QApplication.restoreOverrideCursor()
             self._toggle_all_controls(True)

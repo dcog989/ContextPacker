@@ -1,33 +1,38 @@
-import threading
-from pathlib import Path
-from datetime import datetime
-import logging
 import fnmatch
+import logging
 import queue
 import re
+import threading
+from datetime import datetime
+from pathlib import Path
 
-from .packager import run_repomix
-from .utils import get_app_data_dir
-from .error_handling import WorkerErrorHandler, create_process_with_flags, safe_stream_enqueue, validate_tool_availability, create_tool_missing_error
 from .constants import (
-    UNLIMITED_DEPTH_VALUE,
-    UNLIMITED_DEPTH_REPLACEMENT,
     GIT_CLONE_OUTPUT_POLL_SECONDS,
     GIT_READER_THREAD_JOIN_TIMEOUT_SECONDS,
     REPOMIX_PROGRESS_UPDATE_BATCH_SIZE,
+    UNLIMITED_DEPTH_REPLACEMENT,
+    UNLIMITED_DEPTH_VALUE,
 )
+from .error_handling import (
+    WorkerErrorHandler,
+    create_process_with_flags,
+    create_tool_missing_error,
+    safe_stream_enqueue,
+    validate_tool_availability,
+)
+from .packager import run_repomix
 from .types import (
-    StatusMessage,
-    ProgressMessage,
-    LogMessage,
-    StatusType,
-    FileType,
     FileInfo,
-    file_info_to_dict,
+    FileType,
     GitCloneDoneMessage,
     LocalScanCompleteMessage,
+    LogMessage,
+    ProgressMessage,
+    StatusMessage,
+    StatusType,
+    file_info_to_dict,
 )
-
+from .utils import get_app_data_dir
 
 
 def create_session_dir():
@@ -50,7 +55,9 @@ def clone_repo_worker(url, path, message_queue: queue.Queue, cancel_event: threa
 
     git_url_pattern = r"^(https?://|git@|ssh://|file://)[a-zA-Z0-9._/-]+(:[0-9]+)?(/.*)?$"
     if not re.match(git_url_pattern, url.strip()):
-        message_queue.put(StatusMessage(status=StatusType.ERROR, message="Invalid or potentially malicious git URL provided."))
+        message_queue.put(
+            StatusMessage(status=StatusType.ERROR, message="Invalid or potentially malicious git URL provided.")
+        )
         return
 
     try:
@@ -58,7 +65,12 @@ def clone_repo_worker(url, path, message_queue: queue.Queue, cancel_event: threa
         app_cache_dir = Path(get_app_data_dir()) / "cache"
         # Ensure the resolved path is a sub-path of the application's cache directory
         if not resolved_path.is_relative_to(app_cache_dir):
-            message_queue.put(StatusMessage(status=StatusType.ERROR, message="Invalid clone path detected: Path is outside the application cache directory."))
+            message_queue.put(
+                StatusMessage(
+                    status=StatusType.ERROR,
+                    message="Invalid clone path detected: Path is outside the application cache directory.",
+                )
+            )
             return
     except Exception:
         message_queue.put(StatusMessage(status=StatusType.ERROR, message="Invalid path provided."))
@@ -73,10 +85,14 @@ def clone_repo_worker(url, path, message_queue: queue.Queue, cancel_event: threa
         process = create_process_with_flags(["git", "clone", "--depth", "1", url, path])
         if not process.stdout:
             process.wait()
-            message_queue.put(StatusMessage(status=StatusType.ERROR, message="Failed to capture git clone output stream."))
+            message_queue.put(
+                StatusMessage(status=StatusType.ERROR, message="Failed to capture git clone output stream.")
+            )
             return
 
-        reader_thread = threading.Thread(target=safe_stream_enqueue, args=(process.stdout, output_queue, cancel_event), daemon=True)
+        reader_thread = threading.Thread(
+            target=safe_stream_enqueue, args=(process.stdout, output_queue, cancel_event), daemon=True
+        )
         reader_thread.start()
 
         while process.poll() is None:
@@ -106,7 +122,9 @@ def clone_repo_worker(url, path, message_queue: queue.Queue, cancel_event: threa
             message_queue.put(GitCloneDoneMessage(path=path))
             message_queue.put(StatusMessage(status=StatusType.CLONE_COMPLETE, message="✔ Git clone successful."))
         else:
-            message_queue.put(StatusMessage(status=StatusType.ERROR, message="Git clone failed. Check the log for details."))
+            message_queue.put(
+                StatusMessage(status=StatusType.ERROR, message="Git clone failed. Check the log for details.")
+            )
 
     except Exception as e:
         message_queue.put(error_handler.handle_worker_exception(e, "git clone"))
@@ -120,7 +138,15 @@ def clone_repo_worker(url, path, message_queue: queue.Queue, cancel_event: threa
             error_handler.handle_stream_cleanup(process)
 
 
-def packaging_worker(source_dir, output_path, repomix_style, exclude_patterns, total_files, message_queue: queue.Queue, cancel_event: threading.Event):
+def packaging_worker(
+    source_dir,
+    output_path,
+    repomix_style,
+    exclude_patterns,
+    total_files,
+    message_queue: queue.Queue,
+    cancel_event: threading.Event,
+):
     """Worker that wraps run_repomix and handles progress reporting."""
     logging.debug(f"Packaging worker started. Source: {source_dir}, Output: {output_path}")
 
@@ -205,11 +231,13 @@ def _prepare_filters(root_dir, use_gitignore, custom_excludes, binary_excludes, 
             if ignore_file_path.is_file():
                 all_patterns.update(_load_ignore_patterns(ignore_file_path, gitignore_cache, gitignore_cache_lock))
 
-    compiled_patterns = [re.compile(fnmatch.translate(p)) for p in all_patterns if p]
+    combined_regex = re.compile("|".join(fnmatch.translate(p) for p in all_patterns if p)) if all_patterns else None
 
     def is_ignored(rel_path, is_dir=False):
+        if combined_regex is None:
+            return False
         path_str = rel_path.as_posix() + ("/" if is_dir else "")
-        return any(regex.match(path_str) for regex in compiled_patterns)
+        return combined_regex.match(path_str) is not None
 
     return is_ignored
 
@@ -237,7 +265,11 @@ def _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event):
 
                 rel_path_str = entry_rel_path.as_posix()
                 if entry.is_dir():
-                    files_to_show.append(file_info_to_dict(FileInfo(name=f"{rel_path_str}/", type=FileType.FOLDER, rel_path=f"{rel_path_str}/")))
+                    files_to_show.append(
+                        file_info_to_dict(
+                            FileInfo(name=f"{rel_path_str}/", type=FileType.FOLDER, rel_path=f"{rel_path_str}/")
+                        )
+                    )
                     if current_depth < max_depth:
                         queue.append((entry, entry_rel_path, current_depth + 1))
                     else:
@@ -246,10 +278,20 @@ def _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event):
                     try:
                         stat = entry.stat()
                         size_str = f"{stat.st_size / 1024:.1f} KB" if stat.st_size >= 1024 else f"{stat.st_size} B"
-                        files_to_show.append(file_info_to_dict(FileInfo(name=rel_path_str, type=FileType.FILE, size=stat.st_size, size_str=size_str, rel_path=rel_path_str)))
-                    except (OSError, ValueError):
+                        files_to_show.append(
+                            file_info_to_dict(
+                                FileInfo(
+                                    name=rel_path_str,
+                                    type=FileType.FILE,
+                                    size=stat.st_size,
+                                    size_str=size_str,
+                                    rel_path=rel_path_str,
+                                )
+                            )
+                        )
+                    except OSError, ValueError:
                         continue
-        except (OSError, PermissionError):
+        except OSError, PermissionError:
             continue
     return files_to_show, depth_excludes
 
@@ -258,10 +300,21 @@ def _sort_results(results):
     def sort_key(item):
         return (0 if item["type"] == FileType.FOLDER.value else 1, item["name"].lower())
 
-    return sorted(results, key=sort_key)
+    results.sort(key=sort_key)
+    return results
 
 
-def get_local_files_worker(root_dir, max_depth, use_gitignore, custom_excludes, binary_excludes, gitignore_cache, gitignore_cache_lock, message_queue: queue.Queue, cancel_event: threading.Event):
+def get_local_files_worker(
+    root_dir,
+    max_depth,
+    use_gitignore,
+    custom_excludes,
+    binary_excludes,
+    gitignore_cache,
+    gitignore_cache_lock,
+    message_queue: queue.Queue,
+    cancel_event: threading.Event,
+):
     """Worker to scan local files and report back via message queue."""
     try:
         logging.debug(f"Local file scan worker started for: {root_dir}")
@@ -270,7 +323,9 @@ def get_local_files_worker(root_dir, max_depth, use_gitignore, custom_excludes, 
             message_queue.put(LocalScanCompleteMessage(results=([], set())))
             return
 
-        is_ignored_func = _prepare_filters(root_dir, use_gitignore, custom_excludes, binary_excludes, gitignore_cache, gitignore_cache_lock)
+        is_ignored_func = _prepare_filters(
+            root_dir, use_gitignore, custom_excludes, binary_excludes, gitignore_cache, gitignore_cache_lock
+        )
         scan_results, depth_excludes = _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event)
         if cancel_event.is_set():
             logging.debug("Local file scan cancelled by user.")
@@ -284,6 +339,3 @@ def get_local_files_worker(root_dir, max_depth, use_gitignore, custom_excludes, 
     except Exception as e:
         logging.error(f"Error scanning directory: {e}", exc_info=True)
         message_queue.put(LocalScanCompleteMessage(results=None))
-
-
-
