@@ -181,7 +181,8 @@ def _filter_and_queue_links(soup, pages_saved: int, base_url: str, config: Crawl
             # Memory management
             if max_processed_urls and len(processed_urls) >= max_processed_urls and max_processed_urls > MEMORY_MANAGEMENT_URL_LIMIT:
                 urls_to_prune = len(processed_urls) // 2
-                processed_urls = set(list(processed_urls)[urls_to_prune:])
+                for url in list(processed_urls)[:urls_to_prune]:
+                    processed_urls.discard(url)
                 if message_queue:
                     logging.debug(f"Memory management: trimmed processed URLs to {len(processed_urls)}")
 

@@ -45,11 +45,9 @@ class UiController:
         self.local_files_to_exclude = set()
         self.local_depth_excludes = set()
         self._crawl_limit_reached = False
+        self._active_task_type: str | None = None  # "download", "package", or None
 
         logging.debug(f"[{threading.current_thread().name}] UiController initialized.")
-
-    def __del__(self):
-        logging.debug(f"[{threading.current_thread().name}] UiController being destroyed.")
 
     def setup_connections(self):
         """Connects all UI signals to controller slots and service signals to controller slots."""
@@ -199,6 +197,7 @@ class UiController:
 
         git_pattern = r"(\.git$)|(github\.com)|(gitlab\.com)|(bitbucket\.org)"
         if re.search(git_pattern, start_url):
+            self._active_task_type = "download"
             self.state_service.set_state(AppState.TASK_RUNNING)
             temp_dir = actions.create_session_dir()
             self.state_service.temp_dir = temp_dir
@@ -207,6 +206,7 @@ class UiController:
         else:
             try:
                 config = self._get_crawler_config()
+                self._active_task_type = "download"
                 self.state_service.set_state(AppState.TASK_RUNNING)
                 self.task_service.submit_task(crawl_website, config=config)
             except ValueError as e:
@@ -240,6 +240,7 @@ class UiController:
             exclude_patterns = list(set(default_excludes) | self.local_files_to_exclude | self.local_depth_excludes)
             total_files = len([f for f in self.main_window.local_files if dict_to_file_info(f).type == FileType.FILE])
 
+        self._active_task_type = "package"
         self.state_service.set_state(AppState.TASK_RUNNING)
         self.task_service.submit_task(
             actions.packaging_worker,
@@ -379,6 +380,7 @@ class UiController:
     def _update_ui_for_state(self, new_state: AppState):
         mw = self.main_window
         if new_state == AppState.IDLE:
+            self._active_task_type = None
             QApplication.restoreOverrideCursor()
             self._toggle_all_controls(True)
             mw.download_button.setText("Download && Convert")
@@ -386,7 +388,7 @@ class UiController:
         elif new_state == AppState.TASK_RUNNING:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             self._toggle_all_controls(False)
-            is_web_mode = mw.web_crawl_radio.isChecked() or mw.download_button.text() == "Stop!"
+            is_web_mode = mw.web_crawl_radio.isChecked() or self._active_task_type == "download"
             if mw.start_url_widget.text() and is_web_mode:
                 mw.download_button.setText("Stop!")
                 mw.download_button.setEnabled(True)
@@ -433,10 +435,9 @@ class UiController:
                 pkg_enabled = bool(mw.local_dir_ctrl.text() and Path(mw.local_dir_ctrl.text()).is_dir())
 
         elif state == AppState.TASK_RUNNING:
-            # Re-enable the one that's the "Stop" button
-            if mw.download_button.text() == "Stop!":
+            if self._active_task_type == "download":
                 dl_enabled = True
-            if mw.package_button.text() == "Stop!":
+            if self._active_task_type == "package":
                 pkg_enabled = True
 
         mw.download_button.setEnabled(dl_enabled)

@@ -1,5 +1,4 @@
-from pydantic import BaseModel, Field, root_validator
-from typing import List
+from pydantic import BaseModel, Field, model_validator
 
 
 class CrawlerConfig(BaseModel):
@@ -14,13 +13,12 @@ class CrawlerConfig(BaseModel):
     stay_on_subdomain: bool
     ignore_queries: bool
     user_agent: str
-    include_paths: List[str] = []
-    exclude_paths: List[str] = []
+    include_paths: list[str] = []
+    exclude_paths: list[str] = []
 
-    @root_validator(skip_on_failure=True)
-    def check_pause_values(cls, values):
+    @model_validator(mode='after')
+    def check_pause_values(self):
         """Ensures that min_pause is not greater than max_pause."""
-        min_p, max_p = values.get("min_pause"), values.get("max_pause")
-        if min_p > max_p:
+        if self.min_pause > self.max_pause:
             raise ValueError("Min pause cannot be greater than max pause")
-        return values
+        return self

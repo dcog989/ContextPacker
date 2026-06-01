@@ -25,7 +25,7 @@ def run_repomix(source_dir, output_filepath, message_queue: queue.Queue, cancel_
     output_path = Path(output_filepath)
     packaged_filename = output_path.name
 
-    all_excludes = [packaged_filename, Path(output_filepath).name]
+    all_excludes = [packaged_filename]
     if exclude_patterns:
         all_excludes.extend(exclude_patterns)
 
