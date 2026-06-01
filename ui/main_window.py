@@ -32,6 +32,8 @@ class MainWindow(QWidget):
         self.scraped_files = []
         self.local_files = []
         self._managing_log_size = False  # Guard against recursive calls
+        self._batch_insert_in_progress = False
+        self._pending_batch = []
 
         # Initialize Factory instances, passing config data
         self.input_factory = InputPanelFactory(self, self.config_service.config)
@@ -220,6 +222,10 @@ class MainWindow(QWidget):
     def add_scraped_files_batch(self, files_data):
         if not files_data:
             return
+        if self._batch_insert_in_progress:
+            self._pending_batch.extend(files_data)
+            return
+        self._batch_insert_in_progress = True
         self.standard_log_list.setSortingEnabled(False)
         self.standard_log_list.blockSignals(True)
         self.insertion_generator = iter(files_data)
@@ -237,7 +243,12 @@ class MainWindow(QWidget):
             except StopIteration:
                 self.standard_log_list.blockSignals(False)
                 self.standard_log_list.setSortingEnabled(True)
+                self._batch_insert_in_progress = False
                 self.update_stats_label()
+                if self._pending_batch:
+                    pending = self._pending_batch[:]
+                    self._pending_batch.clear()
+                    self.add_scraped_files_batch(pending)
                 return
         QTimer.singleShot(0, self.batch_insert_step)
         self.update_stats_label()
@@ -303,7 +314,8 @@ class MainWindow(QWidget):
             else:
                 self.file_count_label.setText("")
         else:
-            # For web crawl, the stats are pushed from the controller,
-            # so we only clear it if there are no files.
-            if not self.scraped_files:
+            count = len(self.scraped_files)
+            if count > 0:
+                self.file_count_label.setText(f"{count} file(s)")
+            else:
                 self.file_count_label.setText("")

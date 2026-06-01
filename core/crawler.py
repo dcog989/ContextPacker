@@ -10,7 +10,7 @@ import threading
 import logging
 from markdownify import markdownify as md
 
-from .constants import MEMORY_MANAGEMENT_URL_LIMIT, PROCESSED_URLS_MEMORY_FACTOR
+
 from .types import LogMessage, StatusMessage, ProgressMessage, FileSavedMessage, StatusType
 from .config import CrawlerConfig
 
@@ -137,7 +137,7 @@ def _process_page(session, config, current_url, filename_cache=None):
         return None, f"  -> Error processing {current_url}: {str(e)}"
 
 
-def _filter_and_queue_links(soup, pages_saved: int, base_url: str, config: CrawlerConfig, processed_urls, urls_to_visit, depth: int, url_cache=None, max_processed_urls=None, message_queue=None):
+def _filter_and_queue_links(soup, pages_saved: int, base_url: str, config: CrawlerConfig, processed_urls, urls_to_visit, depth: int, url_cache=None, message_queue=None):
     """Finds, filters, and queues new links from a parsed page, respecting the max_pages limit."""
     # We only find links in HTML content. If the page was not HTML, soup will be None.
     if soup is None:
@@ -178,14 +178,6 @@ def _filter_and_queue_links(soup, pages_saved: int, base_url: str, config: Crawl
             continue
 
         if normalized_abs_link not in processed_urls:
-            # Memory management
-            if max_processed_urls and len(processed_urls) >= max_processed_urls and max_processed_urls > MEMORY_MANAGEMENT_URL_LIMIT:
-                urls_to_prune = len(processed_urls) // 2
-                for url in list(processed_urls)[:urls_to_prune]:
-                    processed_urls.discard(url)
-                if message_queue:
-                    logging.debug(f"Memory management: trimmed processed URLs to {len(processed_urls)}")
-
             processed_urls.add(normalized_abs_link)
             urls_to_visit.put((abs_link, depth + 1))
 
@@ -202,8 +194,6 @@ def crawl_website(config: CrawlerConfig, message_queue: queue.Queue, cancel_even
     urls_to_visit.put((config.start_url, 0))
     processed_urls = {normalized_start_url}
     pages_saved = 0
-
-    max_processed_urls = max(config.max_pages * PROCESSED_URLS_MEMORY_FACTOR, MEMORY_MANAGEMENT_URL_LIMIT)
 
     # Create a session for connection pooling
     with requests.Session() as session:
@@ -234,7 +224,7 @@ def crawl_website(config: CrawlerConfig, message_queue: queue.Queue, cancel_even
 
                     # Discover links BEFORE sending the progress update to ensure the queue size is accurate.
                     if depth < config.crawl_depth:
-                        _filter_and_queue_links(soup, pages_saved, final_url, config, processed_urls, urls_to_visit, depth, url_cache, max_processed_urls, message_queue)
+                        _filter_and_queue_links(soup, pages_saved, final_url, config, processed_urls, urls_to_visit, depth, url_cache, message_queue)
 
                     # Now that the queue is updated, send the message.
                     file_saved_msg = FileSavedMessage(

@@ -13,10 +13,6 @@ DEFAULT_WINDOW_WIDTH = 1600
 DEFAULT_WINDOW_HEIGHT = 950
 UI_TABLE_INSERT_CHUNK_SIZE = 50  # Number of rows to insert into file list tables at a time to keep UI responsive
 
-# Crawler Constants
-MEMORY_MANAGEMENT_URL_LIMIT = 1000  # Minimum processed URLs to keep in memory before pruning
-PROCESSED_URLS_MEMORY_FACTOR = 10  # Multiplier for max_pages to determine max processed URLs to keep in memory (max_pages * factor)
-
 # Crawler Pause Defaults (in milliseconds)
 DEFAULT_MIN_PAUSE_MS = 53
 DEFAULT_MAX_PAUSE_MS = 735
