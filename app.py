@@ -5,7 +5,7 @@ import logging
 import threading
 from PySide6.QtWidgets import QApplication, QMainWindow, QStyle
 from PySide6.QtGui import QIcon, QFontDatabase
-from PySide6.QtCore import Qt, QCoreApplication
+from PySide6.QtCore import Qt, QCoreApplication, QTimer
 
 from core.utils import get_app_data_dir, cleanup_old_directories, resource_path
 from core.constants import DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT
@@ -77,8 +77,8 @@ class App(QMainWindow):
 
         # --- Window Setup ---
         self._setup_window()
-        self._setup_app_dirs_and_cleanup()
         self.show()
+        QTimer.singleShot(0, self._setup_app_dirs_and_cleanup)
 
     def on_shutdown_finished(self):
         """Called when the TaskService confirms all background threads are stopped."""

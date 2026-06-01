@@ -72,18 +72,17 @@ def _process_page(session, config, current_url, filename_cache=None):
         if response.status_code != 200:
             return None, f"  -> Skipping (Status {response.status_code}): {current_url}"
 
-        # Pause for politeness
-        pause_duration = random.uniform(config.min_pause, config.max_pause)
-        time.sleep(pause_duration)
-
-        # Check content type
+        # Check content type before politeness pause to avoid delaying on non-text responses
         content_type = response.headers.get("Content-Type", "").lower()
         is_html = "text/html" in content_type
-        # Loosen check to include any text-based content
         is_text = "text/" in content_type or "application/json" in content_type or "application/xml" in content_type
 
         if not is_text:
             return None, f"  -> Skipping non-text content ({content_type}): {current_url}"
+
+        # Pause for politeness
+        pause_duration = random.uniform(config.min_pause, config.max_pause)
+        time.sleep(pause_duration)
 
         final_url = response.url
         if config.ignore_queries:

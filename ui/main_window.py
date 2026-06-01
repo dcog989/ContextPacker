@@ -34,6 +34,7 @@ class MainWindow(QWidget):
         self._managing_log_size = False  # Guard against recursive calls
         self._batch_insert_in_progress = False
         self._pending_batch = []
+        self._local_insert_generator = None
 
         # Initialize Factory instances, passing config data
         self.input_factory = InputPanelFactory(self, self.config_service.config)
@@ -257,17 +258,27 @@ class MainWindow(QWidget):
         self.local_file_list.setSortingEnabled(False)
         self.local_file_list.setRowCount(0)
         self.local_files = files
-        for f in files:
-            row = self.local_file_list.rowCount()
-            self.local_file_list.insertRow(row)
-            self.local_file_list.setItem(row, 0, QTableWidgetItem(f["name"]))
-            self.local_file_list.setItem(row, 1, QTableWidgetItem(f["type"]))
-            size_item = QTableWidgetItem(f["size_str"])
-            size_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.local_file_list.setItem(row, 2, size_item)
-        self.local_file_list.setSortingEnabled(True)
-        self.local_file_list.sortByColumn(1, Qt.SortOrder.DescendingOrder)
-        self.update_stats_label()
+        self._local_insert_generator = iter(files)
+        self.local_batch_insert_step()
+
+    def local_batch_insert_step(self):
+        for _ in range(UI_TABLE_INSERT_CHUNK_SIZE):
+            try:
+                f = next(self._local_insert_generator)
+                row = self.local_file_list.rowCount()
+                self.local_file_list.insertRow(row)
+                self.local_file_list.setItem(row, 0, QTableWidgetItem(f["name"]))
+                self.local_file_list.setItem(row, 1, QTableWidgetItem(f["type"]))
+                size_item = QTableWidgetItem(f["size_str"])
+                size_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self.local_file_list.setItem(row, 2, size_item)
+            except StopIteration:
+                self.local_file_list.setSortingEnabled(True)
+                self.local_file_list.sortByColumn(1, Qt.SortOrder.DescendingOrder)
+                self._local_insert_generator = None
+                self.update_stats_label()
+                return
+        QTimer.singleShot(0, self.local_batch_insert_step)
 
     def update_delete_button_state(self):
         list_widget = self.standard_log_list if self.standard_log_list.isVisible() else self.local_file_list

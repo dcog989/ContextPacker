@@ -74,6 +74,10 @@ class ConfigService:
         # This dict holds the runtime values.
         self.config = self._load_config()
 
+        # Cache the static keys read from file so save_config(save_static=False)
+        # doesn't need to re-read the file on every call.
+        self._cached_static_config = {k: self.config[k] for k in self._static_keys}
+
     def _get_config_dir(self):
         """Gets the application data directory, ensuring it exists."""
         app_dir = get_app_data_dir()
@@ -119,24 +123,14 @@ class ConfigService:
         Args:
             save_static (bool): If True, saves ALL keys (static and mutable).
                                 If False (default), only saves the mutable keys,
-                                merging them back into the existing file's content.
+                                merged with the cached static keys — no file read needed.
         """
-        # 1. Read the existing file content to keep static settings unless told to overwrite
-        current_file_config = {}
-        if self._config_path.exists():
-            try:
-                with open(self._config_path, "r", encoding="utf-8") as f:
-                    current_file_config = json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass  # Use empty dict if file is corrupt/missing
-
-        # 2. Determine what to save
         if save_static:
             config_to_save = self.config.copy()
+            self._cached_static_config = {k: config_to_save[k] for k in self._static_keys}
         else:
-            # Only save the mutable keys from runtime config,
-            # and merge with the current file content to keep static keys.
-            config_to_save = current_file_config.copy()
+            # Merge mutable keys into cached static config — avoids a file read.
+            config_to_save = self._cached_static_config.copy()
             for key in self._mutable_keys:
                 if key in self.config:
                     config_to_save[key] = self.config[key]
