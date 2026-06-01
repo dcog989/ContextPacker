@@ -100,7 +100,11 @@ class ThemeManager:
         if not hasattr(self, "main_panel") or not self.main_panel:
             return
 
-        icon = create_themed_svg_icon(resource_path("assets/icons/copy.svg"), self.app.palette().color(QPalette.ColorRole.Text).name(), QSize(20, 20))
+        icon = create_themed_svg_icon(
+            resource_path("assets/icons/copy.svg"),
+            self.app.palette().color(QPalette.ColorRole.Text).name(),
+            QSize(20, 20),
+        )
         self.main_panel.copy_button.setIcon(icon)
 
     def toggle_theme(self):

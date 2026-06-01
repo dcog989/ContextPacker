@@ -137,7 +137,18 @@ def _process_page(session, config, current_url, filename_cache=None):
         return None, f"  -> Error processing {current_url}: {str(e)}"
 
 
-def _filter_and_queue_links(soup, pages_saved: int, base_url: str, config: CrawlerConfig, processed_urls, urls_to_visit, depth: int, url_cache=None, message_queue=None, processed_urls_lock=None):
+def _filter_and_queue_links(
+    soup,
+    pages_saved: int,
+    base_url: str,
+    config: CrawlerConfig,
+    processed_urls,
+    urls_to_visit,
+    depth: int,
+    url_cache=None,
+    message_queue=None,
+    processed_urls_lock=None,
+):
     """Finds, filters, and queues new links from a parsed page, respecting the max_pages limit."""
     if soup is None:
         return
@@ -243,19 +254,28 @@ def crawl_website(config: CrawlerConfig, message_queue: queue.Queue, cancel_even
 
                     if depth < config.crawl_depth:
                         _filter_and_queue_links(
-                            soup, local_pages_saved, final_url, config,
-                            processed_urls, urls_to_visit, depth,
-                            url_cache, message_queue, processed_urls_lock,
+                            soup,
+                            local_pages_saved,
+                            final_url,
+                            config,
+                            processed_urls,
+                            urls_to_visit,
+                            depth,
+                            url_cache,
+                            message_queue,
+                            processed_urls_lock,
                         )
 
-                    message_queue.put(FileSavedMessage(
-                        url=final_url,
-                        path=str(output_path),
-                        filename=filename,
-                        pages_saved=local_pages_saved,
-                        max_pages=config.max_pages,
-                        queue_size=urls_to_visit.qsize(),
-                    ))
+                    message_queue.put(
+                        FileSavedMessage(
+                            url=final_url,
+                            path=str(output_path),
+                            filename=filename,
+                            pages_saved=local_pages_saved,
+                            max_pages=config.max_pages,
+                            queue_size=urls_to_visit.qsize(),
+                        )
+                    )
 
                 urls_to_visit.task_done()
 
@@ -272,6 +292,16 @@ def crawl_website(config: CrawlerConfig, message_queue: queue.Queue, cancel_even
         message_queue.put(StatusMessage(status=StatusType.CANCELLED, message="Process cancelled by user."))
     elif final_pages_saved >= config.max_pages:
         message_queue.put(ProgressMessage(value=final_pages_saved, max_value=config.max_pages))
-        message_queue.put(StatusMessage(status=StatusType.SOURCE_COMPLETE, message=f"\nWeb scrape finished: Reached 'Max Pages' limit of {config.max_pages}."))
+        message_queue.put(
+            StatusMessage(
+                status=StatusType.SOURCE_COMPLETE,
+                message=f"\nWeb scrape finished: Reached 'Max Pages' limit of {config.max_pages}.",
+            )
+        )
     else:
-        message_queue.put(StatusMessage(status=StatusType.SOURCE_COMPLETE, message=f"\nWeb scrape finished: Explored all reachable links within the specified 'Crawl Depth' ({config.crawl_depth}). Saved {final_pages_saved} pages."))
+        message_queue.put(
+            StatusMessage(
+                status=StatusType.SOURCE_COMPLETE,
+                message=f"\nWeb scrape finished: Explored all reachable links within the specified 'Crawl Depth' ({config.crawl_depth}). Saved {final_pages_saved} pages.",
+            )
+        )

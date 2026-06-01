@@ -116,6 +116,14 @@ This project uses **Nox** for task automation. Run these commands from the proje
     uv run nox -s clean
     ```
 
+## Development
+
+```text
+uv run ruff check           # lint
+uv run ruff check --fix     # lint + auto-fix
+uv run ruff format          # format
+```
+
 ## Installation
 
 ### Linux

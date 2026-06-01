@@ -4,22 +4,33 @@ import queue
 import threading
 import logging
 
-from .types import LogMessage, StatusMessage, StatusType
+from .types import StatusMessage, StatusType
 
 
-def run_repomix(source_dir, output_filepath, message_queue: queue.Queue, cancel_event: threading.Event, repomix_style="markdown", exclude_patterns=None):
+def run_repomix(
+    source_dir,
+    output_filepath,
+    message_queue: queue.Queue,
+    cancel_event: threading.Event,
+    repomix_style="markdown",
+    exclude_patterns=None,
+):
     """
     Runs the repomix packaging process with the specified configuration.
 
     This function is designed to be run in a separate thread.
     """
     if cancel_event.is_set():
-        message_queue.put(StatusMessage(status=StatusType.CANCELLED, message="Skipping packaging because process was cancelled."))
+        message_queue.put(
+            StatusMessage(status=StatusType.CANCELLED, message="Skipping packaging because process was cancelled.")
+        )
         return
 
     source_path = Path(source_dir)
     if not source_path.is_dir():
-        message_queue.put(StatusMessage(status=StatusType.ERROR, message="ERROR: Source directory for packaging is missing."))
+        message_queue.put(
+            StatusMessage(status=StatusType.ERROR, message="ERROR: Source directory for packaging is missing.")
+        )
         return
 
     output_path = Path(output_filepath)
@@ -55,8 +66,15 @@ def run_repomix(source_dir, output_filepath, message_queue: queue.Queue, cancel_
             message_queue.put(StatusMessage(status=StatusType.CANCELLED, message="Packaging cancelled by user."))
             return
 
-        message_queue.put(StatusMessage(status=StatusType.PACKAGE_COMPLETE, message=f"✔ Repomix finished successfully. Output: {result.config.output.file_path}"))
+        message_queue.put(
+            StatusMessage(
+                status=StatusType.PACKAGE_COMPLETE,
+                message=f"✔ Repomix finished successfully. Output: {result.config.output.file_path}",
+            )
+        )
 
     except Exception as e:
         logging.error(f"An unexpected packaging error occurred: {e}", exc_info=True)
-        message_queue.put(StatusMessage(status=StatusType.ERROR, message=f"ERROR: An unexpected packaging error occurred: {e}"))
+        message_queue.put(
+            StatusMessage(status=StatusType.ERROR, message=f"ERROR: An unexpected packaging error occurred: {e}")
+        )

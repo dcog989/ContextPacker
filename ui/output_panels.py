@@ -1,4 +1,18 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QTextEdit, QPushButton, QTableWidget, QProgressBar, QHeaderView, QSizePolicy
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGroupBox,
+    QLabel,
+    QLineEdit,
+    QComboBox,
+    QTextEdit,
+    QPushButton,
+    QTableWidget,
+    QProgressBar,
+    QHeaderView,
+    QSizePolicy,
+)
 
 
 class OutputPanelFactory:

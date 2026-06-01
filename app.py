@@ -153,7 +153,9 @@ class App(QMainWindow):
         self._is_shutting_down = True
 
         self.ui_controller.cleanup()
-        self.config_service.save_window_state(self.size(), self.pos(), self.main_panel.h_splitter.saveState(), self.main_panel.v_splitter.saveState())
+        self.config_service.save_window_state(
+            self.size(), self.pos(), self.main_panel.h_splitter.saveState(), self.main_panel.v_splitter.saveState()
+        )
         if self.state_service.temp_dir and Path(self.state_service.temp_dir).is_dir():
             shutil.rmtree(self.state_service.temp_dir, ignore_errors=True)
 

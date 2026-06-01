@@ -53,7 +53,9 @@ def setup_logging(log_level_str: str, log_max_size_mb: int, log_backup_count: in
     log_dir = app_data_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file_path = log_dir / "app.log"
-    file_handler = RotatingFileHandler(log_file_path, maxBytes=log_max_size_mb * 1024 * 1024, backupCount=log_backup_count, encoding="utf-8")
+    file_handler = RotatingFileHandler(
+        log_file_path, maxBytes=log_max_size_mb * 1024 * 1024, backupCount=log_backup_count, encoding="utf-8"
+    )
     file_handler.setFormatter(log_formatter)
     file_handler.setLevel(log_level)  # Set level on the handler
 

@@ -129,7 +129,7 @@ def safe_stream_enqueue(stream, queue, shutdown_event):
                 if not shutdown_event.is_set():
                     msg = LogMessage(message=decoded_line)
                     queue.put(msg)
-            except (UnicodeDecodeError, AttributeError):
+            except UnicodeDecodeError, AttributeError:
                 # Fallback for problematic binary data
                 if not shutdown_event.is_set():
                     msg = LogMessage(message=f"[Binary data: {len(line)} bytes]")

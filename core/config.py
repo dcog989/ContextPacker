@@ -16,7 +16,7 @@ class CrawlerConfig(BaseModel):
     include_paths: list[str] = []
     exclude_paths: list[str] = []
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def check_pause_values(self):
         """Ensures that min_pause is not greater than max_pause."""
         if self.min_pause > self.max_pause:

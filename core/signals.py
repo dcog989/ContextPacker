@@ -1,5 +1,12 @@
 from PySide6.QtCore import QObject, Signal
-from .types import AppState, StatusMessage, ProgressMessage, FileSavedMessage, GitCloneDoneMessage, LocalScanCompleteMessage
+from .types import (
+    AppState,
+    StatusMessage,
+    ProgressMessage,
+    FileSavedMessage,
+    GitCloneDoneMessage,
+    LocalScanCompleteMessage,
+)
 
 
 class AppSignals(QObject):

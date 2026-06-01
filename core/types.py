@@ -96,12 +96,20 @@ class FileInfo:
 
 
 # Type alias for union of all message types
-Message = LogMessage | StatusMessage | ProgressMessage | FileSavedMessage | GitCloneDoneMessage | LocalScanCompleteMessage
+Message = (
+    LogMessage | StatusMessage | ProgressMessage | FileSavedMessage | GitCloneDoneMessage | LocalScanCompleteMessage
+)
 
 
 def file_info_to_dict(file_info: FileInfo) -> dict[str, Any]:
     """Convert FileInfo to dictionary for backward compatibility."""
-    return {"name": file_info.name, "type": file_info.type.value, "size": file_info.size, "size_str": file_info.size_str, "rel_path": file_info.rel_path}
+    return {
+        "name": file_info.name,
+        "type": file_info.type.value,
+        "size": file_info.size,
+        "size_str": file_info.size_str,
+        "rel_path": file_info.rel_path,
+    }
 
 
 def dict_to_file_info(data: dict[str, Any]) -> FileInfo:
@@ -112,4 +120,10 @@ def dict_to_file_info(data: dict[str, Any]) -> FileInfo:
     except ValueError:
         file_type = FileType.FILE
 
-    return FileInfo(name=data.get("name", ""), type=file_type, size=data.get("size", 0), size_str=data.get("size_str", ""), rel_path=data.get("rel_path", ""))
+    return FileInfo(
+        name=data.get("name", ""),
+        type=file_type,
+        size=data.get("size", 0),
+        size_str=data.get("size_str", ""),
+        rel_path=data.get("rel_path", ""),
+    )

@@ -25,7 +25,6 @@ UNLIMITED_DEPTH_VALUE = 9  # Value that represents "unlimited" depth
 UNLIMITED_DEPTH_REPLACEMENT = float("inf")  # What to replace unlimited depth with internally
 
 
-
 # Process Management Constants
 PROCESS_CLEANUP_TIMEOUT_SECONDS = 2  # Seconds to wait for a graceful process termination
 PROCESS_FORCE_KILL_WAIT_SECONDS = 1  # Seconds to wait after a forceful kill command
@@ -37,5 +36,3 @@ REPOMIX_PROGRESS_UPDATE_BATCH_SIZE = 10  # Update progress bar every N files pro
 
 # Memory Management Constants
 MAX_LOG_LINES = 1000  # Maximum lines to keep in verbose log
-
-

@@ -244,7 +244,9 @@ class UiController:
             exclude_patterns = []
             total_files = len(self.main_window.scraped_files)
         else:
-            default_excludes = [p.strip() for p in self.main_window.local_exclude_ctrl.toPlainText().splitlines() if p.strip()]
+            default_excludes = [
+                p.strip() for p in self.main_window.local_exclude_ctrl.toPlainText().splitlines() if p.strip()
+            ]
             exclude_patterns = list(set(default_excludes) | self.local_files_to_exclude | self.local_depth_excludes)
             total_files = len([f for f in self.main_window.local_files if dict_to_file_info(f).type == FileType.FILE])
 
@@ -275,11 +277,19 @@ class UiController:
         self.local_files_to_exclude.clear()
         self.local_depth_excludes.clear()
 
-        binary_excludes = self.config_service.get("binary_file_patterns", []) if self.main_window.hide_binaries_check.isChecked() else []
-        custom_excludes = [p.strip() for p in self.main_window.local_exclude_ctrl.toPlainText().splitlines() if p.strip()]
+        binary_excludes = (
+            self.config_service.get("binary_file_patterns", [])
+            if self.main_window.hide_binaries_check.isChecked()
+            else []
+        )
+        custom_excludes = [
+            p.strip() for p in self.main_window.local_exclude_ctrl.toPlainText().splitlines() if p.strip()
+        ]
 
         logging.debug(f"Starting local file scan for directory: {input_dir}")
-        logging.debug(f"Scan params: depth={self.main_window.dir_level_ctrl.value()}, use_gitignore={self.main_window.use_gitignore_check.isChecked()}")
+        logging.debug(
+            f"Scan params: depth={self.main_window.dir_level_ctrl.value()}, use_gitignore={self.main_window.use_gitignore_check.isChecked()}"
+        )
 
         # This task does not use the main state machine, as it's a lightweight UI feedback task.
         # We manually manage UI feedback (cursor, panel enabled state).
@@ -331,7 +341,13 @@ class UiController:
         elif status_msg.message:
             logging.info(status_msg.message)
 
-        if status_msg.status in [StatusType.SOURCE_COMPLETE, StatusType.PACKAGE_COMPLETE, StatusType.CANCELLED, StatusType.ERROR, StatusType.CLONE_COMPLETE]:
+        if status_msg.status in [
+            StatusType.SOURCE_COMPLETE,
+            StatusType.PACKAGE_COMPLETE,
+            StatusType.CANCELLED,
+            StatusType.ERROR,
+            StatusType.CLONE_COMPLETE,
+        ]:
             # For packaging, we set the progress to 100% on completion.
             if status_msg.status == StatusType.PACKAGE_COMPLETE:
                 self.main_window.progress_gauge.setMaximum(100)
@@ -501,6 +517,6 @@ class UiController:
         except ValidationError as e:
             # Pydantic provides user-friendly error messages
             raise ValueError(f"Invalid crawler configuration:\n{e}")
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             # This will catch int() conversion on empty strings for pause values
             raise ValueError("Invalid crawler configuration: Pause values must be valid numbers.")

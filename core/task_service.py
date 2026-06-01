@@ -4,7 +4,15 @@ import queue
 import os
 import logging
 
-from .types import Message, LogMessage, StatusMessage, ProgressMessage, FileSavedMessage, GitCloneDoneMessage, LocalScanCompleteMessage
+from .types import (
+    Message,
+    LogMessage,
+    StatusMessage,
+    ProgressMessage,
+    FileSavedMessage,
+    GitCloneDoneMessage,
+    LocalScanCompleteMessage,
+)
 
 
 class TaskService:

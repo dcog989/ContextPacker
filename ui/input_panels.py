@@ -1,4 +1,18 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QSpinBox, QTextEdit, QCheckBox, QPushButton, QFormLayout, QSizePolicy
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGroupBox,
+    QLabel,
+    QLineEdit,
+    QComboBox,
+    QSpinBox,
+    QTextEdit,
+    QCheckBox,
+    QPushButton,
+    QFormLayout,
+    QSizePolicy,
+)
 from PySide6.QtGui import QCursor, QIntValidator
 from PySide6.QtCore import Qt, QSize
 from core.utils import resource_path
