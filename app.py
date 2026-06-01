@@ -1,6 +1,4 @@
 import sys
-import platform
-import ctypes
 import shutil
 from pathlib import Path
 import logging
@@ -125,7 +123,7 @@ class App(QMainWindow):
             print(f"Warning: Failed to clean up old cache files: {e}")
 
     def _set_icon(self):
-        icon_path = resource_path("assets/icons/ContextPacker.ico")
+        icon_path = resource_path("assets/icons/ContextPacker.svg")
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
 
@@ -163,12 +161,6 @@ class App(QMainWindow):
 
 def main():
     """Main application entry point."""
-    if platform.system() == "Windows":
-        try:
-            ctypes.windll.shcore.SetProcessDpiAwarenessContext(-4)
-        except (AttributeError, OSError):
-            pass
-
     app = QApplication(sys.argv)
     # The App instance MUST be assigned to a variable to prevent it from being
     # garbage collected immediately. Using `_window` signals intent that the

@@ -97,26 +97,20 @@ class WorkerErrorHandler:
 
 def create_process_with_flags(command, creation_flags: Optional[int] = None):
     """
-    Create a subprocess with standardized creation flags for the platform.
+    Create a subprocess with stdout/stderr piped.
 
     Args:
         command: Command list to execute
-        creation_flags: Optional custom creation flags
+        creation_flags: Optional custom creation flags (ignored on Linux)
 
     Returns:
         subprocess.Popen instance
     """
-    from .platform_detection import get_process_creation_flags
-
-    if creation_flags is None:
-        creation_flags = get_process_creation_flags()
-
     return subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=False,  # Remove text encoding for binary-heavy repos
-        creationflags=creation_flags,
+        text=False,
     )
 
 

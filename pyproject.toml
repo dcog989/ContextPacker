@@ -1,28 +1,35 @@
-[tool.poetry]
+[project]
 name = "contextpacker"
-version = "2.0.0"
+version = "3.0.0"
 description = "A desktop app to scrape websites, Git repositories, or package local files into a single file, optimized for consumption by LLMs."
-authors = ["dcog989 you@example.com"]
+authors = [{ name = "dcog989", email = "you@example.com" }]
 readme = "README.md"
-packages = [{ include = "core" }, { include = "ui" }]
+requires-python = ">=3.14, <3.15"
+dependencies = [
+    "beautifulsoup4>=4.14.2,<5.0.0",
+    "lxml>=6.0.2,<7.0.0",
+    "markdownify>=1.2.0,<2.0.0",
+    "pydantic>=2.13.4,<3.0.0",
+    "pyside6>=6.10.0,<7.0.0",
+    "repomix>=0.5.0,<0.6.0",
+    "requests>=2.32.5,<3.0.0",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.10, <3.14"
-beautifulsoup4 = "^4.14.2"
-markdownify = "^1.2.0"
-repomix = "^0.3.4"
-requests = "^2.32.5"
-pyside6 = { version = "^6.10.0" }
-lxml = "^6.0.2"
-pydantic = "^2.12.4"
+[project.scripts]
+contextpacker = "app:main"
 
-[tool.poetry.group.dev.dependencies]
-pyinstaller = "^6.16.0"
-nox = "^2025.10.16"
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.16.0,<7.0.0",
+    "nox>=2026.4.10,<2027.0.0",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["core", "ui"]
 
 [tool.ruff]
 line-length = 120

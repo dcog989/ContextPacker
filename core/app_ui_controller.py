@@ -223,7 +223,7 @@ class UiController:
 
         filename_prefix = self.main_window.output_filename_ctrl.text().strip() or "ContextPacker-package"
         extension = self.main_window.output_format_choice.currentText()
-        downloads_path = actions.get_downloads_folder()
+        downloads_path = str(Path.home() / "Downloads")
         timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
         output_basename = f"{filename_prefix}-{timestamp}{extension}"
         output_path = str(Path(downloads_path) / output_basename)

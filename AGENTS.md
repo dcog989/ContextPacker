@@ -2,6 +2,10 @@
 
 ContextPacker is an extension for VS Code that provides a wide range of sorting, case change, and line manipulation functions via context menu and command palette. It aims for fast performance, minimal resource usage, fast startup time in VS Code.
 
+## Dev Environment
+
+Linux CachyOS, Limine boot loader, KDE Plasma 6, Wayland, Btrfs. Firefox, Kate text editor, Zed code editor, fish shell with Ghostty + Fresh editor. paru and bun package managers. All software is updated as of today.
+
 ## Tech Stack
 
 - ?
@@ -20,24 +24,6 @@ ContextPacker is an extension for VS Code that provides a wide range of sorting,
 
 - **Bundled**: `dist/extension.js` (for both Node and browser)
 - **Compiled**: `out/` directory (TypeScript compilation for testing)
-
-## Key Architecture
-
-### Performance Optimizations
-
-- ?
-
-### Caching Strategy
-
-- ?
-
-### Event Handling
-
-- ?
-
-### Decorator System
-
-- ?
 
 ## Coding Principles
 
@@ -65,3 +51,10 @@ ContextPacker is an extension for VS Code that provides a wide range of sorting,
 ## Common Patterns
 
 - ?
+
+## Interaction Style
+
+- do not pretend to understand how the user feels. no "You're right to be frustrated." etc.
+- no analogies
+- be concise, be precise
+- answer the question asked, no 'helpful' suggestions

@@ -9,7 +9,7 @@ import re
 import os
 
 from .packager import run_repomix
-from .utils import get_app_data_dir, get_downloads_folder
+from .utils import get_app_data_dir
 from .error_handling import WorkerErrorHandler, create_process_with_flags, safe_stream_enqueue, validate_tool_availability, create_tool_missing_error
 from .constants import (
     UNLIMITED_DEPTH_VALUE,

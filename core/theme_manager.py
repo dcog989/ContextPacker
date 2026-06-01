@@ -3,7 +3,7 @@ from PySide6.QtGui import QPalette, QColor
 from PySide6.QtCore import Qt, QSize
 
 from ui.styles import AppTheme
-from core.utils import resource_path, set_title_bar_theme, get_app_data_dir
+from core.utils import resource_path, get_app_data_dir
 from core.icon_utils import create_themed_svg_icon
 
 
@@ -72,10 +72,7 @@ class ThemeManager:
         theme = AppTheme(is_dark=is_dark, icons_dir_path=self.icons_dir_path)
         app.setStyleSheet(theme.get_stylesheet())
 
-        # 3. Update Windows title bar theme (only if running on Windows)
-        set_title_bar_theme(self.app, is_dark)
-
-        # 4. Update dynamic icons
+        # 3. Update dynamic icons
         self.update_theme_icon()
         self.update_copy_icon()
 

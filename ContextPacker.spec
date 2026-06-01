@@ -2,7 +2,6 @@
 from PyInstaller.utils.hooks import collect_data_files
 
 app_assets = [
-    ('assets/icons/ContextPacker.ico', 'assets/icons'),
     ('assets/icons/ContextPacker.svg', 'assets/icons'),
     ('assets/icons/copy.svg', 'assets/icons'),
     ('assets/icons/paint-bucket.svg', 'assets/icons'),
@@ -44,7 +43,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets/icons/ContextPacker.ico',
+    icon='assets/icons/ContextPacker.svg',
 )
 
 coll = COLLECT(
