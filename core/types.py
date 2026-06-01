@@ -7,18 +7,7 @@ message passing and function parameters throughout the application.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict, Any, List, Tuple
-
-
-class MessageType(Enum):
-    """Enumeration of all possible message types in the system."""
-
-    LOG = "log"
-    STATUS = "status"
-    PROGRESS = "progress"
-    FILE_SAVED = "file_saved"
-    GIT_CLONE_DONE = "git_clone_done"
-    LOCAL_SCAN_COMPLETE = "local_scan_complete"
+from typing import Any, Optional
 
 
 class StatusType(Enum):
@@ -37,8 +26,6 @@ class AppState(Enum):
     IDLE = "idle"
     TASK_RUNNING = "task_running"
     TASK_STOPPING = "task_stopping"
-    TASK_FINISHING = "task_finishing"
-    UI_RESETTING = "ui_resetting"
 
 
 class FileType(Enum):
@@ -52,7 +39,6 @@ class FileType(Enum):
 class LogMessage:
     """Structured log message."""
 
-    type: MessageType = MessageType.LOG
     message: str = ""
 
 
@@ -60,17 +46,14 @@ class LogMessage:
 class StatusMessage:
     """Structured status message."""
 
-    type: MessageType = MessageType.STATUS
     status: StatusType = StatusType.ERROR
     message: str = ""
-    path: Optional[str] = None
 
 
 @dataclass
 class ProgressMessage:
     """Structured progress message."""
 
-    type: MessageType = MessageType.PROGRESS
     value: int = 0
     max_value: int = 100
 
@@ -79,7 +62,6 @@ class ProgressMessage:
 class FileSavedMessage:
     """Structured file saved message."""
 
-    type: MessageType = MessageType.FILE_SAVED
     url: str = ""
     filename: str = ""
     path: str = ""
@@ -92,7 +74,6 @@ class FileSavedMessage:
 class GitCloneDoneMessage:
     """Structured git clone completion message."""
 
-    type: MessageType = MessageType.GIT_CLONE_DONE
     path: str = ""
 
 
@@ -100,8 +81,7 @@ class GitCloneDoneMessage:
 class LocalScanCompleteMessage:
     """Structured local scan completion message."""
 
-    type: MessageType = MessageType.LOCAL_SCAN_COMPLETE
-    results: Optional[Tuple[List[Dict[str, Any]], set]] = None
+    results: Optional[tuple[list[dict[str, Any]], set]] = None
 
 
 @dataclass
@@ -113,25 +93,18 @@ class FileInfo:
     size: int = 0
     size_str: str = ""
     rel_path: str = ""
-    url: Optional[str] = None  # For web-crawled files
-    path: Optional[str] = None  # For web-crawled files
 
 
 # Type alias for union of all message types
 Message = LogMessage | StatusMessage | ProgressMessage | FileSavedMessage | GitCloneDoneMessage | LocalScanCompleteMessage
 
 
-def file_info_to_dict(file_info: FileInfo) -> Dict[str, Any]:
+def file_info_to_dict(file_info: FileInfo) -> dict[str, Any]:
     """Convert FileInfo to dictionary for backward compatibility."""
-    result = {"name": file_info.name, "type": file_info.type.value, "size": file_info.size, "size_str": file_info.size_str, "rel_path": file_info.rel_path}
-    if file_info.url:
-        result["url"] = file_info.url
-    if file_info.path:
-        result["path"] = file_info.path
-    return result
+    return {"name": file_info.name, "type": file_info.type.value, "size": file_info.size, "size_str": file_info.size_str, "rel_path": file_info.rel_path}
 
 
-def dict_to_file_info(data: Dict[str, Any]) -> FileInfo:
+def dict_to_file_info(data: dict[str, Any]) -> FileInfo:
     """Convert dictionary to FileInfo."""
     type_str = data.get("type", "File")
     try:
@@ -139,4 +112,4 @@ def dict_to_file_info(data: Dict[str, Any]) -> FileInfo:
     except ValueError:
         file_type = FileType.FILE
 
-    return FileInfo(name=data.get("name", ""), type=file_type, size=data.get("size", 0), size_str=data.get("size_str", ""), rel_path=data.get("rel_path", ""), url=data.get("url"), path=data.get("path"))
+    return FileInfo(name=data.get("name", ""), type=file_type, size=data.get("size", 0), size_str=data.get("size_str", ""), rel_path=data.get("rel_path", ""))

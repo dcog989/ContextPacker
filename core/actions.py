@@ -24,11 +24,10 @@ from .types import (
     FileType,
     FileInfo,
     file_info_to_dict,
-    dict_to_file_info,
     GitCloneDoneMessage,
     LocalScanCompleteMessage,
 )
-from .config import CrawlerConfig
+
 
 
 def create_session_dir():

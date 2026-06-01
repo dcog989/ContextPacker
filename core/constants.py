@@ -25,10 +25,7 @@ DEFAULT_MAX_PAUSE_MS = 735
 UNLIMITED_DEPTH_VALUE = 9  # Value that represents "unlimited" depth
 UNLIMITED_DEPTH_REPLACEMENT = float("inf")  # What to replace unlimited depth with internally
 
-# Worker & Threading Constants
-QUEUE_GET_TIMEOUT_SECONDS = 5.0  # Timeout for blocking queue gets to prevent indefinite hangs
-QUEUE_LISTENER_STOP_TIMEOUT_SECONDS = 5.0  # Max seconds to wait for the queue listener thread to join
-MAX_QUEUE_DRAIN_ATTEMPTS = 1000  # Safety limit to prevent infinite loops when draining queues on shutdown
+
 
 # Process Management Constants
 PROCESS_CLEANUP_TIMEOUT_SECONDS = 2  # Seconds to wait for a graceful process termination
@@ -40,8 +37,6 @@ GIT_READER_THREAD_JOIN_TIMEOUT_SECONDS = 1.0  # Max seconds to wait for git outp
 REPOMIX_PROGRESS_UPDATE_BATCH_SIZE = 10  # Update progress bar every N files processed by Repomix
 
 # Memory Management Constants
-MAX_BATCH_SIZE = 500  # Maximum items in scraped_files_batch before forcing UI update
-UI_UPDATE_BATCH_SIZE = 50  # Number of files to process before UI update
 MAX_LOG_LINES = 1000  # Maximum lines to keep in verbose log
 
 
