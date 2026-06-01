@@ -1,5 +1,4 @@
 from .types import AppState
-from .signals import app_signals
 
 
 class StateService:
@@ -8,7 +7,8 @@ class StateService:
     It is the single source of truth for the application's current state.
     """
 
-    def __init__(self):
+    def __init__(self, app_signals):
+        self._app_signals = app_signals
         self._current_state = AppState.IDLE
         self._temp_dir: str | None = None
         self._final_output_path: str | None = None
@@ -21,7 +21,7 @@ class StateService:
         """Atomically sets the new application state and emits a signal."""
         if self._current_state != new_state:
             self._current_state = new_state
-            app_signals.state_changed.emit(new_state)
+            self._app_signals.state_changed.emit(new_state)
 
     # Properties for other state variables
     @property

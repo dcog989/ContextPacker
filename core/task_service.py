@@ -4,14 +4,14 @@ import queue
 import os
 import logging
 
-from .signals import app_signals
 from .types import Message, LogMessage, StatusMessage, ProgressMessage, FileSavedMessage, GitCloneDoneMessage, LocalScanCompleteMessage
 
 
 class TaskService:
     """Manages the lifecycle of background tasks using a thread pool."""
 
-    def __init__(self):
+    def __init__(self, app_signals):
+        self._app_signals = app_signals
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count())
         self._current_future: concurrent.futures.Future | None = None
         self._cancel_event: threading.Event | None = None
@@ -56,15 +56,15 @@ class TaskService:
                     continue
 
                 if isinstance(message, StatusMessage):
-                    app_signals.task_status.emit(message)
+                    self._app_signals.task_status.emit(message)
                 elif isinstance(message, ProgressMessage):
-                    app_signals.task_progress.emit(message)
+                    self._app_signals.task_progress.emit(message)
                 elif isinstance(message, FileSavedMessage):
-                    app_signals.file_saved.emit(message)
+                    self._app_signals.file_saved.emit(message)
                 elif isinstance(message, GitCloneDoneMessage):
-                    app_signals.git_clone_done.emit(message)
+                    self._app_signals.git_clone_done.emit(message)
                 elif isinstance(message, LocalScanCompleteMessage):
-                    app_signals.local_scan_complete.emit(message)
+                    self._app_signals.local_scan_complete.emit(message)
                 elif isinstance(message, LogMessage):
                     logging.info(message.message)
                 else:
@@ -105,4 +105,4 @@ class TaskService:
         logging.debug(f"[{threading.current_thread().name}] Queue watcher finished.")
 
         logging.debug(f"[{threading.current_thread().name}] Emitting task_shutdown_finished signal.")
-        app_signals.task_shutdown_finished.emit()
+        self._app_signals.task_shutdown_finished.emit()

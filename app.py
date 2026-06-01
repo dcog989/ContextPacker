@@ -15,7 +15,7 @@ from core.task_service import TaskService
 from core.app_ui_controller import UiController
 from core.theme_manager import ThemeManager
 from core.logger_setup import setup_logging
-from core.signals import app_signals
+from core.signals import AppSignals
 from ui.main_window import MainWindow
 
 
@@ -26,10 +26,13 @@ class App(QMainWindow):
         self._first_show = True
         self._is_shutting_down = False
 
+        # --- Signal Bus ---
+        self.app_signals = AppSignals()
+
         # --- Service Initialization ---
         self.config_service = ConfigService()
-        self.state_service = StateService()
-        self.task_service = TaskService()
+        self.state_service = StateService(self.app_signals)
+        self.task_service = TaskService(self.app_signals)
 
         # --- Logging Setup ---
         log_level = self.config_service.get("logging_level", "INFO")
@@ -64,12 +67,13 @@ class App(QMainWindow):
             task_service=self.task_service,
             config_service=self.config_service,
             theme_manager=self.theme_manager,
+            app_signals=self.app_signals,
         )
         self.ui_controller.setup_connections()
         self.ui_controller.connect_log_emitter(self.log_emitter)
 
         # --- Shutdown Signal ---
-        app_signals.task_shutdown_finished.connect(self.on_shutdown_finished)
+        self.app_signals.task_shutdown_finished.connect(self.on_shutdown_finished)
 
         # --- Window Setup ---
         self._setup_window()

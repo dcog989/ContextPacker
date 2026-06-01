@@ -44,5 +44,4 @@ MAX_BATCH_SIZE = 500  # Maximum items in scraped_files_batch before forcing UI u
 UI_UPDATE_BATCH_SIZE = 50  # Number of files to process before UI update
 MAX_LOG_LINES = 1000  # Maximum lines to keep in verbose log
 
-# Directory Scanning Constants
-LARGE_DIRECTORY_THRESHOLD = 1000  # Threshold for using heap sort vs regular sort
+

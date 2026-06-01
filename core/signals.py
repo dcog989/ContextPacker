@@ -18,7 +18,3 @@ class AppSignals(QObject):
     git_clone_done = Signal(GitCloneDoneMessage)
     local_scan_complete = Signal(LocalScanCompleteMessage)
     task_shutdown_finished = Signal()
-
-
-# Global instance to be shared across services and UI controller
-app_signals = AppSignals()

@@ -12,7 +12,6 @@ from .error_handling import WorkerErrorHandler, create_process_with_flags, safe_
 from .constants import (
     UNLIMITED_DEPTH_VALUE,
     UNLIMITED_DEPTH_REPLACEMENT,
-    LARGE_DIRECTORY_THRESHOLD,
     GIT_CLONE_OUTPUT_POLL_SECONDS,
     GIT_READER_THREAD_JOIN_TIMEOUT_SECONDS,
     REPOMIX_PROGRESS_UPDATE_BATCH_SIZE,
@@ -257,16 +256,9 @@ def _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event):
 
 
 def _sort_results(results):
-    import heapq
-
     def sort_key(item):
-        """Provides a sort key for file/folder items: folders first, then by name."""
         return (0 if item["type"] == FileType.FOLDER.value else 1, item["name"].lower())
 
-    if len(results) > LARGE_DIRECTORY_THRESHOLD:
-        heap = [(sort_key(item), item) for item in results]
-        heapq.heapify(heap)
-        return [heapq.heappop(heap)[1] for _ in range(len(heap))]
     return sorted(results, key=sort_key)
 
 
@@ -295,13 +287,4 @@ def get_local_files_worker(root_dir, max_depth, use_gitignore, custom_excludes, 
         message_queue.put(LocalScanCompleteMessage(results=None))
 
 
-def open_folder_worker(folder_path: str, message_queue: queue.Queue, cancel_event: threading.Event):
-    """Simple worker to open a folder without blocking the UI."""
-    from .utils import open_folder
 
-    if cancel_event.is_set():
-        return
-    try:
-        open_folder(folder_path)
-    except Exception as e:
-        logging.error(f"Failed to open folder {folder_path}: {e}")

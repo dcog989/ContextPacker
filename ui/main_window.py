@@ -89,22 +89,54 @@ class MainWindow(QWidget):
         self.toggle_output_view(is_web_mode=True)
         self.max_log_lines = MAX_LOG_LINES
 
-    def _assign_widgets_from_dict(self, widgets_dict):
-        for key, value in widgets_dict.items():
-            setattr(self, key, value)
-
     def _create_widgets(self):
-        system_widgets = self.input_factory.create_system_panel()
-        crawler_widgets = self.input_factory.create_crawler_panel()
-        local_widgets = self.input_factory.create_local_panel()
-        list_log_widgets = self.output_factory.create_list_log_widgets()
-        output_widgets = self.output_factory.create_output_group()
+        w = self.input_factory.create_system_panel()
+        self.system_panel = w["system_panel"]
+        self.about_logo = w["about_logo"]
+        self.about_text = w["about_text"]
+        self.theme_switch_button = w["theme_switch_button"]
 
-        self._assign_widgets_from_dict(system_widgets)
-        self._assign_widgets_from_dict(crawler_widgets)
-        self._assign_widgets_from_dict(local_widgets)
-        self._assign_widgets_from_dict(list_log_widgets)
-        self._assign_widgets_from_dict(output_widgets)
+        w = self.input_factory.create_crawler_panel()
+        self.crawler_panel = w["crawler_panel"]
+        self.start_url_widget = w["start_url_widget"]
+        self.user_agent_widget = w["user_agent_widget"]
+        self.max_pages_ctrl = w["max_pages_ctrl"]
+        self.crawl_depth_ctrl = w["crawl_depth_ctrl"]
+        self.min_pause_ctrl = w["min_pause_ctrl"]
+        self.max_pause_ctrl = w["max_pause_ctrl"]
+        self.include_paths_widget = w["include_paths_widget"]
+        self.exclude_paths_widget = w["exclude_paths_widget"]
+        self.stay_on_subdomain_check = w["stay_on_subdomain_check"]
+        self.ignore_queries_check = w["ignore_queries_check"]
+        self.download_button = w["download_button"]
+
+        w = self.input_factory.create_local_panel()
+        self.local_panel = w["local_panel"]
+        self.local_dir_ctrl = w["local_dir_ctrl"]
+        self.browse_button = w["browse_button"]
+        self.local_exclude_ctrl = w["local_exclude_ctrl"]
+        self.use_gitignore_check = w["use_gitignore_check"]
+        self.hide_binaries_check = w["hide_binaries_check"]
+        self.dir_level_ctrl = w["dir_level_ctrl"]
+
+        w = self.output_factory.create_list_log_widgets()
+        self.list_group = w["list_group"]
+        self.list_stack_layout = w["list_stack_layout"]
+        self.standard_log_list = w["standard_log_list"]
+        self.local_file_list = w["local_file_list"]
+        self.progress_gauge = w["progress_gauge"]
+        self.file_count_label = w["file_count_label"]
+        self.delete_button = w["delete_button"]
+        self.log_group = w["log_group"]
+        self.verbose_log_widget = w["verbose_log_widget"]
+
+        w = self.output_factory.create_output_group()
+        self.output_group = w["output_group"]
+        self.output_filename_ctrl = w["output_filename_ctrl"]
+        self.output_timestamp_label = w["output_timestamp_label"]
+        self.output_format_choice = w["output_format_choice"]
+        self.package_button = w["package_button"]
+        self.copy_button = w["copy_button"]
 
         self.input_group = QGroupBox("Input")
         self.web_crawl_radio = QRadioButton("Web Crawl")

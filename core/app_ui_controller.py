@@ -12,19 +12,19 @@ from . import actions
 from .crawler import crawl_website
 from .config import CrawlerConfig
 from .types import AppState, StatusType, FileType, dict_to_file_info
-from .signals import app_signals
 from ui.about_dialog import AboutDialog
 
 
 class UiController:
     """Handles UI logic, connects UI events to backend services, and updates the UI based on service signals."""
 
-    def __init__(self, main_window, state_service, task_service, config_service, theme_manager):
+    def __init__(self, main_window, state_service, task_service, config_service, theme_manager, app_signals):
         self.main_window = main_window
         self.state_service = state_service
         self.task_service = task_service
         self.config_service = config_service
         self.theme_manager = theme_manager
+        self._app_signals = app_signals
 
         # Timers for debouncing
         self.exclude_update_timer = QTimer()
@@ -84,12 +84,12 @@ class UiController:
         self.batch_update_timer.timeout.connect(self.on_batch_update_timer)
 
         # --- Connect Service Signals to Controller Slots ---
-        app_signals.state_changed.connect(self.on_state_changed)
-        app_signals.task_status.connect(self.on_task_status)
-        app_signals.task_progress.connect(self.on_task_progress)
-        app_signals.file_saved.connect(self.on_file_saved)
-        app_signals.git_clone_done.connect(self.on_git_clone_done)
-        app_signals.local_scan_complete.connect(self.on_local_scan_complete)
+        self._app_signals.state_changed.connect(self.on_state_changed)
+        self._app_signals.task_status.connect(self.on_task_status)
+        self._app_signals.task_progress.connect(self.on_task_progress)
+        self._app_signals.file_saved.connect(self.on_file_saved)
+        self._app_signals.git_clone_done.connect(self.on_git_clone_done)
+        self._app_signals.local_scan_complete.connect(self.on_local_scan_complete)
 
         # --- Initial Setup ---
         self.timestamp_timer.start()
@@ -286,6 +286,17 @@ class UiController:
             gitignore_cache_lock=self.gitignore_cache_lock,
         )
 
+    def _open_output_folder(self, folder_path, message_queue=None, cancel_event=None):
+        """Opens the output folder without blocking the UI."""
+        from core.utils import open_folder
+
+        if cancel_event and cancel_event.is_set():
+            return
+        try:
+            open_folder(folder_path)
+        except Exception as e:
+            logging.error(f"Failed to open folder {folder_path}: {e}")
+
     # --- Service Signal Slots ---
 
     def on_state_changed(self, new_state: AppState):
@@ -309,8 +320,8 @@ class UiController:
                 self.main_window.progress_gauge.setMaximum(100)
                 self.main_window.progress_gauge.setValue(100)
                 if self.state_service.final_output_path:
-                    output_dir = Path(self.state_service.final_output_path).parent
-                    self.task_service.submit_task(actions.open_folder_worker, folder_path=str(output_dir))
+                    output_dir = str(Path(self.state_service.final_output_path).parent)
+                    self.task_service.submit_task(self._open_output_folder, folder_path=output_dir)
             # For crawl completion, the progress is already handled by the last on_file_saved event.
             # On failure or cancellation, reset the progress bar.
             elif status_msg.status in [StatusType.CANCELLED, StatusType.ERROR]:

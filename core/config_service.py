@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from .utils import get_app_data_dir
+
 
 class ConfigService:
     """Manages loading and saving of the application's configuration."""
@@ -74,8 +76,6 @@ class ConfigService:
 
     def _get_config_dir(self):
         """Gets the application data directory, ensuring it exists."""
-        from .utils import get_app_data_dir
-
         app_dir = get_app_data_dir()
         app_dir.mkdir(parents=True, exist_ok=True)
         return app_dir
