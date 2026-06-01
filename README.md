@@ -96,22 +96,32 @@ To use all features, ensure you have the following installed:
 
 ## Building from Source
 
-This project uses **Nox** for task automation. Ensure Nox is installed (`uv sync`). Run these commands from the project root:
+This project uses **Nox** for task automation. Run these commands from the project root:
 
-- **Build for Production:** Creates a compressed archive (`.7z` or `.zip`) in the `dist` folder.
+- **Build for Production** — creates a compressed archive (`.7z` or `.zip`) in `dist/`:
 
     ```sh
     uv run nox -s build
     ```
 
-- **Build and Run for Debugging:** Builds a version with the console enabled and launches it.
+- **Build and Run (Debug)** — builds with console enabled and launches the app:
 
     ```sh
-    uv run nox -s build-run
+    uv run nox -s build_run
     ```
 
-- **Clean Build Artifacts:** Removes `dist`, `build`, and `__pycache__` directories.
+- **Clean Artifacts** — removes `dist/`, `build/`, and `__pycache__`:
 
     ```sh
     uv run nox -s clean
     ```
+
+## Installation
+
+### Linux
+
+```text
+7za x dist/ContextPacker-Linux-x64-v*.7z
+sudo cp -r ContextPacker /opt/
+sudo ln -s /opt/ContextPacker/ContextPacker /usr/local/bin/contextpacker
+```
