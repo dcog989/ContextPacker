@@ -1,12 +1,10 @@
 import threading
-import shutil
 from pathlib import Path
 from datetime import datetime
 import logging
 import fnmatch
 import queue
 import re
-import os
 
 from .packager import run_repomix
 from .utils import get_app_data_dir

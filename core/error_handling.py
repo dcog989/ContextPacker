@@ -6,9 +6,6 @@ Provides standardized error handling patterns for worker functions.
 import shutil
 import subprocess
 import traceback
-from typing import Optional
-
-# Union type for messages to simplify typing
 from .types import StatusMessage, LogMessage, StatusType
 from .constants import PROCESS_CLEANUP_TIMEOUT_SECONDS, PROCESS_FORCE_KILL_WAIT_SECONDS
 
@@ -95,13 +92,12 @@ class WorkerErrorHandler:
                 pass  # Stream might already be closed or invalid
 
 
-def create_process_with_flags(command, creation_flags: Optional[int] = None):
+def create_process_with_flags(command):
     """
     Create a subprocess with stdout/stderr piped.
 
     Args:
         command: Command list to execute
-        creation_flags: Optional custom creation flags (ignored on Linux)
 
     Returns:
         subprocess.Popen instance
