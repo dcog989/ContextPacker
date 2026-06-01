@@ -55,6 +55,11 @@ def open_folder(folder_path: str):
         return
 
     try:
-        subprocess.run(["xdg-open", str(path)], check=True)
+        subprocess.Popen(
+            ["xdg-open", str(path)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
     except Exception as e:
         print(f"Error: Could not open output folder: {e}")
