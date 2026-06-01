@@ -18,7 +18,7 @@ Linux CachyOS, KDE Plasma 6, Wayland, Btrfs, fish shell, Ghostty. `uv` package m
 
 ## Architecture (MVC-like with Signal Bus)
 
-```
+```text
 UI (ui/)  --signals-->  UiController  --calls-->  Services (core/)
                         (app_ui_controller.py)     |-- StateService
                                                    |-- TaskService (thread pool + msg queue)
@@ -54,76 +54,93 @@ Session names use underscores matching noxfile.py function names.
 ## Key Modules
 
 ### `core/actions.py` — Worker functions (run in thread pool)
+
 - `clone_repo_worker()` — validates git, URL, path; runs `git clone --depth 1` via subprocess; path traversal protection
 - `packaging_worker()` — wraps `run_repomix` with progress handler
 - `get_local_files_worker()` — BFS directory scan with gitignore/mtime-cached patterns, fnmatch filtering
 - `create_session_dir()` — creates `cache/session-YYMMDD-HHMMSS/`
 
 ### `core/crawler.py` — Web crawler
+
 - `crawl_website()` — BFS crawl with requests.Session, depth tracking, URL normalization, markdownify conversion
 - Politeness: `random.uniform(min_pause, max_pause)` ms between requests
 - Filters: subdomain, include/exclude path patterns, max_pages limit
 
 ### `core/packager.py` — Repomix wrapper
+
 - `run_repomix()` — configures `RepomixConfig`, creates `RepoProcessor`, calls `processor.process()`
 
 ### `core/config_service.py` — settings.json persistence
+
 - `~/.config/ContextPacker/settings.json` — user-editable runtime config
 - `_mutable_keys` (app-managed: window state, sash positions) vs `_static_keys` (user-managed: excludes, agents, log config)
 - `save_config(save_static=False)` preserves static keys by default
 
 ### `core/state_service.py` — State machine
+
 - `current_state` + `set_state()` emits `state_changed` signal
 
 ### `core/task_service.py` — Thread pool + message queue
+
 - `submit_task(task_fn, ...)` — injects `message_queue` and `cancel_event`
 - `cancel_current_task()` / `shutdown()` — cooperative + daemon waiter thread
 
 ### `core/types.py` — Enums, dataclasses, type alias
+
 - `Message = LogMessage | StatusMessage | ProgressMessage | FileSavedMessage | GitCloneDoneMessage | LocalScanCompleteMessage`
 - `file_info_to_dict()` / `dict_to_file_info()` for backward compat
 
 ### `core/constants.py` — All magic numbers
+
 - Timer intervals: `BATCH_UPDATE_INTERVAL_MS=250`, `EXCLUDE_UPDATE_INTERVAL_MS=500`, `UI_UPDATE_INTERVAL_MS=1000`
 - `UI_TABLE_INSERT_CHUNK_SIZE=50`, `UNLIMITED_DEPTH_VALUE=9`, `MAX_LOG_LINES=1000`
 - Process cleanup: `PROCESS_CLEANUP_TIMEOUT_SECONDS=2`, `PROCESS_FORCE_KILL_WAIT_SECONDS=1`
 
 ### `core/error_handling.py` — Cleanup utilities
+
 - `WorkerErrorHandler` — process cleanup (graceful → force kill → error), stream cleanup
 - `safe_stream_enqueue()` — reads subprocess stdout binary, decodes, enqueues LogMessage
 - `validate_tool_availability()` / `create_tool_missing_error()`
 
 ### `core/theme_manager.py` — Dark/light mode
+
 - Detects system dark via `QPalette.Window.lightnessF() < 0.5`
 - Dynamic SVG icons: `update_theme_icon()`, `update_copy_icon()` — recolors fill at runtime
 - Accent color: green `#2E8B57`
 
 ### `core/icon_utils.py` — SVG utilities
+
 - `colorize_svg()` — replaces `fill="#000000"` in SVG text
 - `render_svg_to_pixmap()` — QSvgRenderer + QPainter (with cleanup)
 - `create_themed_svg_icon()` — combined pipeline
 
 ### `core/logger_setup.py` — Logging
+
 - RotatingFileHandler at `~/.config/ContextPacker/logs/app.log`
 - `QtLogHandler` emits log records as Qt signals for UI display
 - `StreamToLogger` captures stdout/stderr
 
 ### `core/utils.py` — General
+
 - `resource_path()` — resolves assets for PyInstaller frozen builds (`sys._MEIPASS`) and dev
 - `get_app_data_dir()` → `~/.config/ContextPacker`
 - `cleanup_old_dirs()` — removes session dirs older than `max_age_cache_days`
 - `open_folder()` — `xdg-open` (Linux-specific)
 
 ### `core/signals.py` — Signal bus
+
 - `AppSignals(QObject)` — `state_changed`, `task_status`, `task_progress`, `file_saved`, `git_clone_done`, `local_scan_complete`, `task_shutdown_finished`
 
 ### `core/config.py` — Pydantic model
+
 - `CrawlerConfig` — validated crawler settings with `check_pause_values()` validator
 
 ### `core/version.py` — Version
+
 - `__version__` from `importlib.metadata.version("contextpacker")` fallback `"0.0.0-dev"`
 
 ### `ui/main_window.py` — MainWindow(QWidget)
+
 - Horizontal QSplitter: input panels | (file list/log + output panels)
 - 50+ widget attributes declared for static analysis
 - `add_scraped_files_batch()` — chunked batch insertion via `QTimer.singleShot(0)`
@@ -133,20 +150,24 @@ Session names use underscores matching noxfile.py function names.
 - Splitter state restore from config on init
 
 ### `ui/input_panels.py` — InputPanelFactory
+
 - `create_crawler_panel()` — URL, user-agent, max pages, depth, pause (ms), path filters, checkboxes, button
 - `create_local_panel()` — directory, excludes, gitignore, hide-binaries, depth
 - `create_system_panel()` — logo + theme switch button
 
 ### `ui/output_panels.py` — OutputPanelFactory
+
 - `create_list_log_widgets()` — stacked QTableWidget (web/local), progress bar, file count, delete button; QTextEdit log
 - `create_output_group()` — filename, timestamp, format dropdown, Package button, copy button
 
 ### `ui/styles.py` — AppTheme (300+ line Qt stylesheet)
+
 - Dark/light color palettes with green accent
 - `_setup_themed_icons()` — generates cached PNG icons in app data dir (up/down arrow, checkmark)
 - Covers: QWidget, QSplitter, QGroupBox, QLabel, QTextEdit#VerboseLog, QLineEdit, QSpinBox, QComboBox, QPushButton, QPushButton#PrimaryButton, QPushButton#ThemeSwitchButton, QCheckBox, QRadioButton, QTableWidget, QHeaderView, QProgressBar, QScrollBar
 
 ### `ui/about_dialog.py` — AboutDialog(QDialog)
+
 - Logo, title, description, "I drink your milkshake" quote, version, GitHub link
 
 ## Build Output
@@ -158,12 +179,14 @@ Session names use underscores matching noxfile.py function names.
 ## File System Access
 
 ### Allowed
+
 - `.agents/`, `.github/`, `.vscode/`
 - `core/`, `ui/`, `assets/`, `scripts/`
 - Root: `app.py`, `noxfile.py`, `pyproject.toml`, `ContextPacker.spec`, `config.json`, `README.md`, `AGENTS.md`, `.gitignore`, `ruff.config`
 - App data: `~/.config/ContextPacker/`
 
 ### Disallowed
+
 - `.ai/`, `.docs/`, `.git/`, `build/`, `dist/`, `node_modules/`, `logs/`
 - `uv.lock`, `repomix.config.json`, `.repomixignore`
 
@@ -192,6 +215,7 @@ Session names use underscores matching noxfile.py function names.
 ## Key Workflows
 
 ### Web Crawl
+
 1. User enters URL → UiController detects Git URL or regular URL
 2. **Git URL**: `clone_repo_worker()` → `GitCloneDoneMessage` → switches to local file mode
 3. **Regular URL**: `crawl_website()` with `CrawlerConfig` → BFS crawl → emits `FileSavedMessage` per page
@@ -199,11 +223,13 @@ Session names use underscores matching noxfile.py function names.
 5. Completion: `StatusMessage(SOURCE_COMPLETE)` → state returns to IDLE
 
 ### Local Directory
+
 1. User selects local dir → `get_local_files_worker()`
 2. BFS scan with gitignore/binary/exclude filtering → `LocalScanCompleteMessage`
 3. UI populates local file table
 
 ### Package
+
 1. User clicks "Package" → `packaging_worker()` → `run_repomix()`
 2. Repomix progress intercepted via log handler → `ProgressMessage` (batched every 10)
 3. On `PACKAGE_COMPLETE`: progress 100%, opens output folder, state → IDLE
