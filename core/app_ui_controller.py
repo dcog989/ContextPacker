@@ -448,12 +448,31 @@ class UiController:
         self.update_button_states()
 
     def _toggle_all_controls(self, enable):
+        # Disable individual input widgets rather than parent panels,
+        # so child "Stop" buttons remain functional during tasks.
         widgets = [
             self.main_window.system_panel,
             self.main_window.web_crawl_radio,
             self.main_window.local_dir_radio,
-            self.main_window.crawler_panel,
-            self.main_window.local_panel,
+            # Crawler panel inputs (panel itself stays enabled)
+            self.main_window.start_url_widget,
+            self.main_window.user_agent_widget,
+            self.main_window.max_pages_ctrl,
+            self.main_window.crawl_depth_ctrl,
+            self.main_window.min_pause_ctrl,
+            self.main_window.max_pause_ctrl,
+            self.main_window.include_paths_widget,
+            self.main_window.exclude_paths_widget,
+            self.main_window.stay_on_subdomain_check,
+            self.main_window.ignore_queries_check,
+            # Local panel inputs (panel itself stays enabled)
+            self.main_window.local_dir_ctrl,
+            self.main_window.browse_button,
+            self.main_window.local_exclude_ctrl,
+            self.main_window.use_gitignore_check,
+            self.main_window.hide_binaries_check,
+            self.main_window.dir_level_ctrl,
+            # Output
             self.main_window.output_filename_ctrl,
             self.main_window.output_format_choice,
             self.main_window.package_button,

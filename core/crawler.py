@@ -8,6 +8,7 @@ import random
 import re
 import threading
 import logging
+import fnmatch
 from markdownify import markdownify as md
 
 
@@ -46,15 +47,22 @@ def _normalize_url(url):
     return url_no_fragment
 
 
+def _has_glob_chars(s: str) -> bool:
+    return "*" in s or "?" in s or "[" in s
+
+
 def _url_matches_any_pattern(url, patterns):
-    """Case-insensitive URL pattern matching."""
+    """Case-insensitive URL pattern matching with glob support."""
     parsed_url_path = urlparse(url).path.lower()
     url_lower = url.lower()
 
     for pattern in patterns:
         pattern_lower = pattern.lower()
         if pattern_lower.startswith(("http://", "https://")):
-            if url_lower.startswith(pattern_lower):
+            if _has_glob_chars(pattern_lower):
+                if fnmatch.filter([url_lower], pattern_lower):
+                    return True
+            elif url_lower.startswith(pattern_lower):
                 return True
         elif pattern_lower in parsed_url_path:
             return True
