@@ -80,17 +80,17 @@ To use all features, ensure you have the following installed:
 
 2. Sync dependencies using uv:
 
-    ```sh
-    uv sync
-    ```
+   ```sh
+   uv pip list --outdated
+   uv lock --upgrade
+   uv sync
+   ```
 
 3. Run the application:
 
-    ```sh
-    uv run python app.py
-    ```
-
-4. optional: `uv pip list --outdated`
+   ```sh
+   uv run Python app.py
+   ```
 
 -----
 
