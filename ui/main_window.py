@@ -220,27 +220,39 @@ class MainWindow(QWidget):
             sc.setContext(Qt.ShortcutContext.WidgetShortcut)
             sc.activated.connect(self.copy_selected_table_rows)
 
-    def show_log_context_menu(self, position):
+    def _show_context_menu(self, position, parent_widget, actions):
         context_menu = QMenu(self)
-        copy_action = QAction("Copy", self)
-        copy_action.triggered.connect(lambda: self.verbose_log_widget.copy())
-        context_menu.addAction(copy_action)
-        context_menu.addSeparator()
-        clear_action = QAction("Clear Log", self)
-        clear_action.triggered.connect(self.clear_logs)
-        context_menu.addAction(clear_action)
-        context_menu.exec(self.verbose_log_widget.mapToGlobal(position))
+        for action_def in actions:
+            if action_def is None:
+                context_menu.addSeparator()
+            else:
+                label, callback = action_def
+                action = QAction(label, self)
+                action.triggered.connect(callback)
+                context_menu.addAction(action)
+        context_menu.exec(parent_widget.mapToGlobal(position))
+
+    def show_log_context_menu(self, position):
+        self._show_context_menu(
+            position,
+            self.verbose_log_widget,
+            [
+                ("Copy", lambda: self.verbose_log_widget.copy()),
+                None,
+                ("Clear Log", self.clear_logs),
+            ],
+        )
 
     def show_table_context_menu(self, position):
         table = self.sender()
-        context_menu = QMenu(self)
-        copy_action = QAction("Copy Selected", self)
-        copy_action.triggered.connect(self.copy_selected_table_rows)
-        context_menu.addAction(copy_action)
-        delete_action = QAction("Delete Selected", self)
-        delete_action.triggered.connect(self.delete_button.click)
-        context_menu.addAction(delete_action)
-        context_menu.exec(table.mapToGlobal(position))
+        self._show_context_menu(
+            position,
+            table,
+            [
+                ("Copy Selected", self.copy_selected_table_rows),
+                ("Delete Selected", self.delete_button.click),
+            ],
+        )
 
     def copy_selected_table_rows(self):
         table = self.standard_log_list if self.standard_log_list.isVisible() else self.local_file_list
@@ -275,6 +287,16 @@ class MainWindow(QWidget):
         self.update_delete_button_state()
         self.update_stats_label()
 
+    def _batch_insert_loop(self, table, generator, build_row, on_finish):
+        for _ in range(UI_TABLE_INSERT_CHUNK_SIZE):
+            try:
+                item = next(generator)
+                build_row(table, item)
+            except StopIteration:
+                on_finish()
+                return
+        QTimer.singleShot(0, lambda: self._batch_insert_loop(table, generator, build_row, on_finish))
+
     def add_scraped_files_batch(self, files_data):
         if not files_data:
             return
@@ -285,59 +307,53 @@ class MainWindow(QWidget):
         self.standard_log_list.setSortingEnabled(False)
         self.standard_log_list.blockSignals(True)
         self.insertion_generator = iter(files_data)
-        self.batch_insert_step()
 
-    def batch_insert_step(self):
-        for _ in range(UI_TABLE_INSERT_CHUNK_SIZE):
-            try:
-                file_data = next(self.insertion_generator)
-                row = self.standard_log_list.rowCount()
-                self.standard_log_list.insertRow(row)
-                self.scraped_files.append(file_data)
-                url_item = QTableWidgetItem(file_data["url"])
-                url_item.setToolTip(file_data["url"])
-                self.standard_log_list.setItem(row, 0, url_item)
-                name_item = QTableWidgetItem(file_data["filename"])
-                name_item.setToolTip(file_data["filename"])
-                self.standard_log_list.setItem(row, 1, name_item)
-            except StopIteration:
-                self.standard_log_list.blockSignals(False)
-                self.standard_log_list.setSortingEnabled(True)
-                self._batch_insert_in_progress = False
-                if self._pending_batch:
-                    pending = self._pending_batch[:]
-                    self._pending_batch.clear()
-                    self.add_scraped_files_batch(pending)
-                return
-        QTimer.singleShot(0, self.batch_insert_step)
+        def build_row(table, file_data):
+            row = table.rowCount()
+            table.insertRow(row)
+            self.scraped_files.append(file_data)
+            url_item = QTableWidgetItem(file_data["url"])
+            url_item.setToolTip(file_data["url"])
+            table.setItem(row, 0, url_item)
+            name_item = QTableWidgetItem(file_data["filename"])
+            name_item.setToolTip(file_data["filename"])
+            table.setItem(row, 1, name_item)
+
+        def on_finish():
+            self.standard_log_list.blockSignals(False)
+            self.standard_log_list.setSortingEnabled(True)
+            self._batch_insert_in_progress = False
+            if self._pending_batch:
+                pending = self._pending_batch[:]
+                self._pending_batch.clear()
+                self.add_scraped_files_batch(pending)
+
+        self._batch_insert_loop(self.standard_log_list, self.insertion_generator, build_row, on_finish)
 
     def populate_local_file_list(self, files):
         self.local_file_list.setSortingEnabled(False)
         self.local_file_list.setRowCount(0)
         self.local_files = files
         self._local_insert_generator = iter(files)
-        self.local_batch_insert_step()
 
-    def local_batch_insert_step(self):
-        for _ in range(UI_TABLE_INSERT_CHUNK_SIZE):
-            try:
-                f = next(self._local_insert_generator)
-                row = self.local_file_list.rowCount()
-                self.local_file_list.insertRow(row)
-                name_item = QTableWidgetItem(f["name"])
-                name_item.setToolTip(f["name"])
-                self.local_file_list.setItem(row, 0, name_item)
-                self.local_file_list.setItem(row, 1, QTableWidgetItem(f["type"]))
-                size_item = QTableWidgetItem(f["size_str"])
-                size_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                self.local_file_list.setItem(row, 2, size_item)
-            except StopIteration:
-                self.local_file_list.setSortingEnabled(True)
-                self.local_file_list.sortByColumn(1, Qt.SortOrder.DescendingOrder)
-                self._local_insert_generator = None
-                self.update_stats_label()
-                return
-        QTimer.singleShot(0, self.local_batch_insert_step)
+        def build_row(table, f):
+            row = table.rowCount()
+            table.insertRow(row)
+            name_item = QTableWidgetItem(f["name"])
+            name_item.setToolTip(f["name"])
+            table.setItem(row, 0, name_item)
+            table.setItem(row, 1, QTableWidgetItem(f["type"]))
+            size_item = QTableWidgetItem(f["size_str"])
+            size_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            table.setItem(row, 2, size_item)
+
+        def on_finish():
+            self.local_file_list.setSortingEnabled(True)
+            self.local_file_list.sortByColumn(1, Qt.SortOrder.DescendingOrder)
+            self._local_insert_generator = None
+            self.update_stats_label()
+
+        self._batch_insert_loop(self.local_file_list, self._local_insert_generator, build_row, on_finish)
 
     def update_delete_button_state(self):
         list_widget = self.standard_log_list if self.standard_log_list.isVisible() else self.local_file_list

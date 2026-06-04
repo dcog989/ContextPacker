@@ -44,7 +44,7 @@ def render_svg_to_pixmap(svg_bytes: bytes, size: QSize) -> QPixmap:
     return pixmap
 
 
-def load_svg_logo(size: QSize = QSize(48, 48)) -> QPixmap:
+def load_logo_svg(size: QSize = QSize(48, 48)) -> QPixmap:
     from .utils import resource_path
 
     logo_path = resource_path("assets/icons/ContextPacker.svg")

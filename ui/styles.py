@@ -250,50 +250,28 @@ class AppTheme:
                 background-color: {self.bg_button_pressed};
             }}
             
-            /* Checkbox styling with custom checkmark */
-            QCheckBox {{
+            /* Checkbox & radio button shared indicator styling */
+            QCheckBox, QRadioButton {{
                 spacing: 8px;
                 padding: 4px 0px;
             }}
-            QCheckBox::indicator {{
+            QCheckBox::indicator, QRadioButton::indicator {{
                 width: 18px;
                 height: 18px;
                 border: 1px solid {self.border_color};
-                border-radius: 3px;
                 background-color: {self.bg_secondary};
             }}
-            QCheckBox::indicator:hover {{
+            QCheckBox::indicator {{ border-radius: 3px; }}
+            QRadioButton::indicator {{ border-radius: 9px; }}
+            QCheckBox::indicator:hover, QRadioButton::indicator:hover {{
                 border: 1px solid {self.border_hover};
             }}
-            QCheckBox::indicator:checked {{
-                background-color: {self.accent_color};
-                border: 1px solid {self.accent_color_darker};
-                image: url({checkmark_icon_url});
-            }}
-            QCheckBox::indicator:checked:hover {{
-                background-color: {self.accent_color_lighter};
-            }}
-            
-            /* Radio button styling */
-            QRadioButton {{
-                spacing: 8px;
-                padding: 4px 0px;
-            }}
-            QRadioButton::indicator {{
-                width: 18px;
-                height: 18px;
-                border: 1px solid {self.border_color};
-                border-radius: 9px;
-                background-color: {self.bg_secondary};
-            }}
-            QRadioButton::indicator:hover {{
-                border: 1px solid {self.border_hover};
-            }}
-            QRadioButton::indicator:checked {{
+            QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
                 background-color: {self.accent_color};
                 border: 1px solid {self.accent_color_darker};
             }}
-            QRadioButton::indicator:checked:hover {{
+            QCheckBox::indicator:checked {{ image: url({checkmark_icon_url}); }}
+            QCheckBox::indicator:checked:hover, QRadioButton::indicator:checked:hover {{
                 background-color: {self.accent_color_lighter};
             }}
             
@@ -335,37 +313,23 @@ class AppTheme:
             }}
             
             /* Scrollbar styling */
-            QScrollBar:vertical {{
+            QScrollBar {{
                 background-color: {self.bg_primary};
-                width: 14px;
                 margin: 0px;
             }}
-            QScrollBar::handle:vertical {{
+            QScrollBar:vertical {{ width: 14px; }}
+            QScrollBar:horizontal {{ height: 14px; }}
+            QScrollBar::handle {{
                 background-color: {self.border_color};
-                min-height: 30px;
                 border-radius: 7px;
             }}
-            QScrollBar::handle:vertical:hover {{
+            QScrollBar::handle:vertical {{ min-height: 30px; }}
+            QScrollBar::handle:horizontal {{ min-width: 30px; }}
+            QScrollBar::handle:hover {{
                 background-color: {self.border_hover};
             }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
-            }}
-            
-            QScrollBar:horizontal {{
-                background-color: {self.bg_primary};
-                height: 14px;
-                margin: 0px;
-            }}
-            QScrollBar::handle:horizontal {{
-                background-color: {self.border_color};
-                min-width: 30px;
-                border-radius: 7px;
-            }}
-            QScrollBar::handle:horizontal:hover {{
-                background-color: {self.border_hover};
-            }}
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+            QScrollBar::add-line, QScrollBar::sub-line {{
                 width: 0px;
+                height: 0px;
             }}
         """

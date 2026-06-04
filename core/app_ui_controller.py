@@ -22,6 +22,7 @@ from .crawler import crawl_website
 from .config import CrawlerConfig
 from .types import AppState, StatusType, FileType, dict_to_file_info, Profile
 from .utils import open_folder
+from .version import __version__
 from ui.about_dialog import AboutDialog
 
 
@@ -198,8 +199,6 @@ class UiController:
         self.update_button_states()
 
     def on_show_about_dialog(self):
-        from core.version import __version__
-
         dialog = AboutDialog(self.main_window, __version__)
         dialog.exec()
 

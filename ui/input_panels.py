@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QCursor, QIntValidator
 from PySide6.QtCore import Qt
-from core.icon_utils import load_svg_logo
+from core.icon_utils import load_logo_svg
 from core.constants import DEFAULT_MIN_PAUSE_MS, DEFAULT_MAX_PAUSE_MS
 
 
@@ -222,7 +222,7 @@ class InputPanelFactory:
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
 
-        logo_pixmap = load_svg_logo()
+        logo_pixmap = load_logo_svg()
 
         about_logo = QLabel()
         about_logo.setPixmap(logo_pixmap)
