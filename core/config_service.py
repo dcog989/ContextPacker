@@ -1,6 +1,11 @@
 import json
+from pathlib import Path
 
 from .utils import get_app_data_dir
+from .types import Profile, profile_from_dict, profile_to_dict
+
+
+PROFILES_DIR_NAME = "profiles"
 
 
 class ConfigService:
@@ -152,3 +157,36 @@ class ConfigService:
 
         # Only save mutable keys (window state)
         self.save_config(save_static=False)
+
+    def _get_profiles_dir(self) -> Path:
+        profiles_dir = self._config_dir / PROFILES_DIR_NAME
+        profiles_dir.mkdir(parents=True, exist_ok=True)
+        return profiles_dir
+
+    def save_profile(self, profile: Profile) -> None:
+        profiles_dir = self._get_profiles_dir()
+        filepath = profiles_dir / f"{profile.name}.json"
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(profile_to_dict(profile), f, indent=2)
+
+    def load_profile(self, name: str) -> Profile | None:
+        profiles_dir = self._get_profiles_dir()
+        filepath = profiles_dir / f"{name}.json"
+        if not filepath.exists():
+            return None
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        try:
+            return profile_from_dict(data)
+        except Exception:
+            return None
+
+    def list_profile_names(self) -> list[str]:
+        profiles_dir = self._get_profiles_dir()
+        return sorted(f.stem for f in profiles_dir.glob("*.json") if f.suffix == ".json")
+
+    def delete_profile(self, name: str) -> None:
+        profiles_dir = self._get_profiles_dir()
+        filepath = profiles_dir / f"{name}.json"
+        if filepath.exists():
+            filepath.unlink()

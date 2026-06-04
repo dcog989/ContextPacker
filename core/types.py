@@ -5,7 +5,7 @@ This module provides dataclasses and enums to replace dictionary-based
 message passing and function parameters throughout the application.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any, Optional
 
@@ -127,3 +127,33 @@ def dict_to_file_info(data: dict[str, Any]) -> FileInfo:
         size_str=data.get("size_str", ""),
         rel_path=data.get("rel_path", ""),
     )
+
+
+@dataclass
+class Profile:
+    name: str = ""
+    start_url: str = ""
+    user_agent: str = ""
+    max_pages: int = 5
+    crawl_depth: int = 1
+    min_pause_ms: int = 53
+    max_pause_ms: int = 735
+    include_paths: list[str] = field(default_factory=list)
+    exclude_paths: list[str] = field(default_factory=list)
+    stay_on_subdomain: bool = True
+    ignore_queries: bool = True
+    local_dir: str = ""
+    local_excludes: list[str] = field(default_factory=list)
+    use_gitignore: bool = True
+    hide_binaries: bool = True
+    dir_depth: int = 9
+    output_filename_prefix: str = "ContextPacker-package"
+    output_format: str = ".md"
+
+
+def profile_from_dict(data: dict[str, Any]) -> Profile:
+    return Profile(**data)
+
+
+def profile_to_dict(profile: Profile) -> dict[str, Any]:
+    return asdict(profile)

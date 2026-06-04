@@ -45,6 +45,8 @@ class MainWindow(QWidget):
         self.about_logo: QLabel
         self.about_text: QLabel
         self.theme_switch_button: QPushButton
+        self.save_profile_button: QPushButton
+        self.load_profile_button: QPushButton
         self.crawler_panel: QWidget
         self.start_url_widget: QLineEdit
         self.user_agent_widget: QComboBox
@@ -98,6 +100,8 @@ class MainWindow(QWidget):
         self.about_logo = w["about_logo"]
         self.about_text = w["about_text"]
         self.theme_switch_button = w["theme_switch_button"]
+        self.save_profile_button = w["save_profile_button"]
+        self.load_profile_button = w["load_profile_button"]
 
         w = self.input_factory.create_crawler_panel()
         self.crawler_panel = w["crawler_panel"]

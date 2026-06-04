@@ -4,14 +4,14 @@ import threading
 from datetime import datetime
 import logging
 
-from PySide6.QtWidgets import QFileDialog, QApplication, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QApplication, QMessageBox, QInputDialog
 from PySide6.QtCore import Qt, QTimer
 from pydantic import ValidationError
 
 from . import actions
 from .crawler import crawl_website
 from .config import CrawlerConfig
-from .types import AppState, StatusType, FileType, dict_to_file_info
+from .types import AppState, StatusType, FileType, dict_to_file_info, Profile
 from ui.about_dialog import AboutDialog
 
 
@@ -66,6 +66,8 @@ class UiController:
         mw.package_button.clicked.connect(self.on_package_button_click)
         mw.copy_button.clicked.connect(self.on_copy_to_clipboard)
         mw.delete_button.clicked.connect(self.on_delete_selected_item)
+        mw.save_profile_button.clicked.connect(self.on_save_profile)
+        mw.load_profile_button.clicked.connect(self.on_load_profile)
         mw.about_logo.mousePressEvent = lambda event: self.on_show_about_dialog()
         mw.about_text.mousePressEvent = lambda event: self.on_show_about_dialog()
         mw.theme_switch_button.clicked.connect(self.theme_manager.toggle_theme)
@@ -190,6 +192,82 @@ class UiController:
 
         dialog = AboutDialog(self.main_window, __version__)
         dialog.exec()
+
+    # --- Profile Save/Load ---
+
+    def _read_profile_from_ui(self) -> Profile:
+        mw = self.main_window
+        return Profile(
+            start_url=mw.start_url_widget.text().strip(),
+            user_agent=mw.user_agent_widget.currentText(),
+            max_pages=int(mw.max_pages_ctrl.text() or 5),
+            crawl_depth=mw.crawl_depth_ctrl.value(),
+            min_pause_ms=int(mw.min_pause_ctrl.text() or 53),
+            max_pause_ms=int(mw.max_pause_ctrl.text() or 735),
+            include_paths=[p.strip() for p in mw.include_paths_widget.toPlainText().splitlines() if p.strip()],
+            exclude_paths=[p.strip() for p in mw.exclude_paths_widget.toPlainText().splitlines() if p.strip()],
+            stay_on_subdomain=mw.stay_on_subdomain_check.isChecked(),
+            ignore_queries=mw.ignore_queries_check.isChecked(),
+            local_dir=mw.local_dir_ctrl.text().strip(),
+            local_excludes=[p.strip() for p in mw.local_exclude_ctrl.toPlainText().splitlines() if p.strip()],
+            use_gitignore=mw.use_gitignore_check.isChecked(),
+            hide_binaries=mw.hide_binaries_check.isChecked(),
+            dir_depth=mw.dir_level_ctrl.value(),
+            output_filename_prefix=mw.output_filename_ctrl.text().strip(),
+            output_format=mw.output_format_choice.currentText(),
+        )
+
+    def _apply_profile_to_ui(self, profile: Profile) -> None:
+        mw = self.main_window
+        mw.start_url_widget.setText(profile.start_url)
+        ua_index = mw.user_agent_widget.findText(profile.user_agent)
+        if ua_index >= 0:
+            mw.user_agent_widget.setCurrentIndex(ua_index)
+        mw.max_pages_ctrl.setText(str(profile.max_pages))
+        mw.crawl_depth_ctrl.setValue(profile.crawl_depth)
+        mw.min_pause_ctrl.setText(str(profile.min_pause_ms))
+        mw.max_pause_ctrl.setText(str(profile.max_pause_ms))
+        mw.include_paths_widget.setPlainText("\n".join(profile.include_paths))
+        mw.exclude_paths_widget.setPlainText("\n".join(profile.exclude_paths))
+        mw.stay_on_subdomain_check.setChecked(profile.stay_on_subdomain)
+        mw.ignore_queries_check.setChecked(profile.ignore_queries)
+        mw.local_dir_ctrl.setText(profile.local_dir)
+        mw.local_exclude_ctrl.setPlainText("\n".join(profile.local_excludes))
+        mw.use_gitignore_check.setChecked(profile.use_gitignore)
+        mw.hide_binaries_check.setChecked(profile.hide_binaries)
+        mw.dir_level_ctrl.setValue(profile.dir_depth)
+        mw.output_filename_ctrl.setText(profile.output_filename_prefix)
+        fmt_index = mw.output_format_choice.findText(profile.output_format)
+        if fmt_index >= 0:
+            mw.output_format_choice.setCurrentIndex(fmt_index)
+
+    def on_save_profile(self) -> None:
+        if self.state_service.current_state != AppState.IDLE:
+            return
+        name, ok = QInputDialog.getText(self.main_window, "Save Profile", "Profile name:")
+        if not ok or not name:
+            return
+        profile = self._read_profile_from_ui()
+        profile.name = name.strip()
+        self.config_service.save_profile(profile)
+        logging.info(f"Profile '{profile.name}' saved.")
+
+    def on_load_profile(self) -> None:
+        if self.state_service.current_state != AppState.IDLE:
+            return
+        names = self.config_service.list_profile_names()
+        if not names:
+            QMessageBox.information(self.main_window, "Load Profile", "No saved profiles found.")
+            return
+        name, ok = QInputDialog.getItem(self.main_window, "Load Profile", "Select profile:", names, 0, False)
+        if not ok or not name:
+            return
+        profile = self.config_service.load_profile(name)
+        if profile is None:
+            QMessageBox.warning(self.main_window, "Load Profile", f"Could not load profile '{name}'.")
+            return
+        self._apply_profile_to_ui(profile)
+        logging.info(f"Profile '{name}' loaded.")
 
     # --- Task Initiation ---
 

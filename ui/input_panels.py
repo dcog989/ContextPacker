@@ -214,10 +214,14 @@ class InputPanelFactory:
     def create_system_panel(self):
         """Creates and configures the System QGroupBox, returning the group and its controls."""
         system_group = QGroupBox("System")
-        layout = QHBoxLayout(system_group)
-        layout.setContentsMargins(10, 15, 10, 10)
+        main_layout = QVBoxLayout(system_group)
+        main_layout.setContentsMargins(10, 15, 10, 10)
+        main_layout.setSpacing(6)
 
-        # Logo and Title
+        # Row 1: Logo, Title, Theme Switch
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+
         logo_path = resource_path("assets/icons/ContextPacker.svg")
         svg_bytes = logo_path.read_bytes()
         logo_pixmap = render_svg_to_pixmap(svg_bytes, QSize(48, 48))
@@ -229,27 +233,45 @@ class InputPanelFactory:
         about_logo.setScaledContents(True)
 
         about_text = QLabel("ContextPacker")
-        about_text.setObjectName("AppNameLabel")  # Set object name for accent color styling
+        about_text.setObjectName("AppNameLabel")
         about_text.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
         text_layout = QVBoxLayout()
         text_layout.addWidget(about_text)
         text_layout.setSpacing(0)
 
-        layout.addWidget(about_logo)
-        layout.addLayout(text_layout)
-        layout.addStretch()
-
-        # Theme Switch
         theme_switch_button = QPushButton()
         theme_switch_button.setObjectName("ThemeSwitchButton")
         theme_switch_button.setFixedSize(32, 32)
-        layout.addWidget(theme_switch_button)
+
+        top_row.addWidget(about_logo)
+        top_row.addLayout(text_layout)
+        top_row.addStretch()
+        top_row.addWidget(theme_switch_button)
+
+        main_layout.addLayout(top_row)
+
+        # Row 2: Profile buttons
+        profile_row = QHBoxLayout()
+        profile_row.setContentsMargins(0, 0, 0, 0)
+        profile_row.addStretch()
+
+        save_profile_button = QPushButton("Save Profile")
+        load_profile_button = QPushButton("Load Profile")
+        save_profile_button.setFixedHeight(28)
+        load_profile_button.setFixedHeight(28)
+
+        profile_row.addWidget(save_profile_button)
+        profile_row.addWidget(load_profile_button)
+
+        main_layout.addLayout(profile_row)
 
         widgets = {
             "system_panel": system_group,
             "about_logo": about_logo,
             "about_text": about_text,
             "theme_switch_button": theme_switch_button,
+            "save_profile_button": save_profile_button,
+            "load_profile_button": load_profile_button,
         }
         return widgets
