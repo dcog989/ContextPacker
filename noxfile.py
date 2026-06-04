@@ -163,7 +163,7 @@ def archive(session, exe_path):
 def install(session):
     """Install a .desktop menu entry for the application (per-user)."""
     project_dir = Path.cwd().resolve()
-    icon_path = project_dir / "assets" / "icons" / "ContextPacker-x64.png"
+    icon_path = project_dir / "assets" / "icons" / "ContextPacker.svg"
 
     if not icon_path.is_file():
         session.error(f"Icon not found: {icon_path}")
