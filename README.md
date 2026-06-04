@@ -65,9 +65,10 @@ sudo ln -s /opt/ContextPacker/ContextPacker /usr/local/bin/contextpacker
 ## Updating
 
 ```sh
-uv sync --upgrade                                    # bump all deps
-uv lock --upgrade-package <name> && uv sync          # bump one package
-uv tree --outdated                                   # check what's stale
+uv pip list --outdated                       # check outdated
+uv tree --outdated                           # check outdated in tree
+uv sync --upgrade                            # bump all deps
+uv lock --upgrade-package <name> && uv sync  # bump one package
 ```
 
 ---

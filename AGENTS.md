@@ -1,6 +1,6 @@
 # AGENTS.md
 
-ContextPacker is a **PySide6 desktop application** (Python 3.14+) that scrapes websites, clones Git repos, or packages local files into a single Markdown/TXT/XML file optimized for LLM consumption. Uses repomix as a library for final packaging.
+ContextPacker: PySide6 desktop app (Python 3.14+) that scrapes websites, clones Git repos, or packages local files into Markdown/TXT/XML for LLM consumption. Uses repomix as a library for final packaging.
 
 ## Dev Environment
 
@@ -8,34 +8,34 @@ Linux CachyOS, KDE Plasma 6, Wayland, Btrfs, fish shell, Ghostty. `uv` package m
 
 ## Tech Stack
 
-- **Python** `>=3.14, <3.15`, **PySide6** `>=6.10`, **uv** + `uv.lock`
-- **Build**: hatchling, PyInstaller `>=6.16`, nox `>=2026.4`
-- **Crawling**: requests, beautifulsoup4, lxml, markdownify
-- **Validation**: pydantic `>=2.13`
-- **Packaging**: repomix `>=0.5` (imported as Python library)
-- **Linting**: ruff, line-length = 120
-- **No test framework** — no test suite exists
+- Python `>=3.14`, PySide6 `>=6.10`, uv + uv.lock
+- Build: hatchling, PyInstaller `>=6.16`, nox `>=2026.4`
+- Crawling: requests, beautifulsoup4, lxml, markdownify
+- Validation: pydantic `>=2.13`
+- Packaging: repomix `>=0.5` (imported as Python library)
+- Linting: ruff, line-length 120
+- No test suite
 
 ## Architecture (MVC-like with Signal Bus)
 
 ```text
-UI (ui/)  --signals-->  UiController  --calls-->  Services (core/)
-                        (app_ui_controller.py)     |-- StateService
-                                                   |-- TaskService (thread pool + msg queue)
-                                                   |-- ConfigService (settings.json)
-                                                   |-- ThemeManager (dark/light)
-                                                   |-- LoggerSetup (file + Qt signal)
-                                                         |
-                                                    worker functions
-                                                    (core/actions.py, crawler.py, packager.py)
+UI (ui/) --signals--> UiController --calls--> Services (core/)
+                     (app_ui_controller.py)    |-- StateService
+                                               |-- TaskService (thread pool + msg queue)
+                                               |-- ConfigService (settings.json)
+                                               |-- ThemeManager (dark/light)
+                                               |-- LoggerSetup (file + Qt signal)
+                                                     |
+                                                worker functions
+                                                (core/actions.py, crawler.py, packager.py)
 ```
 
-- **Signal bus**: `AppSignals(QObject)` in `core/signals.py` — all typed Qt signals flow through this
-- **Message queue**: Workers enqueue typed dataclasses (`LogMessage`, `StatusMessage`, `ProgressMessage`, `FileSavedMessage`, `GitCloneDoneMessage`, `LocalScanCompleteMessage`) — daemon watcher thread dispatches them to the right signal
-- **State machine**: `StateService` tracks `AppState.IDLE | TASK_RUNNING | TASK_STOPPING`
+- **Signal bus**: `AppSignals(QObject)` in `core/signals.py` — all typed Qt signals
+- **Message queue**: Workers enqueue typed dataclasses; daemon watcher dispatches to appropriate signal
+- **State machine**: `StateService` tracks `IDLE | TASK_RUNNING | TASK_STOPPING`
 - **Thread pool**: `TaskService` wraps `ThreadPoolExecutor` + `threading.Event()` for cancellation
 - **Factory pattern**: `InputPanelFactory`, `OutputPanelFactory` construct UI widget groups
-- **Cooperative cancellation**: Workers check `cancel_event.is_set()`; subprocess cleanup uses terminate → kill → timeout escalation
+- **Cooperative cancellation**: Workers check `cancel_event.is_set()`; subprocess cleanup uses terminate → kill → timeout
 
 ## Entry Points
 
@@ -53,16 +53,16 @@ Session names use underscores matching noxfile.py function names.
 
 ## Key Modules
 
-### `core/actions.py` — Worker functions (run in thread pool)
+### `core/actions.py` — Worker functions (thread pool)
 
-- `clone_repo_worker()` — validates git, URL, path; runs `git clone --depth 1` via subprocess; path traversal protection
+- `clone_repo_worker()` — validates git/URL/path, `git clone --depth 1` via subprocess, path traversal protection
 - `packaging_worker()` — wraps `run_repomix` with progress handler
-- `get_local_files_worker()` — BFS directory scan with gitignore/mtime-cached patterns, fnmatch filtering
+- `get_local_files_worker()` — BFS directory scan, gitignore/mtime-cached patterns, fnmatch filtering
 - `create_session_dir()` — creates `cache/session-YYMMDD-HHMMSS/`
 
 ### `core/crawler.py` — Web crawler
 
-- `crawl_website()` — BFS crawl with requests.Session, depth tracking, URL normalization, markdownify conversion
+- `crawl_website()` — BFS with requests.Session, depth tracking, URL normalization, markdownify
 - Politeness: `random.uniform(min_pause, max_pause)` ms between requests
 - Filters: subdomain, include/exclude path patterns, max_pages limit
 
@@ -73,7 +73,7 @@ Session names use underscores matching noxfile.py function names.
 ### `core/config_service.py` — settings.json persistence
 
 - `~/.config/ContextPacker/settings.json` — user-editable runtime config
-- `_mutable_keys` (app-managed: window state, sash positions) vs `_static_keys` (user-managed: excludes, agents, log config)
+- `_mutable_keys` (app-managed: window state, sash) vs `_static_keys` (user-managed: excludes, agents, log)
 - `save_config(save_static=False)` preserves static keys by default
 
 ### `core/state_service.py` — State machine
@@ -82,10 +82,10 @@ Session names use underscores matching noxfile.py function names.
 
 ### `core/task_service.py` — Thread pool + message queue
 
-- `submit_task(task_fn, ...)` — injects `message_queue` and `cancel_event`
+- `submit_task(task_fn, ...)` injects `message_queue` and `cancel_event`
 - `cancel_current_task()` / `shutdown()` — cooperative + daemon waiter thread
 
-### `core/types.py` — Enums, dataclasses, type alias
+### `core/types.py` — Enums, dataclasses, type aliases
 
 - `Message = LogMessage | StatusMessage | ProgressMessage | FileSavedMessage | GitCloneDoneMessage | LocalScanCompleteMessage`
 - `file_info_to_dict()` / `dict_to_file_info()` for backward compat
@@ -99,14 +99,14 @@ Session names use underscores matching noxfile.py function names.
 ### `core/error_handling.py` — Cleanup utilities
 
 - `WorkerErrorHandler` — process cleanup (graceful → force kill → error), stream cleanup
-- `safe_stream_enqueue()` — reads subprocess stdout binary, decodes, enqueues LogMessage
+- `safe_stream_enqueue()` — reads subprocess stdout, decodes, enqueues LogMessage
 - `validate_tool_availability()` / `create_tool_missing_error()`
 
 ### `core/theme_manager.py` — Dark/light mode
 
 - Detects system dark via `QPalette.Window.lightnessF() < 0.5`
-- Dynamic SVG icons: `update_theme_icon()`, `update_copy_icon()` — recolors fill at runtime
-- Accent color: green `#2E8B57`
+- Dynamic SVG icons: `update_theme_icon()`, `update_copy_icon()` — runtime fill recoloring
+- Accent color: `#2E8B57` green
 
 ### `core/icon_utils.py` — SVG utilities
 
@@ -137,7 +137,7 @@ Session names use underscores matching noxfile.py function names.
 
 ### `core/version.py` — Version
 
-- `__version__` from `importlib.metadata.version("contextpacker")` fallback `"0.0.0-dev"`
+- `__version__` from `importlib.metadata.version("contextpacker")`, fallback `"0.0.0-dev"`
 
 ### `ui/main_window.py` — MainWindow(QWidget)
 
@@ -146,14 +146,14 @@ Session names use underscores matching noxfile.py function names.
 - `add_scraped_files_batch()` — chunked batch insertion via `QTimer.singleShot(0)`
 - `populate_local_file_list()` — full table population
 - `manage_log_size()` — trims first 25% when > 1000 lines
-- Context menu: "Clear Log" on verbose log widget
+- Context menu: "Clear Log" on verbose log
 - Splitter state restore from config on init
 
 ### `ui/input_panels.py` — InputPanelFactory
 
-- `create_crawler_panel()` — URL, user-agent, max pages, depth, pause (ms), path filters, checkboxes, button
+- `create_crawler_panel()` — URL, user-agent, pages, depth, pause, path filters, checkboxes, button
 - `create_local_panel()` — directory, excludes, gitignore, hide-binaries, depth
-- `create_system_panel()` — logo + theme switch button
+- `create_system_panel()` — logo + theme switch + profile buttons
 
 ### `ui/output_panels.py` — OutputPanelFactory
 
@@ -163,8 +163,8 @@ Session names use underscores matching noxfile.py function names.
 ### `ui/styles.py` — AppTheme (300+ line Qt stylesheet)
 
 - Dark/light color palettes with green accent
-- `_setup_themed_icons()` — generates cached PNG icons in app data dir (up/down arrow, checkmark)
-- Covers: QWidget, QSplitter, QGroupBox, QLabel, QTextEdit#VerboseLog, QLineEdit, QSpinBox, QComboBox, QPushButton, QPushButton#PrimaryButton, QPushButton#ThemeSwitchButton, QCheckBox, QRadioButton, QTableWidget, QHeaderView, QProgressBar, QScrollBar
+- `_setup_themed_icons()` — generates cached PNG icons (up/down arrow, checkmark)
+- Covers: QWidget, QSplitter, QGroupBox, QLabel, QTextEdit#VerboseLog, QLineEdit, QSpinBox, QComboBox, QPushButton (#PrimaryButton, #ThemeSwitchButton), QCheckBox, QRadioButton, QTableWidget, QHeaderView, QProgressBar, QScrollBar
 
 ### `ui/about_dialog.py` — AboutDialog(QDialog)
 
@@ -172,45 +172,32 @@ Session names use underscores matching noxfile.py function names.
 
 ## Build Output
 
-- **Development**: `uv run python app.py`
-- **Debug build** (console enabled): `dist/ContextPacker/ContextPacker`
-- **Production build**: `dist/ContextPacker/ContextPacker` + `dist/ContextPacker-Linux-x64-v{version}.7z` (via 7za, fallback .zip)
+- Development: `uv run python app.py`
+- Debug build (console enabled): `dist/ContextPacker/ContextPacker`
+- Production: `dist/ContextPacker/ContextPacker` + `dist/ContextPacker-Linux-x64-v{version}.7z` (7za, fallback .zip)
 
 ## File System Access
 
-### Allowed
+**Allowed:** `.agents/`, `.github/`, `.vscode/`, `core/`, `ui/`, `assets/`, `scripts/`, root files (`app.py`, `noxfile.py`, `pyproject.toml`, `ContextPacker.spec`, `config.json`, `README.md`, `AGENTS.md`, `.gitignore`, `ruff.config`), `~/.config/ContextPacker/`
 
-- `.agents/`, `.github/`, `.vscode/`
-- `core/`, `ui/`, `assets/`, `scripts/`
-- Root: `app.py`, `noxfile.py`, `pyproject.toml`, `ContextPacker.spec`, `config.json`, `README.md`, `AGENTS.md`, `.gitignore`, `ruff.config`
-- App data: `~/.config/ContextPacker/`
-
-### Disallowed
-
-- `.ai/`, `.docs/`, `.git/`, `build/`, `dist/`, `node_modules/`, `logs/`
-- `uv.lock`, `repomix.config.json`, `.repomixignore`
+**Disallowed:** `.ai/`, `.docs/`, `.git/`, `build/`, `dist/`, `node_modules/`, `logs/`, `uv.lock`, `repomix.config.json`, `.repomixignore`
 
 ## Coding Principles
 
-- Keep existing conventions when modifying
-- KISS, DRY, YAGNI
-- Self-documenting code via clear naming (not comments)
-- Comments only for workarounds or non-obvious logic
+- Keep existing conventions; KISS, DRY, YAGNI
+- Self-documenting code via clear naming (not comments); comments only for workarounds/unobvious logic
 - No magic numbers — use `core/constants.py`
-- **Do NOT create docs files** unless explicitly instructed
+- Do NOT create docs files unless explicitly instructed
 - Batch UI updates (50-row chunks) to keep UI responsive
 - All worker functions accept `message_queue` + `cancel_event` kwargs
 - All typed messages go through the signal bus pattern
-
-## Common Patterns
-
-- **Message enqueue**: Worker calls `message_queue.put(StatusMessage(...))`, watcher thread routes to correct signal
-- **Cancel check**: `if cancel_event.is_set(): return` at strategic points in workers
-- **Subprocess safety**: `create_process_with_flags()` then `safe_stream_enqueue()` on reader thread; cleanup in `finally` block
-- **Config access**: `ConfigService.get(key, default)` for runtime reads; `ConfigService.save_window_state()` on close
-- **Theme SVG icons**: path stored in widget attr, recolored via `colorize_svg()` at theme toggle
-- **Resource paths**: always use `resource_path("assets/...")` for assets
-- **State guards**: `if state_service.current_state != AppState.IDLE: return` before starting tasks
+- Worker calls `message_queue.put(...)`, watcher thread routes to correct signal
+- `if cancel_event.is_set(): return` at strategic points in workers
+- Subprocess safety: `create_process_with_flags()` → `safe_stream_enqueue()` on reader thread; cleanup in `finally`
+- Config access: `ConfigService.get(key, default)` for reads; `ConfigService.save_window_state()` on close
+- Theme SVG icons: path stored in widget attr, recolored via `colorize_svg()` at theme toggle
+- Resource paths: always use `resource_path("assets/...")`
+- State guards: `if state_service.current_state != AppState.IDLE: return` before starting tasks
 
 ## Key Workflows
 
@@ -218,14 +205,14 @@ Session names use underscores matching noxfile.py function names.
 
 1. User enters URL → UiController detects Git URL or regular URL
 2. **Git URL**: `clone_repo_worker()` → `GitCloneDoneMessage` → switches to local file mode
-3. **Regular URL**: `crawl_website()` with `CrawlerConfig` → BFS crawl → emits `FileSavedMessage` per page
+3. **Regular URL**: `crawl_website()` with `CrawlerConfig` → BFS crawl → `FileSavedMessage` per page
 4. UI batch-updates file list via 250ms timer
-5. Completion: `StatusMessage(SOURCE_COMPLETE)` → state returns to IDLE
+5. Completion: `StatusMessage(SOURCE_COMPLETE)` → state → IDLE
 
 ### Local Directory
 
-1. User selects local dir → `get_local_files_worker()`
-2. BFS scan with gitignore/binary/exclude filtering → `LocalScanCompleteMessage`
+1. User selects dir → `get_local_files_worker()`
+2. BFS with gitignore/binary/exclude filtering → `LocalScanCompleteMessage`
 3. UI populates local file table
 
 ### Package
@@ -236,7 +223,7 @@ Session names use underscores matching noxfile.py function names.
 
 ## Interaction Style
 
-- do not pretend to understand how the user feels. no "You're right to be frustrated." etc.
-- no analogies
-- be concise, be precise
-- answer the question asked, no 'helpful' suggestions
+- do not pretend to understand how the user feels
+- do not pretend to be human
+- be concise, be precise, no analogies, no apologies
+- answer the question asked - do not prompt the next step or add 'helpful' suggestions
