@@ -93,6 +93,17 @@ uv run nox -s clean        # remove build/ dist/ __pycache__
 
 ---
 
+## Install to menu
+
+```sh
+uv run nox -s install      # writes ~/.local/share/applications/contextpacker.desktop
+uv run nox -s uninstall    # removes it
+```
+
+The entry launches via `uv run`, so it always uses the latest source and syncs dependencies automatically. KDE Plasma picks up the new entry within a few seconds; if it does not appear, log out and back in.
+
+---
+
 ## Development
 
 ```text

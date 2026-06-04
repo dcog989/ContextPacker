@@ -168,6 +168,9 @@ class App(QMainWindow):
 def main():
     """Main application entry point."""
     app = QApplication(sys.argv)
+    app.setApplicationName("ContextPacker")
+    app.setApplicationDisplayName("ContextPacker")
+    app.setDesktopFileName("contextpacker")
     # The App instance MUST be assigned to a variable to prevent it from being
     # garbage collected immediately. Using `_window` signals intent that the
     # variable is intentionally not used elsewhere.

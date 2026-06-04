@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -9,6 +10,28 @@ APP_NAME = "ContextPacker"
 DIST_DIR = Path("dist")
 BUILD_DIR = Path("build")
 SPEC_FILE = Path(f"{APP_NAME}.spec")
+DESKTOP_FILE_DEST = Path.home() / ".local" / "share" / "applications" / "contextpacker.desktop"
+
+DESKTOP_TEMPLATE = """\
+[Desktop Entry]
+Type=Application
+Name=ContextPacker
+GenericName=LLM Context Packager
+Comment=Scrape websites, clone repos, or package local files for LLM consumption
+Exec=uv --directory {project_dir} run python app.py
+Icon={icon_path}
+Terminal=false
+Categories=Utility;Development;TextEditor;
+StartupNotify=true
+StartupWMClass=ContextPacker
+"""
+
+
+def _refresh_desktop_cache():
+    if shutil.which("kbuildsycoca6"):
+        subprocess.run(["kbuildsycoca6", "--noincremental"], check=False)
+    if shutil.which("update-desktop-database"):
+        subprocess.run(["update-desktop-database", str(DESKTOP_FILE_DEST.parent)], check=False)
 
 
 # --- Helper Functions ---
@@ -118,7 +141,7 @@ def archive(session, exe_path):
             ["git", "log", "--pretty=format:- %s (%h)"], capture_output=True, text=True, check=True
         ).stdout
         changelog_path.write_text(git_log, encoding="utf-8")
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except subprocess.CalledProcessError, FileNotFoundError:
         session.warn("Failed to generate changelog. Is Git installed?")
 
     if shutil.which("7za"):
@@ -134,3 +157,35 @@ def archive(session, exe_path):
         shutil.make_archive(str(archive_path), "zip", build_dir)
 
     session.log("Archiving complete.")
+
+
+@nox.session(python=False)
+def install(session):
+    """Install a .desktop menu entry for the application (per-user)."""
+    project_dir = Path.cwd().resolve()
+    icon_path = project_dir / "assets" / "icons" / "ContextPacker-x64.png"
+
+    if not icon_path.is_file():
+        session.error(f"Icon not found: {icon_path}")
+
+    DESKTOP_FILE_DEST.parent.mkdir(parents=True, exist_ok=True)
+    DESKTOP_FILE_DEST.write_text(
+        DESKTOP_TEMPLATE.format(project_dir=project_dir, icon_path=icon_path),
+        encoding="utf-8",
+    )
+    os.chmod(DESKTOP_FILE_DEST, 0o644)
+
+    session.log(f"Wrote {DESKTOP_FILE_DEST}")
+    _refresh_desktop_cache()
+    session.log("Menu entry installed. It may take a few seconds to appear in your application launcher.")
+
+
+@nox.session(python=False)
+def uninstall(session):
+    """Remove the .desktop menu entry."""
+    if DESKTOP_FILE_DEST.is_file():
+        DESKTOP_FILE_DEST.unlink()
+        session.log(f"Removed {DESKTOP_FILE_DEST}")
+        _refresh_desktop_cache()
+    else:
+        session.log(f"No menu entry found at {DESKTOP_FILE_DEST}")
