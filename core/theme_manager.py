@@ -22,10 +22,15 @@ class ThemeManager:
         self.icons_dir_path = app_data_dir / "icons"
         self.icons_dir_path.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _get_app():
+        app = QApplication.instance()
+        return app if app and isinstance(app, QApplication) else None
+
     def _check_if_system_is_dark(self) -> bool:
         """Checks if the system/Qt palette is currently in a dark mode."""
-        app = QApplication.instance()
-        if not app or not isinstance(app, QApplication):
+        app = self._get_app()
+        if not app:
             return False
         # A simple check: if the window background is closer to black than white
         return app.palette().color(QPalette.ColorRole.Window).lightnessF() < 0.5
@@ -33,8 +38,8 @@ class ThemeManager:
     def apply_theme(self):
         """Applies the base stylesheet and platform-specific hints, relying on Qt's built-in palette."""
         is_dark = self.is_dark_mode_visual_state
-        app = QApplication.instance()
-        if not app or not isinstance(app, QApplication):
+        app = self._get_app()
+        if not app:
             return
 
         # 1. Force the PySide6 palette to switch using the saved visual state

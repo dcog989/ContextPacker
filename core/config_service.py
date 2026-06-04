@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 from .utils import get_app_data_dir
@@ -183,6 +184,7 @@ class ConfigService:
         filepath = profiles_dir / f"{profile.name}.json"
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(profile_to_dict(profile), f, indent=2)
+        logging.info(f"Profile saved to {filepath}")
 
     def load_profile(self, name: str) -> Profile | None:
         profiles_dir = self._get_profiles_dir()

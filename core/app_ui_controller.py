@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from pathlib import Path
 import re
 import threading
@@ -9,9 +10,18 @@ from PySide6.QtCore import Qt, QTimer
 from pydantic import ValidationError
 
 from . import actions
+from .constants import (
+    BATCH_UPDATE_INTERVAL_MS,
+    DEFAULT_OUTPUT_FILENAME_PREFIX,
+    EXCLUDE_UPDATE_INTERVAL_MS,
+    LOG_DEBOUNCE_INTERVAL_MS,
+    UI_CRAWL_STATS_UPDATE_BATCH_SIZE,
+    UI_UPDATE_INTERVAL_MS,
+)
 from .crawler import crawl_website
 from .config import CrawlerConfig
 from .types import AppState, StatusType, FileType, dict_to_file_info, Profile
+from .utils import open_folder
 from ui.about_dialog import AboutDialog
 
 
@@ -29,21 +39,21 @@ class UiController:
         # Timers for debouncing
         self.exclude_update_timer = QTimer()
         self.exclude_update_timer.setSingleShot(True)
-        self.exclude_update_timer.setInterval(500)
+        self.exclude_update_timer.setInterval(EXCLUDE_UPDATE_INTERVAL_MS)
 
         self.timestamp_timer = QTimer()
-        self.timestamp_timer.setInterval(1000)
+        self.timestamp_timer.setInterval(UI_UPDATE_INTERVAL_MS)
 
         # Batching for UI updates
         self.scraped_files_batch = []
         self.batch_update_timer = QTimer()
-        self.batch_update_timer.setInterval(250)
+        self.batch_update_timer.setInterval(BATCH_UPDATE_INTERVAL_MS)
 
         # Log batching
         self._pending_log_messages = []
         self.log_debounce_timer = QTimer()
         self.log_debounce_timer.setSingleShot(True)
-        self.log_debounce_timer.setInterval(50)
+        self.log_debounce_timer.setInterval(LOG_DEBOUNCE_INTERVAL_MS)
 
         # State for local file scanning
         self.gitignore_cache = {}
@@ -307,7 +317,7 @@ class UiController:
             QMessageBox.critical(self.main_window, "Input Error", "Valid source directory is required.")
             return
 
-        filename_prefix = self.main_window.output_filename_ctrl.text().strip() or "ContextPacker-package"
+        filename_prefix = self.main_window.output_filename_ctrl.text().strip() or DEFAULT_OUTPUT_FILENAME_PREFIX
         extension = self.main_window.output_format_choice.currentText()
         downloads_path = str(Path.home() / "Downloads")
         timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
@@ -381,8 +391,6 @@ class UiController:
 
     def _open_output_folder(self, folder_path, message_queue=None, cancel_event=None):
         """Opens the output folder without blocking the UI."""
-        from core.utils import open_folder
-
         if cancel_event and cancel_event.is_set():
             return
         try:
@@ -457,14 +465,14 @@ class UiController:
         else:
             display_total = max_pages
 
-        # Throttle UI updates: only update progress/label every 5 saves or on the last one
-        if saved_count % 5 == 0 or saved_count == 1 or saved_count >= max_pages:
+        # Throttle UI updates: only update progress/label every N saves or on the last one
+        if saved_count % UI_CRAWL_STATS_UPDATE_BATCH_SIZE == 0 or saved_count == 1 or saved_count >= max_pages:
             self.main_window.update_web_crawl_stats(saved_count, display_total)
             self.main_window.progress_gauge.setMaximum(display_total)
             self.main_window.progress_gauge.setValue(saved_count)
 
         # Add the file to the UI list for batch updating.
-        self.scraped_files_batch.append(file_msg.__dict__)
+        self.scraped_files_batch.append(asdict(file_msg))
 
     def on_git_clone_done(self, done_msg):
         self.main_window.local_dir_ctrl.setText(done_msg.path)

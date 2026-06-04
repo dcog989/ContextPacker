@@ -3,6 +3,7 @@ import logging
 import queue
 import re
 import threading
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -26,7 +27,6 @@ from .types import (
     FileType,
     GitCloneDoneMessage,
     LocalScanCompleteMessage,
-    LogMessage,
     ProgressMessage,
     StatusMessage,
     StatusType,
@@ -103,15 +103,14 @@ def clone_repo_worker(url, path, message_queue: queue.Queue, cancel_event: threa
 
             try:
                 line = output_queue.get(timeout=GIT_CLONE_OUTPUT_POLL_SECONDS)
-                if line and isinstance(line, LogMessage):
-                    # The stream enqueue still produces LogMessage objects
+                if line:
                     logging.info(line.message.strip())
             except queue.Empty:
                 continue
 
         while not output_queue.empty():
             line = output_queue.get_nowait()
-            if line and isinstance(line, LogMessage):
+            if line:
                 logging.info(line.message.strip())
 
         if cancel_event.is_set():
@@ -243,8 +242,6 @@ def _prepare_filters(root_dir, use_gitignore, custom_excludes, binary_excludes, 
 
 
 def _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event):
-    from collections import deque
-
     base_path = Path(root_dir)
     files_to_show, depth_excludes = [], set()
     if max_depth == UNLIMITED_DEPTH_VALUE:

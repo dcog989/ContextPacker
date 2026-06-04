@@ -7,6 +7,11 @@ This module centralizes all magic numbers and configuration values.
 BATCH_UPDATE_INTERVAL_MS = 250  # Timer for batch updates to scraped files list
 EXCLUDE_UPDATE_INTERVAL_MS = 500  # Debounce timer for exclude text changes
 UI_UPDATE_INTERVAL_MS = 1000  # Timer for UI updates (timestamp labels, etc.)
+LOG_DEBOUNCE_INTERVAL_MS = 50  # Debounce timer for log message batching
+UI_CRAWL_STATS_UPDATE_BATCH_SIZE = 5  # Update crawl stats every N saved files
+
+# Default Output Filename
+DEFAULT_OUTPUT_FILENAME_PREFIX = "ContextPacker-package"
 
 # UI Component Constants
 DEFAULT_WINDOW_WIDTH = 1600

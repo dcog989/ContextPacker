@@ -14,9 +14,8 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 from PySide6.QtGui import QCursor, QIntValidator
-from PySide6.QtCore import Qt, QSize
-from core.utils import resource_path
-from core.icon_utils import render_svg_to_pixmap
+from PySide6.QtCore import Qt
+from core.icon_utils import load_svg_logo
 from core.constants import DEFAULT_MIN_PAUSE_MS, DEFAULT_MAX_PAUSE_MS
 
 
@@ -198,8 +197,6 @@ class InputPanelFactory:
         form_layout.addRow("Directory Depth:", dir_level_layout)
 
         layout.addLayout(form_layout)
-        # Don't add stretch to prevent pushing form layout content apart
-        # layout.addStretch()  # REMOVED
 
         widgets.update(
             {
@@ -225,9 +222,7 @@ class InputPanelFactory:
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
 
-        logo_path = resource_path("assets/icons/ContextPacker.svg")
-        svg_bytes = logo_path.read_bytes()
-        logo_pixmap = render_svg_to_pixmap(svg_bytes, QSize(48, 48))
+        logo_pixmap = load_svg_logo()
 
         about_logo = QLabel()
         about_logo.setPixmap(logo_pixmap)

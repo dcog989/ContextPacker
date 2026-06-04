@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import sys
 
 
-def resource_path(relative_path):
+def resource_path(relative_path: str) -> Path:
     if getattr(sys, "frozen", False):
         meipass_path = getattr(sys, "_MEIPASS", None)
         if meipass_path:
@@ -17,12 +17,12 @@ def resource_path(relative_path):
     return base_path / relative_path
 
 
-def get_app_data_dir():
+def get_app_data_dir() -> Path:
     """Gets the Linux application data directory for persistent data."""
     return Path.home() / ".config" / "ContextPacker"
 
 
-def cleanup_old_directories(base_dir, days_threshold):
+def cleanup_old_directories(base_dir: Path, days_threshold: int) -> None:
     if not base_dir.is_dir():
         return
 

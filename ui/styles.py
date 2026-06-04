@@ -143,7 +143,7 @@ class AppTheme:
             }}
             
             /* Input/output fields - different shade from app background */
-            QLineEdit, QTextEdit, QSpinBox, QComboBox, QTableWidget, QProgressBar {{
+            QLineEdit, QTextEdit, QSpinBox, QComboBox {{
                 background-color: {self.input_bg};
                 border: 1px solid {self.border_color};
                 border-radius: 3px;

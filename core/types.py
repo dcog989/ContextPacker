@@ -9,6 +9,8 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any, Optional
 
+from .constants import DEFAULT_MIN_PAUSE_MS, DEFAULT_MAX_PAUSE_MS, DEFAULT_OUTPUT_FILENAME_PREFIX
+
 
 class StatusType(Enum):
     """Enumeration of status types."""
@@ -136,8 +138,8 @@ class Profile:
     user_agent: str = ""
     max_pages: int = 5
     crawl_depth: int = 1
-    min_pause_ms: int = 53
-    max_pause_ms: int = 735
+    min_pause_ms: int = DEFAULT_MIN_PAUSE_MS
+    max_pause_ms: int = DEFAULT_MAX_PAUSE_MS
     include_paths: list[str] = field(default_factory=list)
     exclude_paths: list[str] = field(default_factory=list)
     stay_on_subdomain: bool = True
@@ -147,7 +149,7 @@ class Profile:
     use_gitignore: bool = True
     hide_binaries: bool = True
     dir_depth: int = 9
-    output_filename_prefix: str = "ContextPacker-package"
+    output_filename_prefix: str = DEFAULT_OUTPUT_FILENAME_PREFIX
     output_format: str = ".md"
 
 

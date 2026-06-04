@@ -16,11 +16,12 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QTableWidgetItem,
     QMenu,
+    QApplication,
 )
 from PySide6.QtCore import Qt, QByteArray, QTimer
 from PySide6.QtGui import QAction, QShortcut, QKeySequence
 
-from core.constants import MAX_LOG_LINES, UI_TABLE_INSERT_CHUNK_SIZE
+from core.constants import DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, MAX_LOG_LINES, UI_TABLE_INSERT_CHUNK_SIZE
 from ui.input_panels import InputPanelFactory
 from ui.output_panels import OutputPanelFactory
 
@@ -195,14 +196,14 @@ class MainWindow(QWidget):
         if h_state:
             self.h_splitter.restoreState(QByteArray.fromBase64(h_state.encode("utf-8")))
         else:
-            total_width = self.width() if self.width() > 0 else 1600
+            total_width = self.width() if self.width() > 0 else DEFAULT_WINDOW_WIDTH
             self.h_splitter.setSizes([total_width // 2, total_width // 2])
 
         v_state = self.config_service.get("v_sash_state")
         if v_state:
             self.v_splitter.restoreState(QByteArray.fromBase64(v_state.encode("utf-8")))
         else:
-            total_height = self.height() if self.height() > 0 else 950
+            total_height = self.height() if self.height() > 0 else DEFAULT_WINDOW_HEIGHT
             self.v_splitter.setSizes([total_height // 2, total_height // 2])
 
     def _create_context_menus(self):
@@ -263,8 +264,6 @@ class MainWindow(QWidget):
         lines = []
         for row in sorted(rows):
             lines.append("\t".join(cells.get((row, col), "") for col in col_order))
-
-        from PySide6.QtWidgets import QApplication
 
         QApplication.clipboard().setText("\n".join(lines))
 

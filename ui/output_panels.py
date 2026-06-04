@@ -1,3 +1,4 @@
+from core.constants import DEFAULT_OUTPUT_FILENAME_PREFIX
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -108,7 +109,7 @@ class OutputPanelFactory:
         output_layout = QVBoxLayout(output_group)
         output_layout.setContentsMargins(10, 20, 10, 10)
 
-        output_filename_ctrl = QLineEdit("ContextPacker-package")
+        output_filename_ctrl = QLineEdit(DEFAULT_OUTPUT_FILENAME_PREFIX)
         output_timestamp_label = QLabel("")
 
         output_format_choice = QComboBox()

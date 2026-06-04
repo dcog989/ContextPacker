@@ -44,6 +44,14 @@ def render_svg_to_pixmap(svg_bytes: bytes, size: QSize) -> QPixmap:
     return pixmap
 
 
+def load_svg_logo(size: QSize = QSize(48, 48)) -> QPixmap:
+    from .utils import resource_path
+
+    logo_path = resource_path("assets/icons/ContextPacker.svg")
+    svg_bytes = logo_path.read_bytes()
+    return render_svg_to_pixmap(svg_bytes, size)
+
+
 def create_themed_svg_icon(svg_path: Path, color: str, size: Optional[QSize] = None) -> QIcon:
     """Creates a QIcon from an SVG file, dynamically recoloring it."""
     modified_svg_bytes = colorize_svg(svg_path, color)

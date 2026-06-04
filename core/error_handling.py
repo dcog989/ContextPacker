@@ -119,8 +119,6 @@ def safe_stream_enqueue(stream, queue, shutdown_event):
         queue: Queue to put messages into
         shutdown_event: Event to check for shutdown
     """
-    from .types import LogMessage
-
     try:
         for line in iter(stream.readline, b""):
             # Decode binary line to text for logging
