@@ -23,6 +23,66 @@ ContextPacker is a desktop application designed to scrape websites, clone Git re
 
 -----
 
+## 🔧 Advanced Configuration (`settings.json`)
+
+The application creates a `settings.json` file on first run in the application data directory (`~/.config/ContextPacker` on Linux). This file contains settings that are only read once on startup and are intended to be user-managed.
+
+| Key | Description | Default Value | Notes |
+| :--- | :--- | :--- | :--- |
+| `logging_level` | Sets the verbosity of the internal log output. | `"INFO"` | Options: `"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`, `"CRITICAL"`. |
+| `log_max_size_mb` | Maximum size (in megabytes) of the `app.log` file before log rotation occurs. | `3` | |
+| `log_backup_count` | Number of backup log files to keep during rotation. | `5` | |
+| `user_agents` | A list of strings used by the web crawler to identify itself. | `[...]` | The application cycles through these. |
+| `default_output_format` | The default file extension selected in the Output panel. | `".md"` | Options: `".md"`, `".txt"`, `".xml"`. |
+| `default_local_excludes` | A list of global `fnmatch` patterns automatically applied to local directory scans. | `[".archive/", ".git/", ...]` | These are visible and editable in the 'Excludes' text area. |
+| `binary_file_patterns` | A list of `fnmatch` patterns that are considered binary/image files and can be toggled via the 'Hide Images + Binaries' checkbox. | `[*.png, *.jpg, ...]` | |
+| `max_age_cache_days` | The number of days after which old, temporary session and cache directories are automatically deleted on startup. | `7` | Set to a high number to keep all cache files indefinitely. |
+
+The file also contains window-state keys (`window_size`, `h_sash_state`, etc.) which are managed automatically by the application on close.
+
+-----
+
+## Installation & Setup
+
+### Requirements
+
+- **Git** — must be installed and in your PATH (needed for cloning repos).
+- **Python 3.14+** and **uv** — Python package manager (`pip install uv` or see [uv docs](https://docs.astral.sh/uv/)).
+
+### Run from Source
+
+```sh
+git clone <repo-url>
+cd ContextPacker
+uv sync
+uv run python app.py
+```
+
+### Pre-built Binary (Linux)
+
+Extract the archive from a release and symlink to a directory on your PATH:
+
+```sh
+7za x dist/ContextPacker-Linux-x64-v*.7z
+sudo cp -r ContextPacker /opt/
+sudo ln -s /opt/ContextPacker/ContextPacker /usr/local/bin/contextpacker
+```
+
+## Updating Dependencies
+
+```sh
+# Update all dependencies (direct + transitive) and sync the environment
+uv sync --upgrade
+
+# Update a single package through the lockfile
+uv lock --upgrade-package <package-name> && uv sync
+
+# See what's outdated without upgrading
+uv tree --outdated
+```
+
+-----
+
 ## 💻 Usage Modes
 
 The application operates in two main modes, selected via radio buttons:
@@ -43,54 +103,6 @@ The application operates in two main modes, selected via radio buttons:
 3. Use the **Excludes** text area for patterns to exclude (combined with `.gitignore` rules).
 4. Use checkboxes to include subdirectories or hide common binary/image files.
 5. Click **"Package"**. The packaged file will be saved in your Downloads folder using the selected output format.
-
------
-
-## 🔧 Advanced Configuration (`settings.json`)
-
-The application creates a `settings.json` file on first run in the application data directory (`~/.config/ContextPacker` on Linux). This file contains settings that are only read once on startup and are intended to be user-managed.
-
-| Key | Description | Default Value | Notes |
-| :--- | :--- | :--- | :--- |
-| `logging_level` | Sets the verbosity of the internal log output. | `"INFO"` | Options: `"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`, `"CRITICAL"`. |
-| `log_max_size_mb` | Maximum size (in megabytes) of the `app.log` file before log rotation occurs. | `3` | |
-| `log_backup_count` | Number of backup log files to keep during rotation. | `5` | |
-| `user_agents` | A list of strings used by the web crawler to identify itself. | `[...]` | The application cycles through these. |
-| `default_output_format` | The default file extension selected in the Output panel. | `".md"` | Options: `".md"`, `".txt"`, `".xml"`. |
-| `default_local_excludes` | A list of global `fnmatch` patterns automatically applied to local directory scans. | `[".archive/", ".git/", ...]` | These are visible and editable in the 'Excludes' text area. |
-| `binary_file_patterns` | A list of `fnmatch` patterns that are considered binary/image files and can be toggled via the 'Hide Images + Binaries' checkbox. | `[*.png, *.jpg, ...]` | |
-| `max_age_cache_days` | The number of days after which old, temporary session and cache directories are automatically deleted on startup. | `7` | Set to a high number to keep all cache files indefinitely. |
-
-The file also contains window-state keys (`window_size`, `h_sash_state`, etc.) which are managed automatically by the application on close.
-
------
-
-## ⚙️ Installation & Setup
-
-### Requirements
-
-To use all features, ensure you have the following installed:
-
-1. **Git:** Must be installed and accessible in your system's PATH (required for Git cloning).
-2. **Python and uv:** A modern version of **Python (3.10+)** and **uv** (used for dependency management).
-
-### Steps to Run from Source
-
-1. Clone the repository or download the source code.
-
-2. Install / update:
-
-   ```sh
-   uv pip list --outdated
-   uv lock --upgrade
-   uv sync --upgrade
-   ```
-
-3. Run the application:
-
-   ```sh
-   uv run Python app.py
-   ```
 
 -----
 
@@ -122,14 +134,4 @@ This project uses **Nox** for task automation. Run these commands from the proje
 uv run ruff check           # lint
 uv run ruff check --fix     # lint + auto-fix
 uv run ruff format          # format
-```
-
-## Installation
-
-### Linux
-
-```text
-7za x dist/ContextPacker-Linux-x64-v*.7z
-sudo cp -r ContextPacker /opt/
-sudo ln -s /opt/ContextPacker/ContextPacker /usr/local/bin/contextpacker
 ```
