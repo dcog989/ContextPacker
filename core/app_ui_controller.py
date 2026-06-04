@@ -609,6 +609,6 @@ class UiController:
         except ValidationError as e:
             # Pydantic provides user-friendly error messages
             raise ValueError(f"Invalid crawler configuration:\n{e}")
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             # This will catch int() conversion on empty strings for pause values
             raise ValueError("Invalid crawler configuration: Pause values must be valid numbers.")

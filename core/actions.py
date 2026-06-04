@@ -289,9 +289,9 @@ def _scan_directory(root_dir, max_depth, is_ignored_func, cancel_event):
                                 )
                             )
                         )
-                    except OSError, ValueError:
+                    except (OSError, ValueError):
                         continue
-        except OSError, PermissionError:
+        except (OSError, PermissionError):
             continue
     return files_to_show, depth_excludes
 

@@ -41,7 +41,7 @@ def cleanup_old_directories(base_dir, days_threshold):
                         pass
                 if dir_time < cutoff:
                     shutil.rmtree(subdir, ignore_errors=True)
-            except OSError, ValueError:
+            except (OSError, ValueError):
                 continue
 
 
