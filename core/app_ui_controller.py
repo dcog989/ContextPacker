@@ -272,8 +272,6 @@ class UiController:
             self.update_button_states()  # Ensure package button is disabled if path becomes invalid
             return
 
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        self.main_window.local_panel.setEnabled(False)
         self.local_files_to_exclude.clear()
         self.local_depth_excludes.clear()
 
@@ -292,7 +290,6 @@ class UiController:
         )
 
         # This task does not use the main state machine, as it's a lightweight UI feedback task.
-        # We manually manage UI feedback (cursor, panel enabled state).
         self.task_service.submit_task(
             actions.get_local_files_worker,
             root_dir=input_dir,
@@ -398,8 +395,6 @@ class UiController:
         self.toggle_input_mode()
 
     def on_local_scan_complete(self, scan_msg):
-        QApplication.restoreOverrideCursor()
-        self.main_window.local_panel.setEnabled(True)
         if scan_msg.results:
             files, depth_excludes = scan_msg.results
             self.main_window.populate_local_file_list(files)

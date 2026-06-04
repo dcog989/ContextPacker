@@ -37,18 +37,25 @@ class OutputPanelFactory:
 
         standard_log_list = QTableWidget(0, 2)
         standard_log_list.setHorizontalHeaderLabels(["URL", "Saved Filename"])
-        standard_log_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        standard_log_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header = standard_log_list.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setStretchLastSection(False)
         standard_log_list.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         standard_log_list.verticalHeader().setVisible(False)
 
         local_file_list = QTableWidget(0, 3)
         local_file_list.setHorizontalHeaderLabels(["Name", "Type", "Size"])
         local_file_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        local_file_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        local_file_list.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        local_file_list.horizontalHeader().setStretchLastSection(False)
         local_file_list.horizontalHeader().setSortIndicatorShown(True)
         local_file_list.setSortingEnabled(True)
         local_file_list.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         local_file_list.verticalHeader().setVisible(False)
+        local_file_list.setColumnWidth(1, 120)
+        local_file_list.setColumnWidth(2, 120)
 
         # Stack for web/local lists
         list_stack = QWidget()
