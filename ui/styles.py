@@ -16,6 +16,7 @@ class AppTheme:
             self.bg_primary = "#2B2B2B"
             self.bg_secondary = "#3A3A3A"
             self.bg_tertiary = "#404040"
+            self.input_bg = "#333333"
             self.bg_button = "#404040"
             self.bg_button_hover = "#4A4A4A"
             self.bg_button_pressed = "#353535"
@@ -35,6 +36,7 @@ class AppTheme:
             self.bg_primary = "#F0F0F0"
             self.bg_secondary = "#FFFFFF"
             self.bg_tertiary = "#E8E8E8"
+            self.input_bg = "#FFFFFF"
             self.bg_button = "#F0F0F0"
             self.bg_button_hover = "#E0E0E0"
             self.bg_button_pressed = "#D0D0D0"
@@ -140,9 +142,9 @@ class AppTheme:
                 font-size: 12px;
             }}
             
-            /* Input fields - different shade of grey from app background */
-            QLineEdit, QTextEdit, QSpinBox, QComboBox {{
-                background-color: {self.bg_secondary};
+            /* Input/output fields - different shade from app background */
+            QLineEdit, QTextEdit, QSpinBox, QComboBox, QTableWidget, QProgressBar {{
+                background-color: {self.input_bg};
                 border: 1px solid {self.border_color};
                 border-radius: 3px;
                 padding: 4px 8px;
@@ -302,7 +304,7 @@ class AppTheme:
             
             /* Table widget styling */
             QTableWidget {{
-                background-color: {self.bg_secondary};
+                background-color: {self.input_bg};
                 border: 1px solid {self.border_color};
                 gridline-color: {self.bg_tertiary};
             }}
@@ -323,7 +325,7 @@ class AppTheme:
             QProgressBar {{
                 border: 1px solid {self.border_color};
                 border-radius: 3px;
-                background-color: {self.bg_secondary};
+                background-color: {self.input_bg};
                 text-align: center;
                 padding: 2px;
             }}

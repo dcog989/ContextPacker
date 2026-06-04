@@ -89,6 +89,9 @@ class InputPanelFactory:
 
         include_paths_widget = QTextEdit()
         exclude_paths_widget = QTextEdit()
+        exclude_paths_widget.setPlainText(
+            "/admin/\n/login\n/logout\n/signin\n/signup\n/cart/\n/checkout/\n/wp-admin/\n/wp-login.php\n/feed/"
+        )
         include_paths_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         exclude_paths_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         include_paths_widget.setMinimumHeight(60)

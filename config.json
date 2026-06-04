@@ -13,9 +13,17 @@
         ".archive/",
         ".git/",
         ".testing/",
+        "__pycache__/",
+        "*.pyc",
+        ".venv/",
+        ".env",
+        ".idea/",
+        ".DS_Store",
+        "Thumbs.db",
         "*node_modules*",
         "build/",
-        "dist/"
+        "dist/",
+        "*.log"
     ],
     "binary_file_patterns": [
         "*.png",
