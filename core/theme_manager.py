@@ -81,8 +81,9 @@ class ThemeManager:
         if not hasattr(self, "main_panel") or not self.main_panel:
             return
 
+        icon_name = "moon.svg" if self.is_dark_mode_visual_state else "sun.svg"
         icon = create_themed_svg_icon(
-            resource_path("assets/icons/paint-bucket.svg"),
+            resource_path(f"assets/icons/{icon_name}"),
             self.app.palette().color(QPalette.ColorRole.Text).name(),
             QSize(20, 20),
         )
