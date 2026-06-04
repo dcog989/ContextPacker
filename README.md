@@ -78,12 +78,12 @@ To use all features, ensure you have the following installed:
 
 1. Clone the repository or download the source code.
 
-2. Sync dependencies using uv:
+2. Install / update:
 
    ```sh
    uv pip list --outdated
    uv lock --upgrade
-   uv sync
+   uv sync --upgrade
    ```
 
 3. Run the application:
