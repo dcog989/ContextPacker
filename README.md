@@ -1,4 +1,4 @@
-# ![ContextPacker logo](./assets/icons/ContextPacker-x64.png) ContextPacker
+# ![ContextPacker logo](./assets/icons/ContextPacker.svg) ContextPacker
 
 Desktop app to scrape websites, clone Git repos, or package local files into a single Markdown/TXT/XML file optimized for LLM consumption.
 
