@@ -1,18 +1,18 @@
 [project]
 name = "contextpacker"
-version = "3.2.0"
+version = "3.3.0"
 description = "A desktop app to scrape websites, Git repositories, or package local files into a single file, optimized for consumption by LLMs."
 authors = [{ name = "dcog989", email = "you@example.com" }]
 readme = "README.md"
-requires-python = ">=3.14, <3.15"
+requires-python = ">=3.14"
 dependencies = [
-    "beautifulsoup4>=4.14.2,<5.0.0",
-    "lxml>=6.0.2,<7.0.0",
-    "markdownify>=1.2.0,<2.0.0",
-    "pydantic>=2.13.4,<3.0.0",
-    "pyside6>=6.10.0,<7.0.0",
-    "repomix>=0.5.0,<0.6.0",
-    "requests>=2.32.5,<3.0.0",
+    "beautifulsoup4>=4.15",
+    "lxml>=6.1",
+    "markdownify>=1.2",
+    "pydantic>=2.13",
+    "pyside6>=6.11",
+    "repomix>=0.5",
+    "requests>=2.34",
 ]
 
 [project.scripts]
@@ -20,8 +20,8 @@ contextpacker = "app:main"
 
 [dependency-groups]
 dev = [
-    "pyinstaller>=6.16.0,<7.0.0",
-    "nox>=2026.4.10,<2027.0.0",
+    "pyinstaller>=6.21",
+    "nox>=2026.4",
 ]
 
 [build-system]
